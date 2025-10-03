@@ -1,3 +1,6 @@
+use std::cmp::Ordering;
+use std::fs;
+use std::io;
 use std::path::Path;
 
 /// Represents an open file in the editor workspace.
@@ -15,6 +18,15 @@ impl Document {
             buffer,
             is_modified: false,
         }
+    }
+
+    pub fn from_path(path: impl AsRef<Path>) -> io::Result<Self> {
+        let path_buf = path.as_ref().to_path_buf();
+        let contents = fs::read_to_string(&path_buf)?;
+        Ok(Self::new(
+            Some(path_buf.to_string_lossy().to_string()),
+            contents,
+        ))
     }
 
     pub fn display_name(&self) -> &str {
@@ -35,11 +47,48 @@ impl Default for Document {
     }
 }
 
-/// High-level editor session managing open documents.
+/// Node of a workspace file tree.
+#[derive(Debug, Clone)]
+pub struct FileNode {
+    pub name: String,
+    pub path: String,
+    pub is_directory: bool,
+    pub children: Vec<FileNode>,
+}
+
+impl FileNode {
+    fn from_path(path: &Path) -> io::Result<Self> {
+        let metadata = fs::metadata(path)?;
+        let is_directory = metadata.is_dir();
+        let name = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .map(|name| name.to_string())
+            .unwrap_or_else(|| path.to_string_lossy().to_string());
+        let path_string = path.to_string_lossy().to_string();
+
+        let children = if is_directory {
+            Editor::collect_directory(path)?
+        } else {
+            Vec::new()
+        };
+
+        Ok(Self {
+            name,
+            path: path_string,
+            is_directory,
+            children,
+        })
+    }
+}
+
+/// High-level editor session managing open documents and workspace state.
 #[derive(Debug)]
 pub struct Editor {
     open_documents: Vec<Document>,
     active_index: usize,
+    workspace_root: Option<String>,
+    workspace_tree: Vec<FileNode>,
 }
 
 impl Default for Editor {
@@ -47,6 +96,8 @@ impl Default for Editor {
         Self {
             open_documents: vec![Document::default()],
             active_index: 0,
+            workspace_root: None,
+            workspace_tree: Vec::new(),
         }
     }
 }
@@ -100,6 +151,62 @@ impl Editor {
         if let Some(doc) = self.active_document_mut() {
             doc.is_modified = false;
         }
+    }
+
+    pub fn workspace_root(&self) -> Option<&str> {
+        self.workspace_root.as_deref()
+    }
+
+    pub fn workspace_tree(&self) -> Option<&[FileNode]> {
+        if self.workspace_root.is_some() {
+            Some(&self.workspace_tree)
+        } else {
+            None
+        }
+    }
+
+    pub fn set_workspace(&mut self, root: String, tree: Vec<FileNode>) {
+        self.workspace_root = Some(root);
+        self.workspace_tree = tree;
+    }
+
+    pub fn clear_workspace(&mut self) {
+        self.workspace_root = None;
+        self.workspace_tree.clear();
+    }
+
+    /// Build a workspace tree for the provided directory.
+    pub fn build_workspace_tree(root: impl AsRef<Path>) -> io::Result<Vec<FileNode>> {
+        Self::collect_directory(root.as_ref())
+    }
+
+    fn collect_directory(path: &Path) -> io::Result<Vec<FileNode>> {
+        let mut children = Vec::new();
+
+        for entry in fs::read_dir(path)? {
+            let entry = entry?;
+            let entry_path = entry.path();
+
+            // Skip directories we cannot access gracefully.
+            match FileNode::from_path(&entry_path) {
+                Ok(node) => children.push(node),
+                Err(err) => {
+                    if err.kind() == io::ErrorKind::PermissionDenied {
+                        continue;
+                    } else {
+                        return Err(err);
+                    }
+                }
+            }
+        }
+
+        children.sort_by(|a, b| match (a.is_directory, b.is_directory) {
+            (true, false) => Ordering::Less,
+            (false, true) => Ordering::Greater,
+            _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+        });
+
+        Ok(children)
     }
 
     /// Returns a human-friendly status line reflecting the current editor state.

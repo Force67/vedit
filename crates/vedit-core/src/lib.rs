@@ -5,4 +5,4 @@ pub fn startup_banner() -> String {
     "Welcome to vedit".to_string()
 }
 
-pub use editor::{Document, Editor};
+pub use editor::{Document, Editor, FileNode};

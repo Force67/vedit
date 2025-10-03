@@ -1,8 +1,8 @@
 use iced::alignment::{Horizontal, Vertical};
-use iced::widget::{button, column, container, row, scrollable, text, text_input};
-use iced::{executor, theme, Alignment, Application, Command, Element, Length, Settings};
+use iced::widget::{button, column, container, row, scrollable, text, text_input, Column};
+use iced::{executor, theme, Alignment, Application, Command, Element, Length, Padding, Settings};
 use rfd::FileDialog;
-use vedit_core::{startup_banner, Document, Editor};
+use vedit_core::{startup_banner, Document, Editor, FileNode};
 
 /// Launches the iced-powered editor application.
 pub fn run() -> iced::Result {
@@ -21,6 +21,9 @@ enum Message {
     OpenFileRequested,
     FileLoaded(Result<Option<Document>, String>),
     DocumentSelected(usize),
+    WorkspaceOpenRequested,
+    WorkspaceLoaded(Result<Option<(String, Vec<FileNode>)>, String>),
+    WorkspaceFileActivated(String),
 }
 
 impl Application for EditorApp {
@@ -59,6 +62,26 @@ impl Application for EditorApp {
             },
             Message::DocumentSelected(index) => {
                 self.editor.set_active(index);
+            }
+            Message::WorkspaceOpenRequested => {
+                return Command::perform(Self::pick_workspace(), Message::WorkspaceLoaded);
+            }
+            Message::WorkspaceLoaded(result) => match result {
+                Ok(Some((root, tree))) => {
+                    self.editor.set_workspace(root, tree);
+                    self.error = None;
+                }
+                Ok(None) => {
+                    // user cancelled dialog
+                }
+                Err(err) => {
+                    self.error = Some(err);
+                }
+            },
+            Message::WorkspaceFileActivated(path) => {
+                return Command::perform(Self::load_document_from_path(path), |result| {
+                    Message::FileLoaded(result.map(Some))
+                });
             }
         }
 
@@ -120,12 +143,44 @@ impl Application for EditorApp {
             documents_column = documents_column.push(entry);
         }
 
-        let file_tree = container(scrollable(documents_column).height(Length::Fill))
+        let open_files_section = container(documents_column)
             .padding(16)
-            .width(Length::FillPortion(1))
+            .width(Length::Fill)
             .style(theme::Container::Box);
 
-        let content_row = row![editor_panel, file_tree]
+        let workspace_title = if let Some(root) = self.editor.workspace_root() {
+            format!("Workspace: {}", root)
+        } else {
+            "Workspace".to_string()
+        };
+
+        let workspace_contents: Element<'_, Message> = if let Some(tree) = self.editor.workspace_tree() {
+            scrollable(Self::render_workspace_nodes(tree, 0))
+                .height(Length::Fill)
+                .into()
+        } else {
+            column![text("Open a folder to browse project files").size(14)]
+                .width(Length::Fill)
+                .height(Length::Shrink)
+                .into()
+        };
+
+        let workspace_section = container(
+            column![text(workspace_title).size(16), workspace_contents]
+                .spacing(8)
+                .height(Length::Fill),
+        )
+        .padding(16)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .style(theme::Container::Box);
+
+        let side_panel = column![open_files_section, workspace_section]
+            .spacing(16)
+            .width(Length::FillPortion(2))
+            .height(Length::Fill);
+
+        let content_row = row![editor_panel, side_panel]
             .spacing(16)
             .width(Length::Fill)
             .height(Length::Fill);
@@ -134,6 +189,7 @@ impl Application for EditorApp {
             row![
                 text("vedit").size(20),
                 button(text("Open File…")).on_press(Message::OpenFileRequested),
+                button(text("Open Folder…")).on_press(Message::WorkspaceOpenRequested),
             ]
             .spacing(16)
             .align_items(Alignment::Center),
@@ -142,9 +198,17 @@ impl Application for EditorApp {
         .width(Length::Fill)
         .style(theme::Container::Box);
 
+        let workspace_status = format!(
+            "Workspace: {}",
+            self.editor
+                .workspace_root()
+                .unwrap_or("(none)")
+        );
+
         let status_bar = container(
             row![
                 text(format!("File: {}", self.editor.status_line())).size(14),
+                text(workspace_status).size(14),
                 text(format!(
                     "Chars: {}",
                     self.editor
@@ -198,18 +262,72 @@ impl EditorApp {
     fn pick_document(
     ) -> impl std::future::Future<Output = Result<Option<Document>, String>> + Send + 'static {
         async move {
-            let handle = FileDialog::new().pick_file();
-            if let Some(path) = handle {
-                let contents = std::fs::read_to_string(&path)
+            if let Some(path) = FileDialog::new().pick_file() {
+                let document = Document::from_path(&path)
                     .map_err(|err| format!("Failed to read file: {}", err))?;
-                let document = Document::new(
-                    Some(path.to_string_lossy().to_string()),
-                    contents,
-                );
                 Ok(Some(document))
             } else {
                 Ok(None)
             }
         }
+    }
+
+    fn load_document_from_path(
+        path: String,
+    ) -> impl std::future::Future<Output = Result<Document, String>> + Send + 'static {
+        async move { Document::from_path(&path).map_err(|err| format!("Failed to read file: {}", err)) }
+    }
+
+    fn pick_workspace(
+    ) -> impl std::future::Future<Output = Result<Option<(String, Vec<FileNode>)>, String>> + Send + 'static {
+        async move {
+            if let Some(path) = FileDialog::new().pick_folder() {
+                let tree = Editor::build_workspace_tree(&path)
+                    .map_err(|err| format!("Failed to read folder: {}", err))?;
+                Ok(Some((path.to_string_lossy().to_string(), tree)))
+            } else {
+                Ok(None)
+            }
+        }
+    }
+
+    fn render_workspace_nodes<'a>(
+        nodes: &'a [FileNode],
+        indent: u16,
+    ) -> Column<'a, Message> {
+        nodes.iter().fold(Column::new().spacing(4), |column, node| {
+            column.push(Self::render_workspace_node(node, indent))
+        })
+    }
+
+    fn render_workspace_node<'a>(node: &'a FileNode, indent: u16) -> Element<'a, Message> {
+        let label = if node.is_directory {
+            format!("{}/", node.name)
+        } else {
+            node.name.clone()
+        };
+
+        let entry: Element<'_, Message> = if node.is_directory {
+            text(label).size(14).into()
+        } else {
+            button(text(label).size(14))
+                .style(theme::Button::Text)
+                .width(Length::Fill)
+                .on_press(Message::WorkspaceFileActivated(node.path.clone()))
+                .into()
+        };
+
+        let indent_padding = indent.saturating_mul(16);
+
+        let mut column = Column::new();
+        column = column.push(
+            container(entry).padding(Padding::from([0, 0, 0, indent_padding])),
+        );
+
+        if node.is_directory && !node.children.is_empty() {
+            column = column.push(Self::render_workspace_nodes(&node.children, indent + 1));
+        }
+
+        column.into()
     }
 }
