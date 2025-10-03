@@ -11,6 +11,21 @@
       let
         pkgs = import nixpkgs { inherit system; };
         crateName = "vedit";
+        runtimeLibs = with pkgs;
+          lib.optionals stdenv.isLinux [
+            vulkan-loader
+            libxkbcommon
+            wayland
+            wayland-protocols
+            libGL
+            mesa
+            libinput
+            fontconfig
+            xorg.libX11
+            xorg.libXcursor
+            xorg.libXi
+            xorg.libXrandr
+          ];
       in {
         packages.default = pkgs.rustPlatform.buildRustPackage {
           pname = crateName;
@@ -23,6 +38,15 @@
             description = "Vedit Rust application";
             mainProgram = crateName;
           };
+          nativeBuildInputs = with pkgs; [
+            pkg-config
+            makeWrapper
+          ];
+          buildInputs = runtimeLibs;
+          postInstall = pkgs.lib.optionalString pkgs.stdenv.isLinux ''
+            wrapProgram $out/bin/${crateName} \
+              --prefix LD_LIBRARY_PATH : ${pkgs.lib.makeLibraryPath runtimeLibs}
+          '';
         };
 
         apps.default = {
@@ -41,7 +65,10 @@
             clippy
             rust-analyzer
             pkg-config
-          ];
+          ] ++ runtimeLibs;
+          shellHook = pkgs.lib.optionalString pkgs.stdenv.isLinux ''
+            export LD_LIBRARY_PATH=${pkgs.lib.makeLibraryPath runtimeLibs}:$LD_LIBRARY_PATH
+          '';
           RUST_SRC_PATH = pkgs.rustPlatform.rustLibSrc;
         };
 

@@ -1,6 +1,15 @@
+[workspace]
+members = [
+    "crates/vedit-core",
+    "crates/vedit-gui",
+]
+resolver = "2"
+
 [package]
 name = "vedit"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+vedit-core = { path = "crates/vedit-core" }
+vedit-gui = { path = "crates/vedit-gui" }
