@@ -1,6 +1,10 @@
 use iced::alignment::{Horizontal, Vertical};
-use iced::widget::{button, column, container, row, scrollable, text, text_input, Column};
+use iced::widget::lazy;
+use iced::widget::text_editor::{self, Action as TextEditorAction, Content};
+use iced::widget::{button, column, container, row, scrollable, text, Column};
 use iced::{executor, theme, Alignment, Application, Command, Element, Length, Padding, Settings};
+use std::hash::{Hash, Hasher};
+use std::sync::Arc;
 use rfd::FileDialog;
 use vedit_core::{startup_banner, Document, Editor, FileNode};
 
@@ -13,17 +17,46 @@ pub fn run() -> iced::Result {
 struct EditorApp {
     editor: Editor,
     error: Option<String>,
+    buffer_content: Content,
 }
 
 #[derive(Debug, Clone)]
 enum Message {
-    BufferChanged(String),
     OpenFileRequested,
     FileLoaded(Result<Option<Document>, String>),
     DocumentSelected(usize),
     WorkspaceOpenRequested,
     WorkspaceLoaded(Result<Option<(String, Vec<FileNode>)>, String>),
     WorkspaceFileActivated(String),
+    BufferAction(TextEditorAction),
+}
+
+#[derive(Clone)]
+struct WorkspaceSnapshot {
+    version: u64,
+    tree: Arc<Vec<FileNode>>,
+}
+
+impl WorkspaceSnapshot {
+    fn new(version: u64, tree: Arc<Vec<FileNode>>) -> Self {
+        Self { version, tree }
+    }
+}
+
+impl std::fmt::Debug for WorkspaceSnapshot {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("WorkspaceSnapshot")
+            .field("version", &self.version)
+            .field("tree_entries", &self.tree.len())
+            .finish()
+    }
+}
+
+impl Hash for WorkspaceSnapshot {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.version.hash(state);
+        (Arc::as_ptr(&self.tree) as usize).hash(state);
+    }
 }
 
 impl Application for EditorApp {
@@ -42,9 +75,6 @@ impl Application for EditorApp {
 
     fn update(&mut self, message: Self::Message) -> Command<Self::Message> {
         match message {
-            Message::BufferChanged(contents) => {
-                self.editor.update_active_buffer(contents);
-            }
             Message::OpenFileRequested => {
                 return Command::perform(Self::pick_document(), Message::FileLoaded);
             }
@@ -52,6 +82,7 @@ impl Application for EditorApp {
                 Ok(Some(document)) => {
                     self.editor.open_document(document);
                     self.error = None;
+                    self.sync_buffer_content();
                 }
                 Ok(None) => {
                     // user cancelled dialog
@@ -62,6 +93,7 @@ impl Application for EditorApp {
             },
             Message::DocumentSelected(index) => {
                 self.editor.set_active(index);
+                self.sync_buffer_content();
             }
             Message::WorkspaceOpenRequested => {
                 return Command::perform(Self::pick_workspace(), Message::WorkspaceLoaded);
@@ -83,6 +115,15 @@ impl Application for EditorApp {
                     Message::FileLoaded(result.map(Some))
                 });
             }
+            Message::BufferAction(action) => {
+                let is_edit = action.is_edit();
+                self.buffer_content.perform(action);
+
+                if is_edit {
+                    let updated = self.editor_contents_to_string();
+                    self.editor.update_active_buffer(updated);
+                }
+            }
         }
 
         Command::none()
@@ -93,17 +134,10 @@ impl Application for EditorApp {
             .size(28)
             .horizontal_alignment(Horizontal::Center);
 
-        let active_buffer = self
-            .editor
-            .active_document()
-            .map(|doc| doc.buffer.clone())
-            .unwrap_or_default();
-
-        let buffer = text_input("Start typing...", &active_buffer)
-            .on_input(Message::BufferChanged)
-            .padding(12)
-            .size(16)
-            .width(Length::Fill);
+        let buffer = text_editor::TextEditor::new(&self.buffer_content)
+            .on_action(Message::BufferAction)
+            .height(Length::Fill)
+            .padding(12);
 
         let editor_panel = column![
             text("Active Buffer").size(16),
@@ -154,10 +188,16 @@ impl Application for EditorApp {
             "Workspace".to_string()
         };
 
-        let workspace_contents: Element<'_, Message> = if let Some(tree) = self.editor.workspace_tree() {
-            scrollable(Self::render_workspace_nodes(tree, 0))
-                .height(Length::Fill)
-                .into()
+        let workspace_contents: Element<'_, Message> = if let Some((version, tree)) =
+            self.editor.workspace_snapshot()
+        {
+            let snapshot = WorkspaceSnapshot::new(version, tree);
+            lazy(snapshot, |snapshot| -> Element<'static, Message> {
+                scrollable(Self::render_workspace_nodes(snapshot.tree.as_slice(), 0))
+                    .height(Length::Fill)
+                    .into()
+            })
+            .into()
         } else {
             column![text("Open a folder to browse project files").size(14)]
                 .width(Length::Fill)
@@ -251,10 +291,15 @@ impl Application for EditorApp {
 
 impl Default for EditorApp {
     fn default() -> Self {
-        Self {
+        let mut app = Self {
             editor: Editor::new(),
             error: None,
-        }
+            buffer_content: Content::new(),
+        };
+
+        app.sync_buffer_content();
+
+        app
     }
 }
 
@@ -278,6 +323,24 @@ impl EditorApp {
         async move { Document::from_path(&path).map_err(|err| format!("Failed to read file: {}", err)) }
     }
 
+    fn sync_buffer_content(&mut self) {
+        let contents = self
+            .editor
+            .active_document()
+            .map(|doc| doc.buffer.clone())
+            .unwrap_or_default();
+
+        self.buffer_content = Content::with_text(&contents);
+    }
+
+    fn editor_contents_to_string(&self) -> String {
+        let mut text = self.buffer_content.text();
+        if text.ends_with('\n') {
+            text.pop();
+        }
+        text
+    }
+
     fn pick_workspace(
     ) -> impl std::future::Future<Output = Result<Option<(String, Vec<FileNode>)>, String>> + Send + 'static {
         async move {
@@ -291,23 +354,20 @@ impl EditorApp {
         }
     }
 
-    fn render_workspace_nodes<'a>(
-        nodes: &'a [FileNode],
-        indent: u16,
-    ) -> Column<'a, Message> {
+    fn render_workspace_nodes(nodes: &[FileNode], indent: u16) -> Column<'static, Message> {
         nodes.iter().fold(Column::new().spacing(4), |column, node| {
             column.push(Self::render_workspace_node(node, indent))
         })
     }
 
-    fn render_workspace_node<'a>(node: &'a FileNode, indent: u16) -> Element<'a, Message> {
+    fn render_workspace_node(node: &FileNode, indent: u16) -> Element<'static, Message> {
         let label = if node.is_directory {
             format!("{}/", node.name)
         } else {
             node.name.clone()
         };
 
-        let entry: Element<'_, Message> = if node.is_directory {
+        let entry: Element<'static, Message> = if node.is_directory {
             text(label).size(14).into()
         } else {
             button(text(label).size(14))

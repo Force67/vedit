@@ -2,6 +2,9 @@ use std::cmp::Ordering;
 use std::fs;
 use std::io;
 use std::path::Path;
+use std::sync::Arc;
+
+const SKIPPED_DIRECTORIES: &[&str] = &[".git", "target", "node_modules", ".idea", ".vscode"];
 
 /// Represents an open file in the editor workspace.
 #[derive(Debug, Clone)]
@@ -88,7 +91,8 @@ pub struct Editor {
     open_documents: Vec<Document>,
     active_index: usize,
     workspace_root: Option<String>,
-    workspace_tree: Vec<FileNode>,
+    workspace_tree: Arc<Vec<FileNode>>,
+    workspace_generation: u64,
 }
 
 impl Default for Editor {
@@ -97,7 +101,8 @@ impl Default for Editor {
             open_documents: vec![Document::default()],
             active_index: 0,
             workspace_root: None,
-            workspace_tree: Vec::new(),
+            workspace_tree: Arc::new(Vec::new()),
+            workspace_generation: 0,
         }
     }
 }
@@ -159,7 +164,7 @@ impl Editor {
 
     pub fn workspace_tree(&self) -> Option<&[FileNode]> {
         if self.workspace_root.is_some() {
-            Some(&self.workspace_tree)
+            Some(self.workspace_tree.as_slice())
         } else {
             None
         }
@@ -167,12 +172,25 @@ impl Editor {
 
     pub fn set_workspace(&mut self, root: String, tree: Vec<FileNode>) {
         self.workspace_root = Some(root);
-        self.workspace_tree = tree;
+        self.workspace_tree = Arc::new(tree);
+        self.workspace_generation = self.workspace_generation.wrapping_add(1);
     }
 
     pub fn clear_workspace(&mut self) {
         self.workspace_root = None;
-        self.workspace_tree.clear();
+        self.workspace_tree = Arc::new(Vec::new());
+        self.workspace_generation = self.workspace_generation.wrapping_add(1);
+    }
+
+    pub fn workspace_snapshot(&self) -> Option<(u64, Arc<Vec<FileNode>>)> {
+        if self.workspace_root.is_some() {
+            Some((
+                self.workspace_generation,
+                Arc::clone(&self.workspace_tree),
+            ))
+        } else {
+            None
+        }
     }
 
     /// Build a workspace tree for the provided directory.
@@ -186,6 +204,17 @@ impl Editor {
         for entry in fs::read_dir(path)? {
             let entry = entry?;
             let entry_path = entry.path();
+
+            if entry.file_type()?.is_dir() {
+                if let Some(name) = entry.file_name().to_str() {
+                    if SKIPPED_DIRECTORIES
+                        .iter()
+                        .any(|skip| name.eq_ignore_ascii_case(skip))
+                    {
+                        continue;
+                    }
+                }
+            }
 
             // Skip directories we cannot access gracefully.
             match FileNode::from_path(&entry_path) {
