@@ -2,7 +2,9 @@ use crate::quick_commands::{commands as quick_commands_list, QuickCommand, Quick
 use crate::settings::SettingsState;
 use crate::scaling;
 use crate::syntax::{DocumentKey, SyntaxSettings, SyntaxSystem};
-use crate::widgets::text_editor::{Action as TextEditorAction, Content};
+use crate::widgets::text_editor::{
+    Action as TextEditorAction, Content, ScrollMetrics, buffer_scroll_metrics, scroll_to,
+};
 use iced::keyboard;
 use std::collections::HashSet;
 use std::env;
@@ -178,6 +180,19 @@ impl EditorState {
 
     pub fn buffer_content(&self) -> &Content {
         &self.buffer_content
+    }
+
+    pub fn buffer_scroll_metrics(&self) -> ScrollMetrics {
+        buffer_scroll_metrics(&self.buffer_content)
+    }
+
+    pub fn set_buffer_scroll(&mut self, position: f32) {
+        let metrics = buffer_scroll_metrics(&self.buffer_content);
+        let max_scroll = metrics.max_scroll() as f32;
+        let target = position
+            .clamp(0.0, max_scroll)
+            .round() as usize;
+        scroll_to(&mut self.buffer_content, target);
     }
 
     pub fn syntax_settings(&self) -> SyntaxSettings {

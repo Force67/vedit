@@ -24,10 +24,12 @@ use iced::advanced::text::highlighter;
 use iced::advanced::text::Highlighter as IcedHighlighter;
 use iced::advanced::text::Renderer as TextRenderer;
 use iced_graphics::text::Editor as GraphicsEditor;
-use std::cell::{Ref, RefCell};
+use std::cell::{Cell, Ref, RefCell};
+use std::rc::Rc;
 
-const DEFAULT_GUTTER_WIDTH: f32 = 64.0;
+const DEFAULT_GUTTER_WIDTH: f32 = 42.0;
 const DEFAULT_LINE_COLOR: Color = Color::from_rgba(0.7, 0.7, 0.7, 1.0);
+const GUTTER_TEXT_PADDING: f32 = 6.0;
 
 pub struct TextEditor<'a, Message, H = highlighter::PlainText>
 where
@@ -38,6 +40,7 @@ where
     base_padding: Padding,
     gutter_width: f32,
     line_color: Color,
+    pointer_correction: Rc<Cell<f32>>,
 }
 
 impl<'a, Message> TextEditor<'a, Message, highlighter::PlainText> {
@@ -47,6 +50,10 @@ impl<'a, Message> TextEditor<'a, Message, highlighter::PlainText> {
         let mut inner = text_editor::TextEditor::new(content);
         let effective = add_gutter(base_padding, gutter_width);
         inner = inner.padding(effective);
+        let pointer_correction = Rc::new(Cell::new(pointer_correction_value(
+            base_padding,
+            gutter_width,
+        )));
 
         Self {
             inner,
@@ -54,6 +61,7 @@ impl<'a, Message> TextEditor<'a, Message, highlighter::PlainText> {
             base_padding,
             gutter_width,
             line_color: DEFAULT_LINE_COLOR,
+            pointer_correction,
         }
     }
 
@@ -74,6 +82,7 @@ impl<'a, Message> TextEditor<'a, Message, highlighter::PlainText> {
             base_padding: self.base_padding,
             gutter_width: self.gutter_width,
             line_color: self.line_color,
+            pointer_correction: Rc::clone(&self.pointer_correction),
         }
     }
 }
@@ -83,7 +92,11 @@ where
     H: IcedHighlighter,
 {
     pub fn on_action(mut self, on_edit: impl Fn(Action) -> Message + 'a) -> Self {
-        self.inner = self.inner.on_action(on_edit);
+        let correction = Rc::clone(&self.pointer_correction);
+        self.inner = self.inner.on_action(move |action| {
+            let adjusted = adjust_action(action, correction.get());
+            on_edit(adjusted)
+        });
         self
     }
 
@@ -96,6 +109,8 @@ where
         self.base_padding = padding.into();
         let effective = add_gutter(self.base_padding, self.gutter_width);
         self.inner = self.inner.padding(effective);
+        self.pointer_correction
+            .set(pointer_correction_value(self.base_padding, self.gutter_width));
         self
     }
 
@@ -213,6 +228,77 @@ fn add_gutter(mut padding: Padding, gutter: f32) -> Padding {
     padding
 }
 
+fn pointer_correction_value(base_padding: Padding, gutter_width: f32) -> f32 {
+    (base_padding.left + gutter_width) - base_padding.top
+}
+
+fn adjust_action(action: Action, pointer_correction: f32) -> Action {
+    if pointer_correction.abs() <= f32::EPSILON {
+        return action;
+    }
+
+    match action {
+        Action::Click(position) => Action::Click(adjust_point(position, pointer_correction)),
+        Action::Drag(position) => Action::Drag(adjust_point(position, pointer_correction)),
+        other => other,
+    }
+}
+
+fn adjust_point(position: Point, pointer_correction: f32) -> Point {
+    Point::new(
+        position.x - pointer_correction,
+        position.y + pointer_correction,
+    )
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct ScrollMetrics {
+    pub scroll: usize,
+    pub visible_lines: usize,
+    pub total_visual_lines: usize,
+}
+
+impl ScrollMetrics {
+    pub fn max_scroll(&self) -> usize {
+        self.total_visual_lines
+            .saturating_sub(self.visible_lines)
+    }
+}
+
+pub fn buffer_scroll_metrics(content: &Content) -> ScrollMetrics {
+    let editor = borrow_editor(content);
+    let buffer = editor.buffer();
+
+    let visible_lines = buffer.visible_lines().max(0) as usize;
+    let scroll = buffer.scroll().max(0) as usize;
+    let total_visual_lines = count_visual_lines(buffer);
+
+    ScrollMetrics {
+        scroll,
+        visible_lines,
+        total_visual_lines,
+    }
+}
+
+pub fn scroll_to(content: &mut Content, target: usize) {
+    let metrics = buffer_scroll_metrics(content);
+    let max_scroll = metrics.max_scroll();
+    let clamped = target.min(max_scroll);
+    let current = metrics.scroll;
+
+    if clamped == current {
+        return;
+    }
+
+    let delta = clamped as isize - current as isize;
+    let delta = delta
+        .clamp(i32::MIN as isize, i32::MAX as isize) as i32;
+
+    if delta != 0 {
+        content.perform(Action::Scroll { lines: delta });
+    }
+}
+
 fn draw_line_numbers(
     renderer: &mut IcedRenderer,
     bounds: Rectangle,
@@ -230,17 +316,19 @@ fn draw_line_numbers(
     let scroll = buffer.scroll().max(0) as usize;
     let numbers = collect_visible_line_numbers(buffer, scroll, visible_lines);
 
-    let start_x = bounds.x + base_padding.left;
+    let gutter_right = bounds.x + base_padding.left + gutter_width;
     let start_y = bounds.y + base_padding.top;
     let text_size = Pixels(font_size);
     let font = renderer.default_font();
+    let text_width = (gutter_width - GUTTER_TEXT_PADDING * 2.0).max(0.0);
+    let start_x = (gutter_right - text_width - GUTTER_TEXT_PADDING).max(bounds.x);
 
     for (index, line_number) in numbers.iter().enumerate() {
         let y = start_y + index as f32 * line_height;
         let label = line_number.to_string();
         let text = PrimitiveText {
             content: &label,
-            bounds: Size::new(gutter_width, line_height),
+            bounds: Size::new(text_width, line_height),
             size: text_size,
             line_height: LineHeight::Absolute(Pixels(line_height)),
             font,
@@ -318,6 +406,20 @@ fn collect_visible_line_numbers(
     }
 
     numbers
+}
+
+fn count_visual_lines(buffer: &CosmicBuffer) -> usize {
+    buffer
+        .lines
+        .iter()
+        .map(|line| {
+            line
+                .layout_opt()
+                .as_ref()
+                .map(|layout| layout.len())
+                .unwrap_or(1)
+        })
+        .sum()
 }
 
 #[repr(transparent)]

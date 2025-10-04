@@ -11,7 +11,9 @@ use iced::alignment::{Horizontal, Vertical};
 use iced::widget::lazy;
 use iced::widget::{
     button, column, container, horizontal_space, row, scrollable, text, text_input, Column, Rule,
+    vertical_slider,
 };
+use iced::widget::slider;
 use iced::{theme, Alignment, Color, Element, Font, Length, Padding};
 use std::collections::HashSet;
 use std::path::Path;
@@ -119,21 +121,55 @@ fn render_editor_content(
     spacing_medium: f32,
     spacing_small: f32,
 ) -> Element<'_, Message> {
+    let editor_padding = (12.0 * scale).max(6.0);
+    let scroll_metrics = state.buffer_scroll_metrics();
+    let max_scroll = scroll_metrics.max_scroll() as f32;
+    let scroll_value = scroll_metrics.scroll as f32;
+    let scrollbar_width = (8.0 * scale).clamp(6.0, 12.0);
+    let slider_position = (max_scroll - scroll_value).clamp(0.0, max_scroll);
+    let scrollbar = vertical_slider::VerticalSlider::<f32, Message>::new(
+        0.0..=max_scroll,
+        slider_position,
+        move |value| Message::BufferScrollChanged(max_scroll - value),
+    )
+    .step(1.0_f32)
+    .width(scrollbar_width)
+    .height(Length::Fill)
+    .style(theme::Slider::Custom(Box::new(EditorScrollbarStyle)));
+
     let buffer = EditorWidget::new(state.buffer_content())
         .font(Font::MONOSPACE)
         .highlight::<SyntaxHighlighter>(state.syntax_settings(), format_highlight)
         .line_number_color(Color::from_rgb8(133, 133, 133))
+        .padding(editor_padding)
         .on_action(Message::BufferAction)
+        .height(Length::Fill);
+
+    let buffer_panel: Element<'_, Message> = container(buffer)
+        .padding((4.0 * scale).max(2.0))
+        .width(Length::Fill)
         .height(Length::Fill)
-        .padding((12.0 * scale).max(6.0));
+        .style(panel_container())
+        .into();
+
+    let scrollbar_track: Element<'_, Message> = container(scrollbar)
+        .width(Length::Fixed(scrollbar_width))
+        .height(Length::Fill)
+        .center_x()
+        .into();
+
+    let buffer_content = row![
+        buffer_panel,
+        scrollbar_track,
+    ]
+    .spacing((6.0 * scale).max(3.0))
+    .align_items(Alignment::Start)
+    .width(Length::Fill)
+    .height(Length::Fill);
 
     let editor_panel = column![
         text("Active Buffer").size((16.0 * scale).max(12.0)),
-        container(buffer)
-            .padding((4.0 * scale).max(2.0))
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .style(panel_container()),
+        buffer_content,
     ]
     .spacing(spacing_medium)
     .padding(spacing_large)
@@ -163,6 +199,44 @@ fn render_editor_content(
         .width(Length::Fill)
         .height(Length::Fill)
         .into()
+}
+
+struct EditorScrollbarStyle;
+
+impl slider::StyleSheet for EditorScrollbarStyle {
+    type Style = theme::Theme;
+
+    fn active(&self, theme: &Self::Style) -> slider::Appearance {
+        let palette = theme.extended_palette();
+        slider::Appearance {
+            rail: slider::Rail {
+                colors: (
+                    palette.background.base.color,
+                    palette.background.base.color,
+                ),
+                width: 4.0,
+                border_radius: 2.0.into(),
+            },
+            handle: slider::Handle {
+                shape: slider::HandleShape::Circle { radius: 5.0 },
+                color: palette.primary.weak.color,
+                border_color: palette.primary.strong.color,
+                border_width: 1.0,
+            },
+        }
+    }
+
+    fn hovered(&self, theme: &Self::Style) -> slider::Appearance {
+        let mut active = self.active(theme);
+        active.handle.color = theme.extended_palette().primary.base.color;
+        active
+    }
+
+    fn dragging(&self, theme: &Self::Style) -> slider::Appearance {
+        let mut active = self.active(theme);
+        active.handle.color = theme.extended_palette().primary.strong.color;
+        active
+    }
 }
 
 fn render_status_bar(

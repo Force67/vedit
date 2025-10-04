@@ -108,6 +108,9 @@ impl Application for EditorApp {
             Message::BufferAction(action) => {
                 self.state.apply_buffer_action(action);
             }
+            Message::BufferScrollChanged(position) => {
+                self.state.set_buffer_scroll(position);
+            }
             Message::DocumentSaved(result) => match result {
                 Ok(Some(path)) => {
                     self.state.handle_document_saved(Some(path));

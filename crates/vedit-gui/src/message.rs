@@ -21,6 +21,7 @@ pub enum Message {
     WorkspaceFileActivated(String),
     WorkspaceDirectoryToggled(String),
     BufferAction(TextEditorAction),
+    BufferScrollChanged(f32),
     DocumentSaved(Result<Option<String>, String>),
     WorkspaceConfigSaved(Result<String, String>),
     SettingsOpened,
