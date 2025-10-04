@@ -1,4 +1,5 @@
 use crate::document::Document;
+use crate::text_buffer::TextBuffer;
 use crate::workspace::{self, FileNode};
 use std::io;
 use std::sync::Arc;
@@ -80,7 +81,12 @@ impl Editor {
 
     pub fn update_active_buffer(&mut self, contents: String) {
         if let Some(doc) = self.active_document_mut() {
-            doc.buffer = contents;
+            let current = doc.buffer.to_string();
+            if current == contents {
+                return;
+            }
+
+            apply_text_diff(&mut doc.buffer, &current, &contents);
             doc.is_modified = true;
         }
     }
@@ -221,6 +227,63 @@ impl Editor {
     }
 }
 
+fn apply_text_diff(buffer: &mut TextBuffer, old_text: &str, new_text: &str) {
+    if old_text == new_text {
+        return;
+    }
+
+    let old_bytes = old_text.as_bytes();
+    let new_bytes = new_text.as_bytes();
+
+    let mut prefix = 0usize;
+    let max_prefix = old_bytes.len().min(new_bytes.len());
+    while prefix < max_prefix && old_bytes[prefix] == new_bytes[prefix] {
+        prefix += 1;
+    }
+
+    while prefix > 0
+        && (!old_text.is_char_boundary(prefix) || !new_text.is_char_boundary(prefix))
+    {
+        prefix -= 1;
+    }
+
+    let mut suffix = 0usize;
+    let max_suffix = old_bytes.len().min(new_bytes.len()).saturating_sub(prefix);
+    while suffix < max_suffix
+        && old_bytes[old_bytes.len() - 1 - suffix]
+            == new_bytes[new_bytes.len() - 1 - suffix]
+    {
+        suffix += 1;
+    }
+
+    while suffix > 0 {
+        let old_index = old_bytes.len() - suffix;
+        let new_index = new_bytes.len() - suffix;
+        if old_index < prefix || new_index < prefix {
+            suffix = 0;
+            break;
+        }
+        if old_text.is_char_boundary(old_index) && new_text.is_char_boundary(new_index) {
+            break;
+        }
+        suffix -= 1;
+    }
+
+    let delete_start = prefix;
+    let delete_end = old_bytes.len().saturating_sub(suffix);
+    if delete_end > delete_start {
+        buffer.delete(delete_start..delete_end);
+    }
+
+    let insert_start = prefix;
+    let insert_end = new_bytes.len().saturating_sub(suffix);
+    if insert_end > insert_start {
+        let inserted = &new_text[insert_start..insert_end];
+        buffer.insert(insert_start, inserted);
+    }
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -228,6 +291,33 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
+    fn apply_text_diff_handles_inserts_and_deletes() {
+        let original = "hello";
+        let mut buffer = TextBuffer::from_text(original);
+        let expanded = "hello world";
+        super::apply_text_diff(&mut buffer, original, expanded);
+        assert_eq!(buffer.to_string(), expanded);
+
+        let shortened = "hello";
+        super::apply_text_diff(&mut buffer, expanded, shortened);
+        assert_eq!(buffer.to_string(), shortened);
+    }
+
+    #[test]
+    fn apply_text_diff_preserves_unicode_boundaries() {
+        let original = "café";
+        let mut buffer = TextBuffer::from_text(original);
+        let extended = "cafés";
+        super::apply_text_diff(&mut buffer, original, extended);
+        assert_eq!(buffer.to_string(), extended);
+
+        let emoji_old = "🙂🙂";
+        let emoji_new = "🙂";
+        let mut emoji_buffer = TextBuffer::from_text(emoji_old);
+        super::apply_text_diff(&mut emoji_buffer, emoji_old, emoji_new);
+        assert_eq!(emoji_buffer.to_string(), emoji_new);
+    }
+
     fn reopening_same_path_reuses_existing_document() {
         let mut editor = Editor::new();
         let unique = format!(

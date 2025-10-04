@@ -343,7 +343,7 @@ impl EditorApp {
         if let Some(doc) = self.state.editor().active_document() {
             let request = SaveDocumentRequest {
                 path: doc.path.clone(),
-                contents: doc.buffer.clone(),
+                contents: doc.buffer.to_string(),
                 suggested_name: Some(doc.display_name().to_string()),
             };
             Command::perform(commands::save_document(request), Message::DocumentSaved)

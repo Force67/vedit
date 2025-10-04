@@ -263,7 +263,7 @@ impl EditorState {
         let contents = self
             .editor
             .active_document()
-            .map(|doc| doc.buffer.clone())
+            .map(|doc| doc.buffer.to_string())
             .unwrap_or_default();
 
         self.buffer_content = Content::with_text(&contents);
@@ -325,7 +325,7 @@ impl EditorState {
         if let Some(buffer) = self
             .editor
             .active_document()
-            .map(|doc| doc.buffer.clone())
+            .map(|doc| doc.buffer.to_string())
         {
             self.refresh_active_highlighting(&buffer);
         }

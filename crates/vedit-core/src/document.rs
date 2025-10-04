@@ -1,4 +1,5 @@
 use crate::language::Language;
+use crate::text_buffer::TextBuffer;
 use std::collections::hash_map::DefaultHasher;
 use std::fs;
 use std::hash::{Hash, Hasher};
@@ -9,17 +10,17 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, Clone)]
 pub struct Document {
     pub path: Option<String>,
-    pub buffer: String,
+    pub buffer: TextBuffer,
     pub is_modified: bool,
     pub fingerprint: Option<u64>,
 }
 
 impl Document {
-    pub fn new(path: Option<String>, buffer: String) -> Self {
+    pub fn new(path: Option<String>, buffer: impl Into<TextBuffer>) -> Self {
         let fingerprint = path.as_ref().map(|path| compute_fingerprint(path));
         Self {
             path,
-            buffer,
+            buffer: buffer.into(),
             is_modified: false,
             fingerprint,
         }
@@ -66,7 +67,7 @@ impl Document {
 
 impl Default for Document {
     fn default() -> Self {
-        Self::new(None, String::new())
+        Self::new(None, TextBuffer::new())
     }
 }
 

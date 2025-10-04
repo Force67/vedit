@@ -194,7 +194,7 @@ fn render_status_bar(
                 state
                     .editor()
                     .active_document()
-                    .map(|doc| doc.buffer.chars().count())
+                    .map(|doc| doc.buffer.char_count())
                     .unwrap_or(0)
             ))
             .size((14.0 * scale).max(10.0)),
