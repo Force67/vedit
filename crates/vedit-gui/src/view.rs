@@ -135,9 +135,16 @@ pub fn view(state: &EditorState) -> Element<'_, Message> {
         state.editor().workspace_root().unwrap_or("(none)")
     );
 
+    let active_language = state
+        .editor()
+        .active_document()
+        .map(|doc| doc.language())
+        .unwrap_or("Plain Text");
+
     let status_bar = container(
         row![
             text(format!("File: {}", state.editor().status_line())).size((14.0 * scale).max(10.0)),
+            text(format!("Language: {}", active_language)).size((14.0 * scale).max(10.0)),
             text(workspace_status).size((14.0 * scale).max(10.0)),
             text(format!(
                 "Chars: {}",
