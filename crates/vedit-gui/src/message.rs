@@ -1,3 +1,5 @@
+use crate::quick_commands::QuickCommandId;
+use iced::keyboard;
 use iced::widget::text_editor::Action as TextEditorAction;
 use std::fmt;
 use std::hash::{Hash, Hasher};
@@ -13,6 +15,10 @@ pub enum Message {
     WorkspaceLoaded(Result<Option<(String, Vec<FileNode>)>, String>),
     WorkspaceFileActivated(String),
     BufferAction(TextEditorAction),
+    Keyboard(keyboard::Event),
+    CommandPaletteInputChanged(String),
+    CommandPaletteCommandInvoked(QuickCommandId),
+    CommandPaletteClosed,
 }
 
 #[derive(Clone)]

@@ -2,7 +2,7 @@ use crate::message::{Message, WorkspaceSnapshot};
 use crate::state::EditorState;
 use iced::alignment::{Horizontal, Vertical};
 use iced::widget::lazy;
-use iced::widget::{button, column, container, row, scrollable, text, text_editor, Column};
+use iced::widget::{button, column, container, row, scrollable, text, text_editor, text_input, Column};
 use iced::{theme, Alignment, Element, Length, Padding};
 use vedit_core::{startup_banner, FileNode};
 
@@ -146,24 +146,105 @@ pub fn view(state: &EditorState) -> Element<'_, Message> {
     .width(Length::Fill)
     .align_y(Vertical::Center);
 
+    let mut layout = column![top_bar];
+
+    if state.command_palette().is_open() {
+        layout = layout.push(render_command_palette(state));
+    }
+
+    layout = layout
+        .push(banner)
+        .push(content_row)
+        .push(status_bar);
+
     container(
-        column![top_bar, banner, content_row, status_bar]
+        layout
             .spacing(16)
             .width(Length::Fill)
             .height(Length::Fill)
             .align_items(Alignment::Start),
     )
-    .width(Length::Fill)
-    .height(Length::Fill)
-    .center_x()
-    .center_y()
-    .into()
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .center_x()
+        .center_y()
+        .into()
 }
 
 fn render_workspace_nodes(nodes: &[FileNode], indent: u16) -> Column<'static, Message> {
     nodes.iter().fold(Column::new().spacing(4), |column, node| {
         column.push(render_workspace_node(node, indent))
     })
+}
+
+fn render_command_palette(state: &EditorState) -> Element<'_, Message> {
+    let palette = state.command_palette();
+    let commands = state.quick_commands();
+    let filtered = palette.filtered_indices(commands);
+    let selection = palette.selection_index();
+
+    let submit_message = state
+        .selected_quick_command()
+        .map(Message::CommandPaletteCommandInvoked)
+        .unwrap_or(Message::CommandPaletteClosed);
+
+    let input = text_input("Type a command…", palette.query())
+        .on_input(Message::CommandPaletteInputChanged)
+        .on_submit(submit_message)
+        .padding(8)
+        .size(16)
+        .width(Length::Fill);
+
+    let mut command_list = column![]
+        .spacing(4)
+        .width(Length::Fill);
+
+    if filtered.is_empty() {
+        command_list = command_list.push(
+            container(text("No commands match your search").size(14))
+                .padding(8)
+                .width(Length::Fill)
+                .style(theme::Container::Box),
+        );
+    } else {
+        for (position, index) in filtered.iter().enumerate() {
+            if let Some(command) = commands.get(*index) {
+                let label = column![
+                    text(command.title).size(16),
+                    text(command.description).size(12),
+                ]
+                .spacing(4)
+                .width(Length::Fill);
+
+                let mut entry = button(label)
+                    .padding(8)
+                    .width(Length::Fill)
+                    .on_press(Message::CommandPaletteCommandInvoked(command.id));
+
+                if position == selection {
+                    entry = entry.style(theme::Button::Primary);
+                } else {
+                    entry = entry.style(theme::Button::Text);
+                }
+
+                command_list = command_list.push(entry);
+            }
+        }
+    }
+
+    let palette_column = column![
+        text("Quick Command Menu").size(18),
+        input,
+        scrollable(command_list).height(Length::Fixed(240.0)),
+    ]
+    .spacing(12)
+    .width(Length::Fill);
+
+    container(palette_column)
+        .padding(16)
+        .width(Length::Fill)
+        .style(theme::Container::Box)
+        .into()
 }
 
 fn render_workspace_node(node: &FileNode, indent: u16) -> Element<'static, Message> {
