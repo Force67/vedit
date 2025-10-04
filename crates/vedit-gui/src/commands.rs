@@ -76,6 +76,34 @@ pub async fn pick_workspace() -> Result<Option<WorkspaceData>, String> {
     }
 }
 
+pub async fn pick_solution() -> Result<Option<WorkspaceData>, String> {
+    if let Some(path) = FileDialog::new().pick_file() {
+        let root_string = path.to_string_lossy().to_string();
+        let tree = Editor::build_solution_tree(&path)
+            .map_err(|err| format!("Failed to load solution: {}", err))?;
+
+        let config_root = path
+            .parent()
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("."));
+        let mut config = WorkspaceConfig::load_or_default(&config_root)
+            .map_err(|err| format!("Failed to load workspace config: {}", err))?;
+        if config.name.is_none() {
+            if let Some(name) = path.file_stem().and_then(|stem| stem.to_str()) {
+                config.name = Some(name.to_string());
+            }
+        }
+
+        Ok(Some(WorkspaceData {
+            root: root_string,
+            tree,
+            config,
+        }))
+    } else {
+        Ok(None)
+    }
+}
+
 pub async fn save_document(request: SaveDocumentRequest) -> Result<Option<String>, String> {
     let SaveDocumentRequest {
         path,

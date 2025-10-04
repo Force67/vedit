@@ -15,7 +15,7 @@ use iced::widget::{
 use iced::{theme, Alignment, Color, Element, Font, Length, Padding};
 use std::collections::HashSet;
 use std::path::Path;
-use vedit_core::FileNode;
+use vedit_core::{FileNode, NodeKind};
 
 pub fn view(state: &EditorState) -> Element<'_, Message> {
     let scale = state.scale_factor() as f32;
@@ -74,6 +74,9 @@ fn render_top_bar(
         button(text("Open Folder…").size((14.0 * scale).max(10.0)))
             .style(top_bar_button())
             .on_press(Message::WorkspaceOpenRequested),
+        button(text("Open Solution…").size((14.0 * scale).max(10.0)))
+            .style(top_bar_button())
+            .on_press(Message::SolutionOpenRequested),
         {
             let label = if state.command_palette().is_open() {
                 "Command Prompt ▲"
@@ -620,17 +623,28 @@ fn render_workspace_node(
 ) -> Element<'static, Message> {
     let label_size = (14.0 * scale).max(10.0);
     let is_collapsed = node.is_directory && collapsed.contains(&node.path);
-    let can_expand = node.is_directory && node.has_children;
-    let file_label = node.name.clone();
+    let can_expand = node.is_directory && (node.has_children || !node.is_fully_scanned);
+    let tag = match node.kind {
+        NodeKind::Solution => "[SLN] ",
+        NodeKind::Project | NodeKind::ProjectStub => "[PRJ] ",
+        _ => "",
+    };
+    let base_label = if node.is_directory {
+        format!("{}{}{}", tag, node.name, if matches!(node.kind, NodeKind::Solution | NodeKind::Project) { "" } else { "/" })
+    } else {
+        format!("{}{}", tag, node.name)
+    };
     let entry: Element<'static, Message> = if node.is_directory {
         let indicator = if can_expand {
             if is_collapsed { "▸" } else { "▾" }
+        } else if matches!(node.kind, NodeKind::Solution | NodeKind::Project | NodeKind::ProjectStub) {
+            "◇"
         } else {
             "•"
         };
         let row_content = row![
             text(indicator).size(label_size),
-            text(format!("{}/", node.name)).size(label_size),
+            text(base_label).size(label_size),
         ]
         .spacing((6.0 * scale).max(3.0))
         .align_items(Alignment::Center);
@@ -641,7 +655,7 @@ fn render_workspace_node(
             .on_press(Message::WorkspaceDirectoryToggled(node.path.clone()))
             .into()
     } else {
-        button(text(file_label).size(label_size))
+        button(text(base_label).size(label_size))
             .style(theme::Button::Text)
             .width(Length::Fill)
             .on_press(Message::WorkspaceFileActivated(node.path.clone()))

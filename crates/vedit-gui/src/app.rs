@@ -70,6 +70,9 @@ impl Application for EditorApp {
             Message::WorkspaceOpenRequested => {
                 return Command::perform(commands::pick_workspace(), Message::WorkspaceLoaded);
             }
+            Message::SolutionOpenRequested => {
+                return Command::perform(commands::pick_solution(), Message::SolutionLoaded);
+            }
             Message::WorkspaceLoaded(result) => match result {
                 Ok(Some(WorkspaceData { root, tree, config })) => {
                     self.state.install_workspace(root.clone(), tree, config);
@@ -78,6 +81,16 @@ impl Application for EditorApp {
                 Ok(None) => {
                     // user cancelled dialog
                 }
+                Err(err) => {
+                    self.state.set_error(Some(err));
+                }
+            },
+            Message::SolutionLoaded(result) => match result {
+                Ok(Some(WorkspaceData { root, tree, config })) => {
+                    self.state.install_workspace(root.clone(), tree, config);
+                    self.state.clear_error();
+                }
+                Ok(None) => {}
                 Err(err) => {
                     self.state.set_error(Some(err));
                 }
@@ -305,6 +318,9 @@ impl EditorApp {
             }
             QuickCommandId::OpenFolder => {
                 Command::perform(commands::pick_workspace(), Message::WorkspaceLoaded)
+            }
+            QuickCommandId::OpenSolution => {
+                Command::perform(commands::pick_solution(), Message::SolutionLoaded)
             }
             QuickCommandId::SaveFile => self.save_active_document(),
             QuickCommandId::NewScratchBuffer => {

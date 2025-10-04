@@ -161,6 +161,11 @@ impl Editor {
         }
     }
 
+    pub fn build_solution_tree(path: impl AsRef<std::path::Path>) -> io::Result<Vec<FileNode>> {
+        workspace::build_solution_tree(path)
+            .map_err(|err| io::Error::new(io::ErrorKind::Other, err.to_string()))
+    }
+
     pub fn load_workspace_directory(&mut self, path: &str) -> io::Result<Vec<String>> {
         if self.workspace_root.is_none() {
             return Ok(Vec::new());

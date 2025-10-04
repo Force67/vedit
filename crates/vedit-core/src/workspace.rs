@@ -1,8 +1,8 @@
 use std::cmp::Ordering;
 use std::fs;
 use std::io;
-use std::path::{Path, PathBuf};
-use vedit_vs::{Solution, SolutionProject, VcxProject};
+use std::path::{Component, Path, PathBuf};
+use vedit_vs::{Solution, SolutionProject, VcxProject, VisualStudioError};
 
 const SKIPPED_DIRECTORIES: &[&str] = &[".git", "target", "node_modules", ".idea", ".vscode"];
 
@@ -15,6 +15,16 @@ pub struct FileNode {
     pub children: Vec<FileNode>,
     pub has_children: bool,
     pub is_fully_scanned: bool,
+    pub kind: NodeKind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NodeKind {
+    Directory,
+    File,
+    Solution,
+    Project,
+    ProjectStub,
 }
 
 /// Build a workspace tree for the provided directory.
@@ -31,6 +41,11 @@ pub fn build_tree_with_ignored(
         .map(|entry| entry.to_ascii_lowercase())
         .collect();
     collect_directory(root.as_ref(), &normalized)
+}
+
+pub fn build_solution_tree(path: impl AsRef<Path>) -> Result<Vec<FileNode>, VisualStudioError> {
+    let node = try_build_solution_node(path.as_ref())?;
+    Ok(vec![node])
 }
 
 fn collect_directory(path: &Path, ignored: &[String]) -> io::Result<Vec<FileNode>> {
@@ -75,14 +90,20 @@ fn collect_directory(path: &Path, ignored: &[String]) -> io::Result<Vec<FileNode
         let mut handled_special = false;
         if let Some(ext) = entry_path.extension().and_then(|ext| ext.to_str()) {
             if ext.eq_ignore_ascii_case("sln") {
-                if let Some(node) = try_build_solution_node(&entry_path) {
-                    children.push(node);
-                    handled_special = true;
+                match try_build_solution_node(&entry_path) {
+                    Ok(node) => {
+                        children.push(node);
+                        handled_special = true;
+                    }
+                    Err(_) => {}
                 }
             } else if ext.eq_ignore_ascii_case("vcxproj") {
-                if let Some(node) = try_build_vcxproj_node(&entry_path) {
-                    children.push(node);
-                    handled_special = true;
+                match try_build_vcxproj_node(&entry_path) {
+                    Ok(node) => {
+                        children.push(node);
+                        handled_special = true;
+                    }
+                    Err(_) => {}
                 }
             }
         }
@@ -118,6 +139,7 @@ fn directory_stub(path: &Path, has_children: bool) -> FileNode {
         children: Vec::new(),
         has_children,
         is_fully_scanned: false,
+        kind: NodeKind::Directory,
     }
 }
 
@@ -133,6 +155,7 @@ fn file_node(path: &Path) -> FileNode {
         children: Vec::new(),
         has_children: false,
         is_fully_scanned: true,
+        kind: NodeKind::File,
     }
 }
 
@@ -186,8 +209,26 @@ pub fn load_directory_children(node: &mut FileNode, ignored: &[String]) -> io::R
     Ok(true)
 }
 
-fn try_build_solution_node(path: &Path) -> Option<FileNode> {
-    let solution = Solution::from_path(path).ok()?;
+fn normalize_path(path: &Path) -> PathBuf {
+    let mut normalized = PathBuf::new();
+
+    for component in path.components() {
+        match component {
+            Component::Prefix(prefix) => normalized.push(prefix.as_os_str()),
+            Component::RootDir => normalized.push(component.as_os_str()),
+            Component::CurDir => {}
+            Component::ParentDir => {
+                normalized.pop();
+            }
+            Component::Normal(part) => normalized.push(part),
+        }
+    }
+
+    normalized
+}
+
+fn try_build_solution_node(path: &Path) -> Result<FileNode, VisualStudioError> {
+    let solution = Solution::from_path(path)?;
     let name = path
         .file_name()
         .and_then(|name| name.to_str())
@@ -202,18 +243,20 @@ fn try_build_solution_node(path: &Path) -> Option<FileNode> {
     sort_nodes(&mut children);
     let has_children = !children.is_empty();
 
-    Some(FileNode {
+    Ok(FileNode {
         name,
         path: path_string,
         is_directory: true,
         children,
         has_children,
         is_fully_scanned: true,
+        kind: NodeKind::Solution,
     })
 }
 
 fn project_to_node(project: SolutionProject) -> FileNode {
-    let path_string = project.absolute_path.to_string_lossy().to_string();
+    let absolute_path = normalize_path(project.absolute_path.as_path());
+    let path_string = absolute_path.to_string_lossy().to_string();
     let mut name = project.name;
 
     if let Some(vcx) = project.project {
@@ -227,6 +270,7 @@ fn project_to_node(project: SolutionProject) -> FileNode {
             children,
             has_children,
             is_fully_scanned: true,
+            kind: NodeKind::Project,
         }
     } else {
         if project.load_error.is_some() {
@@ -239,17 +283,18 @@ fn project_to_node(project: SolutionProject) -> FileNode {
             children: Vec::new(),
             has_children: false,
             is_fully_scanned: true,
+            kind: NodeKind::ProjectStub,
         }
     }
 }
 
-fn try_build_vcxproj_node(path: &Path) -> Option<FileNode> {
-    let project = VcxProject::from_path(path).ok()?;
+fn try_build_vcxproj_node(path: &Path) -> Result<FileNode, VisualStudioError> {
+    let project = VcxProject::from_path(path)?;
     let mut children = build_vcxproj_children(&project);
     sort_nodes(&mut children);
     let has_children = !children.is_empty();
 
-    Some(FileNode {
+    Ok(FileNode {
         name: project
             .name
             .clone(),
@@ -258,6 +303,7 @@ fn try_build_vcxproj_node(path: &Path) -> Option<FileNode> {
         children,
         has_children,
         is_fully_scanned: true,
+        kind: NodeKind::Project,
     })
 }
 
@@ -300,6 +346,7 @@ fn insert_item(
             children: Vec::new(),
             has_children: false,
             is_fully_scanned: true,
+            kind: NodeKind::File,
         });
         return;
     }
@@ -324,6 +371,7 @@ fn insert_item(
                 children: Vec::new(),
                 has_children: false,
                 is_fully_scanned: true,
+                kind: NodeKind::Directory,
             });
             nodes.last_mut().unwrap()
         }

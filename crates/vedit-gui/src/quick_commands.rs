@@ -2,6 +2,7 @@
 pub enum QuickCommandId {
     OpenFile,
     OpenFolder,
+    OpenSolution,
     SaveFile,
     NewScratchBuffer,
     ShowScaleFactor,
@@ -27,6 +28,12 @@ static QUICK_COMMANDS: &[QuickCommand] = &[
         title: "Open Folder…",
         description: "Choose a workspace directory",
         action: Some("quick_command.open_folder"),
+    },
+    QuickCommand {
+        id: QuickCommandId::OpenSolution,
+        title: "Open Solution…",
+        description: "Select a Visual Studio solution",
+        action: Some("quick_command.open_solution"),
     },
     QuickCommand {
         id: QuickCommandId::SaveFile,

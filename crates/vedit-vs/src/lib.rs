@@ -1,7 +1,7 @@
 use roxmltree::Document;
 use std::fs;
 use std::io;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use thiserror::Error;
 
 /// Errors that can occur when parsing Visual Studio solutions and projects.
@@ -91,7 +91,10 @@ impl Solution {
             .and_then(|stem| stem.to_str())
             .map(|stem| stem.to_string())
             .unwrap_or_else(|| path.to_string_lossy().to_string());
-        let base_dir = path.parent().unwrap_or_else(|| Path::new(""));
+        let base_dir = path
+            .parent()
+            .map(normalize_path)
+            .unwrap_or_else(|| PathBuf::from("."));
 
         let mut projects = Vec::new();
 
@@ -113,11 +116,7 @@ impl Solution {
                 .trim()
                 .to_string();
             let relative_path = PathBuf::from(&normalized_rel);
-            let absolute_path = if relative_path.is_absolute() {
-                relative_path.clone()
-            } else {
-                base_dir.join(&relative_path)
-            };
+            let absolute_path = resolve_path(&base_dir, &relative_path);
 
             let mut project = SolutionProject {
                 name: entry.name,
@@ -165,7 +164,10 @@ impl VcxProject {
             source,
         })?;
 
-        let project_dir = path.parent().map(Path::to_path_buf).unwrap_or_default();
+        let project_dir = path
+            .parent()
+            .map(normalize_path)
+            .unwrap_or_else(|| PathBuf::from("."));
         let mut files = Vec::new();
 
         for node in document.descendants() {
@@ -180,11 +182,7 @@ impl VcxProject {
 
             if let Some(include) = node.attribute("Include") {
                 if let Some(relative_path) = normalize_include(include) {
-                    let full_path = if relative_path.is_absolute() {
-                        relative_path.clone()
-                    } else {
-                        project_dir.join(&relative_path)
-                    };
+                    let full_path = resolve_path(&project_dir, &relative_path);
                     files.push(VcxItem {
                         include: relative_path,
                         full_path,
@@ -203,7 +201,7 @@ impl VcxProject {
                 .and_then(|stem| stem.to_str())
                 .map(|stem| stem.to_string())
                 .unwrap_or_else(|| path.to_string_lossy().to_string()),
-            path: path.to_path_buf(),
+            path: normalize_path(path),
             files,
         })
     }
@@ -316,6 +314,41 @@ fn normalize_include(value: &str) -> Option<PathBuf> {
     }
     let normalized = trimmed.replace('\\', "/");
     Some(PathBuf::from(normalized))
+}
+
+fn resolve_path(base: &Path, relative: &Path) -> PathBuf {
+    if relative
+        .components()
+        .next()
+        .map(|comp| matches!(comp, Component::Prefix(_)))
+        .unwrap_or(false)
+    {
+        return normalize_path(relative);
+    }
+
+    if relative.is_absolute() {
+        normalize_path(relative)
+    } else {
+        normalize_path(&base.join(relative))
+    }
+}
+
+fn normalize_path(path: &Path) -> PathBuf {
+    let mut normalized = PathBuf::new();
+
+    for component in path.components() {
+        match component {
+            Component::Prefix(prefix) => normalized.push(prefix.as_os_str()),
+            Component::RootDir => normalized.push(component.as_os_str()),
+            Component::CurDir => {}
+            Component::ParentDir => {
+                normalized.pop();
+            }
+            Component::Normal(part) => normalized.push(part),
+        }
+    }
+
+    normalized
 }
 
 #[cfg(test)]
