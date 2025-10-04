@@ -1,7 +1,7 @@
 use rfd::FileDialog;
 use std::fs;
 use std::path::PathBuf;
-use vedit_config::WorkspaceConfig;
+use vedit_config::{WorkspaceConfig, WorkspaceMetadata};
 use vedit_core::{Document, Editor, FileNode};
 
 #[derive(Debug, Clone)]
@@ -22,6 +22,7 @@ pub struct WorkspaceData {
     pub root: String,
     pub tree: Vec<FileNode>,
     pub config: WorkspaceConfig,
+    pub metadata: WorkspaceMetadata,
 }
 
 pub async fn pick_keymap_location(current: Option<String>) -> Result<Option<String>, String> {
@@ -59,6 +60,8 @@ pub async fn pick_workspace() -> Result<Option<WorkspaceData>, String> {
         let root_string = path.to_string_lossy().to_string();
         let mut config = WorkspaceConfig::load_or_default(&path)
             .map_err(|err| format!("Failed to load workspace config: {}", err))?;
+        let metadata = WorkspaceMetadata::load_or_default(&path)
+            .map_err(|err| format!("Failed to load workspace metadata: {}", err))?;
         if config.name.is_none() {
             if let Some(name) = path.file_name().and_then(|name| name.to_str()) {
                 config.name = Some(name.to_string());
@@ -70,6 +73,7 @@ pub async fn pick_workspace() -> Result<Option<WorkspaceData>, String> {
             root: root_string,
             tree,
             config,
+            metadata,
         }))
     } else {
         Ok(None)
@@ -88,6 +92,8 @@ pub async fn pick_solution() -> Result<Option<WorkspaceData>, String> {
             .unwrap_or_else(|| PathBuf::from("."));
         let mut config = WorkspaceConfig::load_or_default(&config_root)
             .map_err(|err| format!("Failed to load workspace config: {}", err))?;
+        let metadata = WorkspaceMetadata::load_or_default(&config_root)
+            .map_err(|err| format!("Failed to load workspace metadata: {}", err))?;
         if config.name.is_none() {
             if let Some(name) = path.file_stem().and_then(|stem| stem.to_str()) {
                 config.name = Some(name.to_string());
@@ -98,6 +104,7 @@ pub async fn pick_solution() -> Result<Option<WorkspaceData>, String> {
             root: root_string,
             tree,
             config,
+            metadata,
         }))
     } else {
         Ok(None)
@@ -155,5 +162,15 @@ pub async fn save_workspace_config(root: String, config: WorkspaceConfig) -> Res
     config
         .save(&root)
         .map_err(|err| format!("Failed to save workspace config: {}", err))?;
+    Ok(root)
+}
+
+pub async fn save_workspace_metadata(
+    root: String,
+    metadata: WorkspaceMetadata,
+) -> Result<String, String> {
+    metadata
+        .save(&root)
+        .map_err(|err| format!("Failed to save workspace metadata: {}", err))?;
     Ok(root)
 }

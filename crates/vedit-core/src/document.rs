@@ -1,10 +1,13 @@
 use crate::language::Language;
+use crate::sticky::StickyNote;
 use crate::text_buffer::TextBuffer;
+use std::cmp;
 use std::collections::hash_map::DefaultHasher;
 use std::fs;
 use std::hash::{Hash, Hasher};
 use std::io;
 use std::path::{Path, PathBuf};
+use vedit_config::StickyNoteRecord;
 
 /// Represents an open file in the editor workspace.
 #[derive(Debug, Clone)]
@@ -13,6 +16,7 @@ pub struct Document {
     pub buffer: TextBuffer,
     pub is_modified: bool,
     pub fingerprint: Option<u64>,
+    pub sticky_notes: Vec<StickyNote>,
 }
 
 impl Document {
@@ -23,6 +27,7 @@ impl Document {
             buffer: buffer.into(),
             is_modified: false,
             fingerprint,
+            sticky_notes: Vec::new(),
         }
     }
 
@@ -62,6 +67,120 @@ impl Document {
             .as_deref()
             .map(detect_language_from_path)
             .unwrap_or(Language::PlainText)
+    }
+
+    pub fn sticky_notes(&self) -> &[StickyNote] {
+        &self.sticky_notes
+    }
+
+    pub fn sticky_notes_mut(&mut self) -> &mut [StickyNote] {
+        self.sticky_notes.as_mut_slice()
+    }
+
+    pub fn has_sticky_notes(&self) -> bool {
+        !self.sticky_notes.is_empty()
+    }
+
+    pub fn clear_sticky_notes(&mut self) {
+        self.sticky_notes.clear();
+    }
+
+    pub fn insert_sticky_note(&mut self, note: StickyNote) {
+        self.sticky_notes.push(note);
+    }
+
+    pub fn find_sticky_note_mut(&mut self, id: u64) -> Option<&mut StickyNote> {
+        self.sticky_notes.iter_mut().find(|note| note.id == id)
+    }
+
+    pub fn remove_sticky_note(&mut self, id: u64) -> Option<StickyNote> {
+        if let Some(index) = self.sticky_notes.iter().position(|note| note.id == id) {
+            Some(self.sticky_notes.remove(index))
+        } else {
+            None
+        }
+    }
+
+    pub fn set_sticky_notes_from_records(
+        &mut self,
+        records: &[StickyNoteRecord],
+        contents: &str,
+    ) {
+        self.sticky_notes.clear();
+        for record in records {
+            let offset = offset_for_line_column(contents, record.line, record.column);
+            let clamped = cmp::min(offset, contents.len());
+            let (line, column) = position_for_offset(contents, clamped);
+            self.sticky_notes.push(StickyNote::new(
+                record.id,
+                line,
+                column,
+                record.content.clone(),
+                clamped,
+            ));
+        }
+    }
+
+    pub fn to_sticky_records(&self, file: &str) -> Vec<StickyNoteRecord> {
+        self.sticky_notes
+            .iter()
+            .map(|note| {
+                StickyNoteRecord::new(
+                    note.id,
+                    file.to_string(),
+                    note.line,
+                    note.column,
+                    note.content.clone(),
+                )
+            })
+            .collect()
+    }
+
+    pub fn apply_sticky_offset_delta(
+        &mut self,
+        delete: Option<(usize, usize)>,
+        insert: Option<(usize, usize)>,
+        contents: &str,
+    ) -> bool {
+        if self.sticky_notes.is_empty() {
+            return false;
+        }
+
+        let mut changed = false;
+
+        for note in &mut self.sticky_notes {
+            if let Some((start, len)) = delete {
+                let end = start.saturating_add(len);
+                if note.offset >= start && note.offset < end {
+                    note.offset = start;
+                    changed = true;
+                } else if note.offset >= end {
+                    note.offset = note.offset.saturating_sub(len);
+                    changed = true;
+                }
+            }
+
+            if let Some((start, len)) = insert {
+                if len > 0 && note.offset >= start {
+                    note.offset = note.offset.saturating_add(len);
+                    changed = true;
+                }
+            }
+
+            let clamped = cmp::min(note.offset, contents.len());
+            let (line, column) = position_for_offset(contents, clamped);
+            note.update(line, column, clamped);
+        }
+
+        changed
+    }
+
+    pub fn offset_for_line_column(contents: &str, line: usize, column: usize) -> usize {
+        offset_for_line_column(contents, line, column)
+    }
+
+    pub fn line_column_for_offset(contents: &str, offset: usize) -> (usize, usize) {
+        position_for_offset(contents, offset)
     }
 }
 
@@ -153,6 +272,62 @@ fn detect_language_from_path(path: &str) -> Language {
     }
 }
 
+fn offset_for_line_column(contents: &str, line: usize, column: usize) -> usize {
+    if contents.is_empty() {
+        return 0;
+    }
+
+    let mut current_line = 1usize;
+    let mut offset = 0usize;
+    let target_line = line.max(1);
+
+    for segment in contents.split_inclusive('\n') {
+        if current_line == target_line {
+            let trimmed = if segment.ends_with('\n') {
+                &segment[..segment.len() - 1]
+            } else {
+                segment
+            };
+
+            let mut char_column = 1usize;
+            for (idx, _) in trimmed.char_indices() {
+                if char_column == column.max(1) {
+                    return offset + idx;
+                }
+                char_column += 1;
+            }
+
+            return offset + trimmed.len();
+        }
+
+        offset += segment.len();
+        current_line += 1;
+    }
+
+    contents.len()
+}
+
+fn position_for_offset(contents: &str, offset: usize) -> (usize, usize) {
+    let clamped = offset.min(contents.len());
+    let mut line = 1usize;
+    let mut column = 1usize;
+
+    for (idx, ch) in contents.char_indices() {
+        if idx >= clamped {
+            break;
+        }
+
+        if ch == '\n' {
+            line += 1;
+            column = 1;
+        } else {
+            column += 1;
+        }
+    }
+
+    (line, column)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -173,5 +348,15 @@ mod tests {
     fn defaults_to_plain_text_without_path() {
         let doc = Document::default();
         assert_eq!(doc.language(), Language::PlainText);
+    }
+
+    #[test]
+    fn computes_line_column_offsets() {
+        let text = "fn main()\nprintln!(\"hi\");";
+        let offset = super::offset_for_line_column(text, 2, 5);
+        assert_eq!(&text[offset..offset + 3], "ln!(");
+
+        let pos = super::position_for_offset(text, offset);
+        assert_eq!(pos, (2, 5));
     }
 }

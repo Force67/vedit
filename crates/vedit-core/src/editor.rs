@@ -1,9 +1,10 @@
 use crate::document::Document;
+use crate::sticky::StickyNote;
 use crate::text_buffer::TextBuffer;
 use crate::workspace::{self, FileNode};
 use std::io;
 use std::sync::Arc;
-use vedit_config::WorkspaceConfig;
+use vedit_config::{WorkspaceConfig, WorkspaceMetadata};
 
 /// High-level editor session managing open documents and workspace state.
 #[derive(Debug)]
@@ -14,6 +15,8 @@ pub struct Editor {
     workspace_tree: Arc<Vec<FileNode>>,
     workspace_generation: u64,
     workspace_config: Option<WorkspaceConfig>,
+    workspace_metadata: Option<WorkspaceMetadata>,
+    workspace_metadata_dirty: bool,
 }
 
 impl Default for Editor {
@@ -25,6 +28,8 @@ impl Default for Editor {
             workspace_tree: Arc::new(Vec::new()),
             workspace_generation: 0,
             workspace_config: None,
+            workspace_metadata: None,
+            workspace_metadata_dirty: false,
         }
     }
 }
@@ -70,25 +75,136 @@ impl Editor {
             {
                 self.open_documents[index] = document;
                 self.active_index = index;
+                self.apply_metadata_to_document(index);
                 return index;
             }
         }
 
         self.open_documents.push(document);
         self.active_index = self.open_documents.len() - 1;
+        self.apply_metadata_to_document(self.active_index);
         self.active_index
     }
 
     pub fn update_active_buffer(&mut self, contents: String) {
-        if let Some(doc) = self.active_document_mut() {
+        if self.open_documents.is_empty() {
+            return;
+        }
+
+        let current_index = self.active_index;
+        if let Some(doc) = self.open_documents.get_mut(current_index) {
             let current = doc.buffer.to_string();
             if current == contents {
                 return;
             }
 
-            apply_text_diff(&mut doc.buffer, &current, &contents);
-            doc.is_modified = true;
+            if let Some(change) = TextChange::between(&current, &contents) {
+                change.apply(&mut doc.buffer);
+                doc.is_modified = true;
+
+                if doc.has_sticky_notes() {
+                    doc.apply_sticky_offset_delta(
+                        change.deletion_range(),
+                        change.insertion_range(),
+                        &contents,
+                    );
+                    self.sync_metadata_for_document(current_index);
+                }
+            }
         }
+    }
+
+    pub fn add_sticky_note(
+        &mut self,
+        line: usize,
+        column: usize,
+        content: String,
+    ) -> Option<u64> {
+        let id = self.workspace_metadata.as_ref()?.next_sticky_id();
+        let (path, records) = {
+            let doc = self.active_document_mut()?;
+            let path = doc.path.clone()?;
+            let snapshot = doc.buffer.to_string();
+            let offset = Document::offset_for_line_column(&snapshot, line, column);
+            let (resolved_line, resolved_column) =
+                Document::line_column_for_offset(&snapshot, offset);
+            let note = StickyNote::new(id, resolved_line, resolved_column, content, offset);
+            doc.insert_sticky_note(note);
+            let records = doc.to_sticky_records(&path);
+            (path, records)
+        };
+
+        if let Some(metadata) = self.workspace_metadata.as_mut() {
+            if metadata.set_notes_for_file(&path, records) {
+                self.workspace_metadata_dirty = true;
+            }
+        }
+
+        Some(id)
+    }
+
+    pub fn update_sticky_note_content(&mut self, id: u64, content: String) -> bool {
+        if self.open_documents.is_empty() {
+            return false;
+        }
+
+        let index = self.active_index;
+        let Some(doc) = self.open_documents.get_mut(index) else {
+            return false;
+        };
+
+        let path = match doc.path.clone() {
+            Some(path) => path,
+            None => return false,
+        };
+
+        let Some(note) = doc.find_sticky_note_mut(id) else {
+            return false;
+        };
+
+        if note.content == content {
+            return false;
+        }
+
+        note.content = content;
+
+        if let Some(metadata) = self.workspace_metadata.as_mut() {
+            let records = doc.to_sticky_records(&path);
+            if metadata.set_notes_for_file(&path, records) {
+                self.workspace_metadata_dirty = true;
+            }
+        }
+
+        true
+    }
+
+    pub fn remove_sticky_note(&mut self, id: u64) -> bool {
+        if self.open_documents.is_empty() {
+            return false;
+        }
+
+        let index = self.active_index;
+        let Some(doc) = self.open_documents.get_mut(index) else {
+            return false;
+        };
+
+        let path = match doc.path.clone() {
+            Some(path) => path,
+            None => return false,
+        };
+
+        if doc.remove_sticky_note(id).is_none() {
+            return false;
+        }
+
+        if let Some(metadata) = self.workspace_metadata.as_mut() {
+            let records = doc.to_sticky_records(&path);
+            if metadata.set_notes_for_file(&path, records) {
+                self.workspace_metadata_dirty = true;
+            }
+        }
+
+        true
     }
 
     pub fn clear_active_modified(&mut self) {
@@ -98,9 +214,26 @@ impl Editor {
     }
 
     pub fn mark_active_document_saved(&mut self, path: Option<String>) {
-        if let Some(doc) = self.active_document_mut() {
+        if self.open_documents.is_empty() {
+            return;
+        }
+
+        let index = self.active_index;
+        if let Some(doc) = self.open_documents.get_mut(index) {
             if let Some(path) = path {
-                doc.set_path(path);
+                let previous = doc.path.clone();
+                doc.set_path(path.clone());
+                if let Some(metadata) = self.workspace_metadata.as_mut() {
+                    if let Some(old_path) = previous {
+                        if metadata.remove_file(&old_path) {
+                            self.workspace_metadata_dirty = true;
+                        }
+                    }
+                    let records = doc.to_sticky_records(&path);
+                    if metadata.set_notes_for_file(&path, records) {
+                        self.workspace_metadata_dirty = true;
+                    }
+                }
             }
             doc.mark_clean();
         }
@@ -126,17 +259,43 @@ impl Editor {
         self.workspace_config.as_mut()
     }
 
-    pub fn set_workspace(&mut self, root: String, tree: Vec<FileNode>, config: WorkspaceConfig) {
+    pub fn workspace_metadata(&self) -> Option<&WorkspaceMetadata> {
+        self.workspace_metadata.as_ref()
+    }
+
+    pub fn workspace_metadata_mut(&mut self) -> Option<&mut WorkspaceMetadata> {
+        self.workspace_metadata.as_mut()
+    }
+
+    pub fn active_sticky_notes(&self) -> Option<&[StickyNote]> {
+        self.active_document().map(|doc| doc.sticky_notes())
+    }
+
+    pub fn set_workspace(
+        &mut self,
+        root: String,
+        tree: Vec<FileNode>,
+        config: WorkspaceConfig,
+        metadata: WorkspaceMetadata,
+    ) {
         self.workspace_root = Some(root);
         self.workspace_tree = Arc::new(tree);
         self.workspace_config = Some(config);
         self.workspace_generation = self.workspace_generation.wrapping_add(1);
+        self.workspace_metadata = Some(metadata);
+        self.workspace_metadata_dirty = false;
+        self.apply_metadata_to_documents();
     }
 
     pub fn clear_workspace(&mut self) {
         self.workspace_root = None;
         self.workspace_tree = Arc::new(Vec::new());
         self.workspace_config = None;
+        self.workspace_metadata = None;
+        self.workspace_metadata_dirty = false;
+        for doc in &mut self.open_documents {
+            doc.clear_sticky_notes();
+        }
         self.workspace_generation = self.workspace_generation.wrapping_add(1);
     }
 
@@ -148,6 +307,61 @@ impl Editor {
             ))
         } else {
             None
+        }
+    }
+
+    pub fn take_workspace_metadata_payload(&mut self) -> Option<(String, WorkspaceMetadata)> {
+        if !self.workspace_metadata_dirty {
+            return None;
+        }
+
+        let root = self.workspace_root.clone()?;
+        let metadata = self.workspace_metadata.clone()?;
+        self.workspace_metadata_dirty = false;
+        Some((root, metadata))
+    }
+
+    fn apply_metadata_to_document(&mut self, index: usize) {
+        let Some(doc) = self.open_documents.get_mut(index) else {
+            return;
+        };
+
+        let Some(metadata) = self.workspace_metadata.as_ref() else {
+            doc.clear_sticky_notes();
+            return;
+        };
+
+        let Some(path) = doc.path.clone() else {
+            doc.clear_sticky_notes();
+            return;
+        };
+
+        let records = metadata.notes_for_file(&path);
+        let contents = doc.buffer.to_string();
+        doc.set_sticky_notes_from_records(&records, &contents);
+    }
+
+    fn apply_metadata_to_documents(&mut self) {
+        for index in 0..self.open_documents.len() {
+            self.apply_metadata_to_document(index);
+        }
+    }
+
+    fn sync_metadata_for_document(&mut self, index: usize) {
+        let Some(doc) = self.open_documents.get(index) else {
+            return;
+        };
+
+        let Some(path) = doc.path.as_deref() else {
+            return;
+        };
+
+        let Some(metadata) = self.workspace_metadata.as_mut() else {
+            return;
+        };
+
+        if metadata.set_notes_for_file(path, doc.to_sticky_records(path)) {
+            self.workspace_metadata_dirty = true;
         }
     }
 
@@ -227,59 +441,118 @@ impl Editor {
     }
 }
 
-fn apply_text_diff(buffer: &mut TextBuffer, old_text: &str, new_text: &str) {
-    if old_text == new_text {
-        return;
-    }
+#[derive(Debug, Clone)]
+struct TextChange {
+    delete: Option<Deletion>,
+    insert: Option<Insertion>,
+}
 
-    let old_bytes = old_text.as_bytes();
-    let new_bytes = new_text.as_bytes();
+#[derive(Debug, Clone)]
+struct Deletion {
+    start: usize,
+    len: usize,
+}
 
-    let mut prefix = 0usize;
-    let max_prefix = old_bytes.len().min(new_bytes.len());
-    while prefix < max_prefix && old_bytes[prefix] == new_bytes[prefix] {
-        prefix += 1;
-    }
+#[derive(Debug, Clone)]
+struct Insertion {
+    start: usize,
+    text: String,
+}
 
-    while prefix > 0
-        && (!old_text.is_char_boundary(prefix) || !new_text.is_char_boundary(prefix))
-    {
-        prefix -= 1;
-    }
-
-    let mut suffix = 0usize;
-    let max_suffix = old_bytes.len().min(new_bytes.len()).saturating_sub(prefix);
-    while suffix < max_suffix
-        && old_bytes[old_bytes.len() - 1 - suffix]
-            == new_bytes[new_bytes.len() - 1 - suffix]
-    {
-        suffix += 1;
-    }
-
-    while suffix > 0 {
-        let old_index = old_bytes.len() - suffix;
-        let new_index = new_bytes.len() - suffix;
-        if old_index < prefix || new_index < prefix {
-            suffix = 0;
-            break;
+impl TextChange {
+    fn between(old_text: &str, new_text: &str) -> Option<Self> {
+        if old_text == new_text {
+            return None;
         }
-        if old_text.is_char_boundary(old_index) && new_text.is_char_boundary(new_index) {
-            break;
+
+        let old_bytes = old_text.as_bytes();
+        let new_bytes = new_text.as_bytes();
+
+        let mut prefix = 0usize;
+        let max_prefix = old_bytes.len().min(new_bytes.len());
+        while prefix < max_prefix && old_bytes[prefix] == new_bytes[prefix] {
+            prefix += 1;
         }
-        suffix -= 1;
+
+        while prefix > 0
+            && (!old_text.is_char_boundary(prefix) || !new_text.is_char_boundary(prefix))
+        {
+            prefix -= 1;
+        }
+
+        let mut suffix = 0usize;
+        let max_suffix = old_bytes.len().min(new_bytes.len()).saturating_sub(prefix);
+        while suffix < max_suffix
+            && old_bytes[old_bytes.len() - 1 - suffix]
+                == new_bytes[new_bytes.len() - 1 - suffix]
+        {
+            suffix += 1;
+        }
+
+        while suffix > 0 {
+            let old_index = old_bytes.len() - suffix;
+            let new_index = new_bytes.len() - suffix;
+            if old_index < prefix || new_index < prefix {
+                suffix = 0;
+                break;
+            }
+            if old_text.is_char_boundary(old_index) && new_text.is_char_boundary(new_index) {
+                break;
+            }
+            suffix -= 1;
+        }
+
+        let delete_start = prefix;
+        let delete_end = old_bytes.len().saturating_sub(suffix);
+        let delete_len = delete_end.saturating_sub(delete_start);
+
+        let insert_start = prefix;
+        let insert_end = new_bytes.len().saturating_sub(suffix);
+        let insert_len = insert_end.saturating_sub(insert_start);
+
+        let delete = if delete_len > 0 {
+            Some(Deletion {
+                start: delete_start,
+                len: delete_len,
+            })
+        } else {
+            None
+        };
+
+        let insert = if insert_len > 0 {
+            Some(Insertion {
+                start: insert_start,
+                text: new_text[insert_start..insert_end].to_string(),
+            })
+        } else {
+            None
+        };
+
+        if delete.is_none() && insert.is_none() {
+            None
+        } else {
+            Some(Self { delete, insert })
+        }
     }
 
-    let delete_start = prefix;
-    let delete_end = old_bytes.len().saturating_sub(suffix);
-    if delete_end > delete_start {
-        buffer.delete(delete_start..delete_end);
+    fn apply(&self, buffer: &mut TextBuffer) {
+        if let Some(delete) = &self.delete {
+            buffer.delete(delete.start..delete.start + delete.len);
+        }
+
+        if let Some(insert) = &self.insert {
+            buffer.insert(insert.start, &insert.text);
+        }
     }
 
-    let insert_start = prefix;
-    let insert_end = new_bytes.len().saturating_sub(suffix);
-    if insert_end > insert_start {
-        let inserted = &new_text[insert_start..insert_end];
-        buffer.insert(insert_start, inserted);
+    fn deletion_range(&self) -> Option<(usize, usize)> {
+        self.delete.as_ref().map(|deletion| (deletion.start, deletion.len))
+    }
+
+    fn insertion_range(&self) -> Option<(usize, usize)> {
+        self.insert
+            .as_ref()
+            .map(|insert| (insert.start, insert.text.len()))
     }
 }
 
@@ -291,30 +564,34 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
-    fn apply_text_diff_handles_inserts_and_deletes() {
+    fn text_change_handles_inserts_and_deletes() {
         let original = "hello";
         let mut buffer = TextBuffer::from_text(original);
         let expanded = "hello world";
-        super::apply_text_diff(&mut buffer, original, expanded);
+        let change = super::TextChange::between(original, expanded).unwrap();
+        change.apply(&mut buffer);
         assert_eq!(buffer.to_string(), expanded);
 
         let shortened = "hello";
-        super::apply_text_diff(&mut buffer, expanded, shortened);
+        let shrink = super::TextChange::between(expanded, shortened).unwrap();
+        shrink.apply(&mut buffer);
         assert_eq!(buffer.to_string(), shortened);
     }
 
     #[test]
-    fn apply_text_diff_preserves_unicode_boundaries() {
+    fn text_change_preserves_unicode_boundaries() {
         let original = "café";
         let mut buffer = TextBuffer::from_text(original);
         let extended = "cafés";
-        super::apply_text_diff(&mut buffer, original, extended);
+        let insertion = super::TextChange::between(original, extended).unwrap();
+        insertion.apply(&mut buffer);
         assert_eq!(buffer.to_string(), extended);
 
         let emoji_old = "🙂🙂";
         let emoji_new = "🙂";
         let mut emoji_buffer = TextBuffer::from_text(emoji_old);
-        super::apply_text_diff(&mut emoji_buffer, emoji_old, emoji_new);
+        let removal = super::TextChange::between(emoji_old, emoji_new).unwrap();
+        removal.apply(&mut emoji_buffer);
         assert_eq!(emoji_buffer.to_string(), emoji_new);
     }
 

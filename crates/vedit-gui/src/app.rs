@@ -74,8 +74,14 @@ impl Application for EditorApp {
                 return Command::perform(commands::pick_solution(), Message::SolutionLoaded);
             }
             Message::WorkspaceLoaded(result) => match result {
-                Ok(Some(WorkspaceData { root, tree, config })) => {
-                    self.state.install_workspace(root.clone(), tree, config);
+                Ok(Some(WorkspaceData {
+                    root,
+                    tree,
+                    config,
+                    metadata,
+                })) => {
+                    self.state
+                        .install_workspace(root.clone(), tree, config, metadata);
                     self.state.clear_error();
                 }
                 Ok(None) => {
@@ -86,8 +92,14 @@ impl Application for EditorApp {
                 }
             },
             Message::SolutionLoaded(result) => match result {
-                Ok(Some(WorkspaceData { root, tree, config })) => {
-                    self.state.install_workspace(root.clone(), tree, config);
+                Ok(Some(WorkspaceData {
+                    root,
+                    tree,
+                    config,
+                    metadata,
+                })) => {
+                    self.state
+                        .install_workspace(root.clone(), tree, config, metadata);
                     self.state.clear_error();
                 }
                 Ok(None) => {}
@@ -107,6 +119,12 @@ impl Application for EditorApp {
             }
             Message::BufferAction(action) => {
                 self.state.apply_buffer_action(action);
+                if let Some((root, metadata)) = self.state.take_workspace_metadata_payload() {
+                    return Command::perform(
+                        commands::save_workspace_metadata(root, metadata),
+                        Message::WorkspaceMetadataSaved,
+                    );
+                }
             }
             Message::BufferScrollChanged(position) => {
                 self.state.set_buffer_scroll(position);
@@ -115,6 +133,14 @@ impl Application for EditorApp {
                 Ok(Some(path)) => {
                     self.state.handle_document_saved(Some(path));
                     self.state.clear_error();
+                    if let Some((root, metadata)) =
+                        self.state.take_workspace_metadata_payload()
+                    {
+                        return Command::perform(
+                            commands::save_workspace_metadata(root, metadata),
+                            Message::WorkspaceMetadataSaved,
+                        );
+                    }
                 }
                 Ok(None) => {}
                 Err(err) => {
@@ -129,6 +155,45 @@ impl Application for EditorApp {
                     self.state.set_error(Some(err));
                 }
             },
+            Message::WorkspaceMetadataSaved(result) => match result {
+                Ok(root) => {
+                    self.state.apply_workspace_metadata_saved(root);
+                }
+                Err(err) => {
+                    self.state.set_error(Some(err));
+                }
+            },
+            Message::StickyNoteCreateRequested => {
+                if let Err(err) = self.state.add_sticky_note_at_cursor() {
+                    self.state.set_error(Some(err));
+                } else {
+                    self.state.clear_error();
+                }
+                if let Some((root, metadata)) = self.state.take_workspace_metadata_payload() {
+                    return Command::perform(
+                        commands::save_workspace_metadata(root, metadata),
+                        Message::WorkspaceMetadataSaved,
+                    );
+                }
+            }
+            Message::StickyNoteContentChanged(id, value) => {
+                self.state.update_sticky_note_content(id, value);
+                if let Some((root, metadata)) = self.state.take_workspace_metadata_payload() {
+                    return Command::perform(
+                        commands::save_workspace_metadata(root, metadata),
+                        Message::WorkspaceMetadataSaved,
+                    );
+                }
+            }
+            Message::StickyNoteDeleted(id) => {
+                self.state.remove_sticky_note(id);
+                if let Some((root, metadata)) = self.state.take_workspace_metadata_payload() {
+                    return Command::perform(
+                        commands::save_workspace_metadata(root, metadata),
+                        Message::WorkspaceMetadataSaved,
+                    );
+                }
+            }
             Message::SettingsOpened => {
                 self.state.open_settings();
             }
@@ -338,6 +403,20 @@ impl EditorApp {
                 println!("{}", scale_info);
                 self.state.set_error(Some(scale_info));
                 Command::none()
+            }
+            QuickCommandId::AddStickyNote => {
+                match self.state.add_sticky_note_at_cursor() {
+                    Ok(()) => self.state.clear_error(),
+                    Err(err) => self.state.set_error(Some(err)),
+                }
+                if let Some((root, metadata)) = self.state.take_workspace_metadata_payload() {
+                    Command::perform(
+                        commands::save_workspace_metadata(root, metadata),
+                        Message::WorkspaceMetadataSaved,
+                    )
+                } else {
+                    Command::none()
+                }
             }
         }
     }

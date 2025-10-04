@@ -4,6 +4,7 @@ pub mod keybinds;
 pub mod workspace;
 pub mod language;
 pub mod text_buffer;
+pub mod sticky;
 
 /// Returns the startup banner presented when launching the editor.
 pub fn startup_banner() -> String {
@@ -17,3 +18,4 @@ pub use keybinds::{KeyCombination, KeyEvent, Keymap, KeymapError, Key, QUICK_COM
 pub use workspace::{FileNode, NodeKind};
 pub use language::Language;
 pub use vedit_config::WorkspaceConfig;
+pub use sticky::StickyNote;

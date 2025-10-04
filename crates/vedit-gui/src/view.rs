@@ -572,10 +572,62 @@ fn render_workspace_panel(
             .into()
     };
 
+    let mut sticky_list = column![]
+        .spacing(spacing_small)
+        .width(Length::Fill);
+    let sticky_notes = state.active_sticky_notes();
+    if sticky_notes.is_empty() {
+        sticky_list = sticky_list.push(
+            text("No sticky notes for this file").size((12.0 * scale).max(9.0)),
+        );
+    } else {
+        for note in sticky_notes {
+            let note_id = note.id;
+            let header = text(format!("Line {}, Column {}", note.line, note.column))
+                .size((12.0 * scale).max(9.0));
+            let input = text_input("Add a note…", &note.content)
+                .on_input(move |value| Message::StickyNoteContentChanged(note_id, value))
+                .padding(spacing_small / 2.0)
+                .size((14.0 * scale).max(10.0))
+                .width(Length::Fill);
+            let remove = button(text("Remove").size((12.0 * scale).max(9.0)))
+                .style(theme::Button::Text)
+                .on_press(Message::StickyNoteDeleted(note_id));
+            let entry = column![
+                header,
+                input,
+                row![horizontal_space().width(Length::Fill), remove]
+                    .align_items(Alignment::Center),
+            ]
+            .spacing(spacing_small / 2.0)
+            .width(Length::Fill);
+            sticky_list = sticky_list.push(
+                container(entry)
+                    .padding(spacing_small)
+                    .width(Length::Fill)
+                    .style(panel_container()),
+            );
+        }
+    }
+
+    let add_button = button(text("Add Sticky Note").size((14.0 * scale).max(10.0)))
+        .style(theme::Button::Primary)
+        .on_press(Message::StickyNoteCreateRequested);
+
+    let sticky_section = column![
+        text("Sticky Notes").size((16.0 * scale).max(12.0)),
+        sticky_list,
+        add_button,
+    ]
+    .spacing(spacing_small)
+    .width(Length::Fill);
+
     container(
         column![
             text(workspace_title).size((16.0 * scale).max(12.0)),
             workspace_contents,
+            Rule::horizontal(1),
+            sticky_section,
         ]
         .spacing(spacing_small)
         .height(Length::Fill),

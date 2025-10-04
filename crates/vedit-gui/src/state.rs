@@ -9,7 +9,8 @@ use iced::keyboard;
 use std::collections::HashSet;
 use std::env;
 use std::path::{Path, PathBuf};
-use vedit_core::{Editor, FileNode, KeyCombination, KeyEvent, Keymap, KeymapError, Language, WorkspaceConfig};
+use vedit_core::{Editor, FileNode, KeyCombination, KeyEvent, Keymap, KeymapError, Language, StickyNote, WorkspaceConfig};
+use vedit_config::WorkspaceMetadata;
 
 const ZOOM_STEP_ENV: &str = "VEDIT_ZOOM_STEP";
 const ZOOM_MIN_ENV: &str = "VEDIT_ZOOM_MIN";
@@ -365,8 +366,10 @@ impl EditorState {
         root: String,
         tree: Vec<FileNode>,
         config: WorkspaceConfig,
+        metadata: WorkspaceMetadata,
     ) {
-        self.editor.set_workspace(root, tree, config);
+        self.editor
+            .set_workspace(root, tree, config, metadata);
         self.workspace_notice = None;
         self.workspace_collapsed.clear();
         if let Some(nodes) = self.editor.workspace_tree() {
@@ -407,6 +410,60 @@ impl EditorState {
 
     pub fn apply_workspace_config_saved(&mut self, root: String) {
         self.workspace_notice = Some(format!("Workspace preferences saved for {}", root));
+    }
+
+    pub fn apply_workspace_metadata_saved(&mut self, root: String) {
+        self.workspace_notice = Some(format!("Workspace notes saved for {}", root));
+    }
+
+    pub fn take_workspace_metadata_payload(&mut self) -> Option<(String, WorkspaceMetadata)> {
+        self.editor.take_workspace_metadata_payload()
+    }
+
+    pub fn active_sticky_notes(&self) -> Vec<StickyNote> {
+        self.editor
+            .active_sticky_notes()
+            .map(|notes| notes.to_vec())
+            .unwrap_or_default()
+    }
+
+    pub fn add_sticky_note_at_cursor(&mut self) -> Result<(), String> {
+        if self.editor.workspace_root().is_none() {
+            return Err("Sticky notes require an open workspace".to_string());
+        }
+
+        let (line_idx, byte_offset) = self.buffer_content.cursor_position();
+        let line_number = line_idx.saturating_add(1);
+        let column = self
+            .buffer_content
+            .line(line_idx)
+            .map(|line| {
+                let clamped = byte_offset.min(line.len());
+                line[..clamped].chars().count().saturating_add(1)
+            })
+            .unwrap_or(1);
+
+        self
+            .editor
+            .add_sticky_note(line_number, column, String::new())
+            .map(|_| ())
+            .ok_or_else(|| "Unable to add sticky note".to_string())
+    }
+
+    pub fn update_sticky_note_content(&mut self, id: u64, content: String) {
+        if self.editor.update_sticky_note_content(id, content) {
+            self.workspace_notice = None;
+        } else {
+            self.workspace_notice = Some("Unable to update sticky note".to_string());
+        }
+    }
+
+    pub fn remove_sticky_note(&mut self, id: u64) {
+        if self.editor.remove_sticky_note(id) {
+            self.workspace_notice = None;
+        } else {
+            self.workspace_notice = Some("Failed to remove sticky note".to_string());
+        }
     }
 
     pub fn settings(&self) -> &SettingsState {

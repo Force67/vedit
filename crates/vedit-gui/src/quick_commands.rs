@@ -6,6 +6,7 @@ pub enum QuickCommandId {
     SaveFile,
     NewScratchBuffer,
     ShowScaleFactor,
+    AddStickyNote,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -52,6 +53,12 @@ static QUICK_COMMANDS: &[QuickCommand] = &[
         title: "Show Detected Scale",
         description: "Log the current UI scale factor",
         action: None,
+    },
+    QuickCommand {
+        id: QuickCommandId::AddStickyNote,
+        title: "Add Sticky Note",
+        description: "Attach a sticky note at the current cursor",
+        action: Some("quick_command.add_sticky_note"),
     },
 ];
 
