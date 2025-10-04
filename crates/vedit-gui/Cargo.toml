@@ -12,6 +12,7 @@ iced_graphics = "0.12"
 cosmic-text = "0.10"
 rfd = "0.14"
 vedit-core = { path = "../vedit-core" }
+vedit-config = { path = "../vedit-config" }
 tree-sitter = "0.25"
 tree-sitter-highlight = "0.25"
 tree-sitter-rust = "0.24"

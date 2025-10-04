@@ -4,8 +4,8 @@ use crate::scaling;
 use crate::syntax::{DocumentKey, SyntaxSettings, SyntaxSystem};
 use crate::widgets::text_editor::{Action as TextEditorAction, Content};
 use std::env;
-use std::path::Path;
-use vedit_core::{Editor, KeyCombination, KeyEvent, Keymap, KeymapError, Language};
+use std::path::{Path, PathBuf};
+use vedit_core::{Editor, FileNode, KeyCombination, KeyEvent, Keymap, KeymapError, Language, WorkspaceConfig};
 
 #[derive(Debug)]
 pub struct EditorState {
@@ -19,6 +19,10 @@ pub struct EditorState {
     syntax: SyntaxSystem,
     settings: SettingsState,
     settings_error: Option<String>,
+    settings_notice: Option<String>,
+    settings_dirty: bool,
+    keymap_path: Option<PathBuf>,
+    workspace_notice: Option<String>,
 }
 
 impl Default for EditorState {
@@ -26,6 +30,10 @@ impl Default for EditorState {
         let quick_commands = quick_commands_list();
         let keymap = Keymap::default();
         let settings = SettingsState::new(quick_commands, &keymap);
+
+        let keymap_path = env::current_dir()
+            .ok()
+            .map(|dir| dir.join("keybindings.toml"));
 
         let mut state = Self {
             editor: Editor::new(),
@@ -38,6 +46,10 @@ impl Default for EditorState {
             syntax: SyntaxSystem::new(),
             settings,
             settings_error: None,
+            settings_notice: None,
+            settings_dirty: false,
+            keymap_path,
+            workspace_notice: None,
         };
         state.sync_buffer_from_editor();
 
@@ -59,10 +71,14 @@ impl Default for EditorState {
 impl EditorState {
     pub fn load_keymap_from_file(&mut self, path: impl AsRef<Path>) -> Result<(), KeymapError> {
         let mut merged = Keymap::default();
-        merged.merge(Keymap::load_from_file(path)?);
+        let path_ref = path.as_ref();
+        merged.merge(Keymap::load_from_file(path_ref)?);
         self.keymap = merged;
+        self.keymap_path = Some(path_ref.to_path_buf());
         self.settings
             .sync_bindings(self.quick_commands, &self.keymap);
+        self.settings_dirty = false;
+        self.settings_notice = None;
         Ok(())
     }
 
@@ -95,13 +111,36 @@ impl EditorState {
         self.settings_error.as_deref()
     }
 
+    pub fn settings_notice(&self) -> Option<&str> {
+        self.settings_notice.as_deref()
+    }
+
+    pub fn workspace_notice(&self) -> Option<&str> {
+        self.workspace_notice.as_deref()
+    }
+
+    pub fn workspace_display_name(&self) -> Option<&str> {
+        self.editor.workspace_name()
+    }
+
+    pub fn keymap_path_display(&self) -> Option<String> {
+        self.keymap_path
+            .as_ref()
+            .map(|path| path.to_string_lossy().to_string())
+    }
+
     pub fn set_error(&mut self, message: Option<String>) {
         self.error = message;
+        if self.error.is_some() {
+            self.workspace_notice = None;
+        }
     }
 
     pub fn clear_error(&mut self) {
         self.error = None;
         self.settings_error = None;
+        self.settings_notice = None;
+        self.workspace_notice = None;
     }
 
     pub fn sync_buffer_from_editor(&mut self) {
@@ -187,6 +226,47 @@ impl EditorState {
     pub fn close_settings(&mut self) {
         self.settings.close();
         self.settings_error = None;
+        self.settings_notice = None;
+    }
+
+    pub fn install_workspace(
+        &mut self,
+        root: String,
+        tree: Vec<FileNode>,
+        config: WorkspaceConfig,
+    ) {
+        self.editor.set_workspace(root, tree, config);
+        self.workspace_notice = None;
+        self.sync_buffer_from_editor();
+    }
+
+    pub fn workspace_recent_files(&self) -> Vec<String> {
+        self.editor
+            .workspace_config()
+            .map(|config| config.recent_files().map(|entry| entry.to_string()).collect())
+            .unwrap_or_default()
+    }
+
+    pub fn record_recent_workspace_file(&mut self) -> Option<(String, WorkspaceConfig)> {
+        let path = self
+            .editor
+            .active_document()
+            .and_then(|doc| doc.path.clone())?;
+        let root = self.editor.workspace_root()?.to_string();
+
+        {
+            let config = self.editor.workspace_config_mut()?;
+            if !config.record_recent_file(&path) {
+                return None;
+            }
+        }
+
+        let snapshot = self.editor.workspace_config()?.clone();
+        Some((root, snapshot))
+    }
+
+    pub fn apply_workspace_config_saved(&mut self, root: String) {
+        self.workspace_notice = Some(format!("Workspace preferences saved for {}", root));
     }
 
     pub fn settings(&self) -> &SettingsState {
@@ -227,6 +307,8 @@ impl EditorState {
             self.settings.set_binding_error(id, None);
             self.settings.set_binding_input(id, String::new());
             self.settings_error = None;
+            self.settings_notice = Some("Binding removed. Save to persist changes.".to_string());
+            self.settings_dirty = true;
             return Ok(());
         }
 
@@ -237,6 +319,8 @@ impl EditorState {
                 self.settings.set_binding_input(id, display);
                 self.settings.set_binding_error(id, None);
                 self.settings_error = None;
+                self.settings_notice = Some("Binding updated. Save to persist changes.".to_string());
+                self.settings_dirty = true;
                 Ok(())
             }
             Err(err) => {
@@ -244,8 +328,65 @@ impl EditorState {
                 self.settings
                     .set_binding_error(id, Some(message.clone()));
                 self.settings_error = Some(message.clone());
+                self.settings_notice = None;
                 Err(message)
             }
+        }
+    }
+
+    pub fn settings_dirty(&self) -> bool {
+        self.settings_dirty
+    }
+
+    pub fn keymap_save_payload(&self) -> Result<(String, String), String> {
+        let path = self
+            .keymap_path
+            .clone()
+            .ok_or_else(|| "No keymap file path available".to_string())?;
+
+        let contents = self
+            .keymap
+            .to_toml_string()
+            .map_err(|err| format!("Failed to serialize keymap: {}", err))?;
+
+        Ok((path.to_string_lossy().to_string(), contents))
+    }
+
+    pub fn mark_keymap_saved(&mut self, path: String) {
+        self.keymap_path = Some(PathBuf::from(&path));
+        self.settings_dirty = false;
+        self.settings_error = None;
+        self.settings_notice = Some(format!("Saved keybindings to {}", path));
+    }
+
+    pub fn apply_selected_keymap_path(&mut self, path: String) -> Result<(), String> {
+        let candidate = PathBuf::from(&path);
+
+        if candidate.exists() {
+            match Keymap::load_from_file(&candidate) {
+                Ok(loaded) => {
+                    let mut merged = Keymap::default();
+                    merged.merge(loaded);
+                    self.keymap = merged;
+                    self.settings
+                        .sync_bindings(self.quick_commands, &self.keymap);
+                    self.keymap_path = Some(candidate);
+                    self.settings_dirty = false;
+                    self.settings_error = None;
+                    self.settings_notice = Some(format!("Loaded keybindings from {}", path));
+                    Ok(())
+                }
+                Err(err) => Err(err.to_string()),
+            }
+        } else {
+            self.keymap_path = Some(candidate);
+            self.settings_dirty = true;
+            self.settings_notice = Some(format!(
+                "New keymap location selected: {}. Save to create this file.",
+                path
+            ));
+            self.settings_error = None;
+            Ok(())
         }
     }
 

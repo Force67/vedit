@@ -15,7 +15,7 @@ pub struct FileNode {
 }
 
 impl FileNode {
-    fn from_path(path: &Path) -> io::Result<Self> {
+    fn from_path(path: &Path, ignored: &[String]) -> io::Result<Self> {
         let metadata = fs::metadata(path)?;
         let is_directory = metadata.is_dir();
         let name = path
@@ -26,7 +26,7 @@ impl FileNode {
         let path_string = path.to_string_lossy().to_string();
 
         let children = if is_directory {
-            collect_directory(path)?
+            collect_directory(path, ignored)?
         } else {
             Vec::new()
         };
@@ -42,10 +42,21 @@ impl FileNode {
 
 /// Build a workspace tree for the provided directory.
 pub fn build_tree(root: impl AsRef<Path>) -> io::Result<Vec<FileNode>> {
-    collect_directory(root.as_ref())
+    build_tree_with_ignored(root, &[])
 }
 
-fn collect_directory(path: &Path) -> io::Result<Vec<FileNode>> {
+pub fn build_tree_with_ignored(
+    root: impl AsRef<Path>,
+    ignored_directories: &[String],
+) -> io::Result<Vec<FileNode>> {
+    let normalized: Vec<String> = ignored_directories
+        .iter()
+        .map(|entry| entry.to_ascii_lowercase())
+        .collect();
+    collect_directory(root.as_ref(), &normalized)
+}
+
+fn collect_directory(path: &Path, ignored: &[String]) -> io::Result<Vec<FileNode>> {
     let mut children = Vec::new();
 
     for entry in fs::read_dir(path)? {
@@ -54,16 +65,13 @@ fn collect_directory(path: &Path) -> io::Result<Vec<FileNode>> {
 
         if entry.file_type()?.is_dir() {
             if let Some(name) = entry.file_name().to_str() {
-                if SKIPPED_DIRECTORIES
-                    .iter()
-                    .any(|skip| name.eq_ignore_ascii_case(skip))
-                {
+                if should_skip(name, ignored) {
                     continue;
                 }
             }
         }
 
-        match FileNode::from_path(&entry_path) {
+        match FileNode::from_path(&entry_path, ignored) {
             Ok(node) => children.push(node),
             Err(err) => {
                 if err.kind() == io::ErrorKind::PermissionDenied {
@@ -82,4 +90,11 @@ fn collect_directory(path: &Path) -> io::Result<Vec<FileNode>> {
     });
 
     Ok(children)
+}
+
+fn should_skip(name: &str, ignored: &[String]) -> bool {
+    SKIPPED_DIRECTORIES
+        .iter()
+        .any(|skip| name.eq_ignore_ascii_case(skip))
+        || ignored.iter().any(|entry| name.eq_ignore_ascii_case(entry))
 }

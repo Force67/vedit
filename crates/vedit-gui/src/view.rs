@@ -12,6 +12,7 @@ use iced::widget::lazy;
 use iced::widget::{button, column, container, horizontal_space, row, scrollable, text, text_input, Column};
 use iced::{theme, Alignment, Color, Element, Length, Padding};
 use vedit_core::FileNode;
+use std::path::Path;
 
 pub fn view(state: &EditorState) -> Element<'_, Message> {
     let scale = state.scale_factor() as f32;
@@ -186,7 +187,40 @@ fn render_editor_content(
 
     let sidebar_width = (240.0 / state.scale_factor()).clamp(180.0, 320.0) as f32;
 
-    let side_panel = column![open_files_section, workspace_section]
+    let recent_files = state.workspace_recent_files();
+
+    let mut side_sections = column![open_files_section];
+
+    if !recent_files.is_empty() {
+        let mut recent_column = column![text("Recent Files").size((16.0 * scale).max(12.0))]
+            .spacing(spacing_small);
+
+        for path in recent_files {
+            let display = Path::new(&path)
+                .file_name()
+                .and_then(|name| name.to_str())
+                .map(|name| name.to_string())
+                .unwrap_or(path.clone());
+
+            recent_column = recent_column.push(
+                button(text(display).size((14.0 * scale).max(10.0)))
+                    .style(document_button())
+                    .width(Length::Fill)
+                    .on_press(Message::WorkspaceFileActivated(path.clone())),
+            );
+        }
+
+        let recent_section = container(recent_column)
+            .padding(spacing_large)
+            .width(Length::Fill)
+            .style(panel_container());
+
+        side_sections = side_sections.push(recent_section);
+    }
+
+    side_sections = side_sections.push(workspace_section);
+
+    let side_panel = side_sections
         .spacing(spacing_large)
         .width(Length::Fixed(sidebar_width))
         .height(Length::Fill);
@@ -204,10 +238,12 @@ fn render_status_bar(
     spacing_small: f32,
     spacing_large: f32,
 ) -> Element<'_, Message> {
-    let workspace_status = format!(
-        "Workspace: {}",
-        state.editor().workspace_root().unwrap_or("(none)")
-    );
+    let workspace_root = state.editor().workspace_root().unwrap_or("(none)");
+    let workspace_status = if let Some(name) = state.workspace_display_name() {
+        format!("Workspace: {} ({})", name, workspace_root)
+    } else {
+        format!("Workspace: {}", workspace_root)
+    };
 
     let active_language = state
         .editor()
@@ -229,10 +265,12 @@ fn render_status_bar(
                     .unwrap_or(0)
             ))
             .size((14.0 * scale).max(10.0)),
-            if let Some(err) = state.error() {
-                text(format!("Error: {}", err)).size((14.0 * scale).max(10.0))
-            } else {
-                text("").size(14)
+            match (state.error(), state.workspace_notice()) {
+                (Some(err), _) => text(format!("Error: {}", err)).size((14.0 * scale).max(10.0)),
+                (None, Some(notice)) => text(notice)
+                    .size((14.0 * scale).max(10.0))
+                    .style(Color::from_rgb8(38, 139, 210)),
+                _ => text("").size(14),
             },
         ]
         .spacing((24.0 * scale).max(12.0))
@@ -294,11 +332,48 @@ fn render_keybindings_settings(
     spacing_small: f32,
 ) -> Element<'_, Message> {
     let mut content = column![
-        text("Quick Command Shortcuts").size((16.0 * scale).max(12.0)),
+        row![
+            text("Quick Command Shortcuts").size((16.0 * scale).max(12.0)),
+            horizontal_space().width(Length::Fill),
+            {
+                let button_label = text("Save Keybindings").size((14.0 * scale).max(10.0));
+                let base = button(button_label);
+                if state.settings_dirty() {
+                    base.on_press(Message::SettingsBindingsSaveRequested)
+                } else {
+                    base
+                }
+            },
+        ]
+        .spacing(spacing_small)
+        .align_items(Alignment::Center),
         text("Assign keyboard shortcuts to launch quick actions directly.")
             .size((14.0 * scale).max(10.0)),
     ]
     .spacing(spacing_small);
+
+    let keymap_path = state
+        .keymap_path_display()
+        .unwrap_or_else(|| "(default: ./keybindings.toml)".to_string());
+
+    content = content.push(
+        row![
+            text(format!("Keymap file: {}", keymap_path)).size((13.0 * scale).max(9.0)),
+            horizontal_space().width(Length::Fill),
+            button(text("Change File…").size((13.0 * scale).max(9.0)))
+                .on_press(Message::SettingsKeymapPathRequested),
+        ]
+        .spacing(spacing_small)
+        .align_items(Alignment::Center),
+    );
+
+    if let Some(notice) = state.settings_notice() {
+        content = content.push(
+            text(notice)
+                .size((13.0 * scale).max(9.0))
+                .style(Color::from_rgb8(38, 139, 210)),
+        );
+    }
 
     if let Some(err) = state.settings_error() {
         content = content.push(

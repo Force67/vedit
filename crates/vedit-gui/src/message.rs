@@ -1,3 +1,4 @@
+use crate::commands::WorkspaceData;
 use crate::quick_commands::QuickCommandId;
 use crate::settings::SettingsCategory;
 use iced::keyboard;
@@ -13,15 +14,20 @@ pub enum Message {
     FileLoaded(Result<Option<Document>, String>),
     DocumentSelected(usize),
     WorkspaceOpenRequested,
-    WorkspaceLoaded(Result<Option<(String, Vec<FileNode>)>, String>),
+    WorkspaceLoaded(Result<Option<WorkspaceData>, String>),
     WorkspaceFileActivated(String),
     BufferAction(TextEditorAction),
     DocumentSaved(Result<Option<String>, String>),
+    WorkspaceConfigSaved(Result<String, String>),
     SettingsOpened,
     SettingsClosed,
     SettingsCategorySelected(SettingsCategory),
     SettingsBindingChanged(QuickCommandId, String),
     SettingsBindingApplied(QuickCommandId),
+    SettingsBindingsSaveRequested,
+    SettingsBindingsSaved(Result<String, String>),
+    SettingsKeymapPathRequested,
+    SettingsKeymapPathSelected(Result<Option<String>, String>),
     Keyboard(keyboard::Event),
     CommandPaletteInputChanged(String),
     CommandPaletteCommandInvoked(QuickCommandId),

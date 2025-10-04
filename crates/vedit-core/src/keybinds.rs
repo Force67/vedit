@@ -1,4 +1,4 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
 use std::fs;
@@ -258,6 +258,16 @@ impl Keymap {
         }
     }
 
+    pub fn to_toml_string(&self) -> Result<String, toml::ser::Error> {
+        let mut raw = RawKeymap::default();
+        raw.bindings = self
+            .bindings
+            .iter()
+            .map(|(action, combo)| (action.clone(), combo.to_string()))
+            .collect();
+        toml::to_string(&raw)
+    }
+
     pub fn load_from_file(path: impl AsRef<Path>) -> Result<Self, KeymapError> {
         let contents = fs::read_to_string(path.as_ref())?;
         Self::from_toml_str(&contents)
@@ -281,7 +291,7 @@ impl Keymap {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 struct RawKeymap {
     #[serde(default)]
     bindings: HashMap<String, String>,

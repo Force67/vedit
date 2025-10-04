@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "crates/vedit-config",
     "crates/vedit-core",
     "crates/vedit-gui",
 ]

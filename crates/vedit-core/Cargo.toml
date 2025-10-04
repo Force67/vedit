@@ -9,3 +9,4 @@ path = "src/lib.rs"
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
 toml = "0.8"
+vedit-config = { path = "../vedit-config" }

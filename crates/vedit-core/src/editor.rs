@@ -2,6 +2,7 @@ use crate::document::Document;
 use crate::workspace::{self, FileNode};
 use std::io;
 use std::sync::Arc;
+use vedit_config::WorkspaceConfig;
 
 /// High-level editor session managing open documents and workspace state.
 #[derive(Debug)]
@@ -11,6 +12,7 @@ pub struct Editor {
     workspace_root: Option<String>,
     workspace_tree: Arc<Vec<FileNode>>,
     workspace_generation: u64,
+    workspace_config: Option<WorkspaceConfig>,
 }
 
 impl Default for Editor {
@@ -21,6 +23,7 @@ impl Default for Editor {
             workspace_root: None,
             workspace_tree: Arc::new(Vec::new()),
             workspace_generation: 0,
+            workspace_config: None,
         }
     }
 }
@@ -109,15 +112,25 @@ impl Editor {
         }
     }
 
-    pub fn set_workspace(&mut self, root: String, tree: Vec<FileNode>) {
+    pub fn workspace_config(&self) -> Option<&WorkspaceConfig> {
+        self.workspace_config.as_ref()
+    }
+
+    pub fn workspace_config_mut(&mut self) -> Option<&mut WorkspaceConfig> {
+        self.workspace_config.as_mut()
+    }
+
+    pub fn set_workspace(&mut self, root: String, tree: Vec<FileNode>, config: WorkspaceConfig) {
         self.workspace_root = Some(root);
         self.workspace_tree = Arc::new(tree);
+        self.workspace_config = Some(config);
         self.workspace_generation = self.workspace_generation.wrapping_add(1);
     }
 
     pub fn clear_workspace(&mut self) {
         self.workspace_root = None;
         self.workspace_tree = Arc::new(Vec::new());
+        self.workspace_config = None;
         self.workspace_generation = self.workspace_generation.wrapping_add(1);
     }
 
@@ -133,8 +146,19 @@ impl Editor {
     }
 
     /// Build a workspace tree for the provided directory.
-    pub fn build_workspace_tree(root: impl AsRef<std::path::Path>) -> io::Result<Vec<FileNode>> {
-        workspace::build_tree(root)
+    pub fn build_workspace_tree(
+        root: impl AsRef<std::path::Path>,
+        config: Option<&WorkspaceConfig>,
+    ) -> io::Result<Vec<FileNode>> {
+        if let Some(config) = config {
+            let ignored: Vec<String> = config
+                .ignored_directories()
+                .map(|entry| entry.to_string())
+                .collect();
+            workspace::build_tree_with_ignored(root, &ignored)
+        } else {
+            workspace::build_tree(root)
+        }
     }
 
     /// Returns a human-friendly status line reflecting the current editor state.
@@ -150,6 +174,12 @@ impl Editor {
         } else {
             "No document".to_string()
         }
+    }
+
+    pub fn workspace_name(&self) -> Option<&str> {
+        self.workspace_config
+            .as_ref()
+            .and_then(|config| config.name.as_deref())
     }
 }
 

@@ -1,4 +1,4 @@
-use crate::commands::{self, SaveDocumentRequest};
+use crate::commands::{self, SaveDocumentRequest, SaveKeymapRequest, WorkspaceData};
 use crate::keyboard;
 use crate::message::Message;
 use crate::quick_commands::QuickCommandId;
@@ -49,6 +49,12 @@ impl Application for EditorApp {
                     self.state.editor_mut().open_document(document);
                     self.state.clear_error();
                     self.state.sync_buffer_from_editor();
+                    if let Some((root, config)) = self.state.record_recent_workspace_file() {
+                        return Command::perform(
+                            commands::save_workspace_config(root, config),
+                            Message::WorkspaceConfigSaved,
+                        );
+                    }
                 }
                 Ok(None) => {
                     // user cancelled dialog
@@ -65,8 +71,8 @@ impl Application for EditorApp {
                 return Command::perform(commands::pick_workspace(), Message::WorkspaceLoaded);
             }
             Message::WorkspaceLoaded(result) => match result {
-                Ok(Some((root, tree))) => {
-                    self.state.editor_mut().set_workspace(root, tree);
+                Ok(Some(WorkspaceData { root, tree, config })) => {
+                    self.state.install_workspace(root.clone(), tree, config);
                     self.state.clear_error();
                 }
                 Ok(None) => {
@@ -94,6 +100,14 @@ impl Application for EditorApp {
                     self.state.set_error(Some(err));
                 }
             },
+            Message::WorkspaceConfigSaved(result) => match result {
+                Ok(root) => {
+                    self.state.apply_workspace_config_saved(root);
+                }
+                Err(err) => {
+                    self.state.set_error(Some(err));
+                }
+            },
             Message::SettingsOpened => {
                 self.state.open_settings();
             }
@@ -114,6 +128,46 @@ impl Application for EditorApp {
                     self.state.clear_error();
                 }
             }
+            Message::SettingsBindingsSaveRequested => {
+                match self.state.keymap_save_payload() {
+                    Ok((path, contents)) => {
+                        let request = SaveKeymapRequest { path, contents };
+                        return Command::perform(
+                            commands::save_keymap(request),
+                            Message::SettingsBindingsSaved,
+                        );
+                    }
+                    Err(err) => {
+                        self.state.set_error(Some(err));
+                    }
+                }
+            }
+            Message::SettingsBindingsSaved(result) => match result {
+                Ok(path) => {
+                    self.state.mark_keymap_saved(path);
+                }
+                Err(err) => {
+                    self.state.set_error(Some(err));
+                }
+            },
+            Message::SettingsKeymapPathRequested => {
+                let current = self.state.keymap_path_display();
+                return Command::perform(
+                    commands::pick_keymap_location(current),
+                    Message::SettingsKeymapPathSelected,
+                );
+            }
+            Message::SettingsKeymapPathSelected(result) => match result {
+                Ok(Some(path)) => {
+                    if let Err(err) = self.state.apply_selected_keymap_path(path) {
+                        self.state.set_error(Some(err));
+                    }
+                }
+                Ok(None) => {}
+                Err(err) => {
+                    self.state.set_error(Some(err));
+                }
+            },
             Message::Keyboard(key_event) => {
                 if let Some(core_event) = keyboard::key_event_from_iced(&key_event) {
                     if self.state.matches_action(QUICK_COMMAND_MENU_ACTION, &core_event) {
