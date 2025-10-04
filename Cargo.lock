@@ -3703,6 +3703,7 @@ dependencies = [
  "serde",
  "toml",
  "vedit-config",
+ "vedit-vs",
 ]
 
 [[package]]
@@ -3728,6 +3729,15 @@ dependencies = [
  "tree-sitter-yaml",
  "vedit-config",
  "vedit-core",
+]
+
+[[package]]
+name = "vedit-vs"
+version = "0.1.0"
+dependencies = [
+ "roxmltree",
+ "tempfile",
+ "thiserror 1.0.69",
 ]
 
 [[package]]

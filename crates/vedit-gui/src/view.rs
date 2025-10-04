@@ -7,10 +7,12 @@ use crate::style::{
     active_document_button, document_button, panel_container, ribbon_container,
     root_container, status_container, top_bar_button,
 };
-use iced::alignment::Vertical;
+use iced::alignment::{Horizontal, Vertical};
 use iced::widget::lazy;
-use iced::widget::{button, column, container, horizontal_space, row, scrollable, text, text_input, Column};
-use iced::{theme, Alignment, Color, Element, Length, Padding};
+use iced::widget::{
+    button, column, container, horizontal_space, row, scrollable, text, text_input, Column, Rule,
+};
+use iced::{theme, Alignment, Color, Element, Font, Length, Padding};
 use std::collections::HashSet;
 use std::path::Path;
 use vedit_core::FileNode;
@@ -72,6 +74,17 @@ fn render_top_bar(
         button(text("Open Folder…").size((14.0 * scale).max(10.0)))
             .style(top_bar_button())
             .on_press(Message::WorkspaceOpenRequested),
+        {
+            let label = if state.command_palette().is_open() {
+                "Command Prompt ▲"
+            } else {
+                "Command Prompt ▼"
+            };
+
+            button(text(label).size((14.0 * scale).max(10.0)))
+                .style(top_bar_button())
+                .on_press(Message::CommandPromptToggled)
+        },
         horizontal_space().width(Length::Fill),
     ]
     .spacing(spacing_large)
@@ -104,6 +117,7 @@ fn render_editor_content(
     spacing_small: f32,
 ) -> Element<'_, Message> {
     let buffer = EditorWidget::new(state.buffer_content())
+        .font(Font::MONOSPACE)
         .highlight::<SyntaxHighlighter>(state.syntax_settings(), format_highlight)
         .line_number_color(Color::from_rgb8(133, 133, 133))
         .on_action(Message::BufferAction)
@@ -120,124 +134,28 @@ fn render_editor_content(
     ]
     .spacing(spacing_medium)
     .padding(spacing_large)
-    .width(Length::FillPortion(4))
-    .height(Length::Fill);
-
-    let mut documents_column = column![text("Open Files").size((16.0 * scale).max(12.0))]
-        .spacing(spacing_small)
-        .padding([0.0, 0.0, spacing_small, 0.0]);
-
-    for (index, document) in state.editor().open_documents().iter().enumerate() {
-        let is_active = index == state.editor().active_index();
-        let mut label = document.display_name().to_string();
-        if document.is_modified {
-            label.push('*');
-        }
-
-        let mut entry = button(text(label).size((14.0 * scale).max(10.0)))
-            .width(Length::Fill)
-            .style(document_button())
-            .on_press(Message::DocumentSelected(index));
-
-        if is_active {
-            entry = entry.style(active_document_button());
-        }
-
-        documents_column = documents_column.push(entry);
-    }
-
-    let open_files_section = container(documents_column)
-        .padding(spacing_large)
-        .width(Length::Fill)
-        .style(panel_container());
-
-    let workspace_title = if let Some(root) = state.editor().workspace_root() {
-        format!("Workspace: {}", root)
-    } else {
-        "Workspace".to_string()
-    };
-
-    let workspace_contents: Element<'_, Message> = if let Some((version, tree)) =
-        state.editor().workspace_snapshot()
-    {
-        let snapshot = WorkspaceSnapshot::new(version, tree);
-        let scale_key = (scale * 100.0).round() as u32;
-        let collapsed_paths = state.workspace_collapsed_paths();
-        let collapsed_version = state.workspace_collapsed_version();
-        lazy(
-            (snapshot, scale_key, collapsed_version, collapsed_paths),
-            |(snapshot, scale_key, _version, collapsed_paths)| -> Element<'static, Message> {
-                let scale = *scale_key as f32 / 100.0;
-                let collapsed_set: HashSet<String> = collapsed_paths.iter().cloned().collect();
-                scrollable(render_workspace_nodes(
-                    snapshot.tree.as_slice(),
-                    0,
-                    scale,
-                    &collapsed_set,
-                ))
-                .height(Length::Fill)
-                .into()
-            },
-        )
-        .into()
-    } else {
-        column![text("Open a folder to browse project files").size((14.0 * scale).max(10.0))]
-            .width(Length::Fill)
-            .height(Length::Shrink)
-            .into()
-    };
-
-    let workspace_section = container(
-        column![text(workspace_title).size((16.0 * scale).max(12.0)), workspace_contents]
-            .spacing(spacing_small)
-            .height(Length::Fill),
-    )
-    .padding(spacing_large)
     .width(Length::Fill)
-    .height(Length::Fill)
-    .style(panel_container());
+    .height(Length::Fill);
 
     let sidebar_width = (240.0 / state.scale_factor()).clamp(180.0, 320.0) as f32;
 
-    let recent_files = state.workspace_recent_files();
+    let open_panel = render_open_files_panel(
+        state,
+        scale,
+        spacing_large,
+        spacing_medium,
+        sidebar_width,
+    );
 
-    let mut side_sections = column![open_files_section];
+    let workspace_panel = render_workspace_panel(
+        state,
+        scale,
+        spacing_large,
+        spacing_small,
+        sidebar_width,
+    );
 
-    if !recent_files.is_empty() {
-        let mut recent_column = column![text("Recent Files").size((16.0 * scale).max(12.0))]
-            .spacing(spacing_small);
-
-        for path in recent_files {
-            let display = Path::new(&path)
-                .file_name()
-                .and_then(|name| name.to_str())
-                .map(|name| name.to_string())
-                .unwrap_or(path.clone());
-
-            recent_column = recent_column.push(
-                button(text(display).size((14.0 * scale).max(10.0)))
-                    .style(document_button())
-                    .width(Length::Fill)
-                    .on_press(Message::WorkspaceFileActivated(path.clone())),
-            );
-        }
-
-        let recent_section = container(recent_column)
-            .padding(spacing_large)
-            .width(Length::Fill)
-            .style(panel_container());
-
-        side_sections = side_sections.push(recent_section);
-    }
-
-    side_sections = side_sections.push(workspace_section);
-
-    let side_panel = side_sections
-        .spacing(spacing_large)
-        .width(Length::Fixed(sidebar_width))
-        .height(Length::Fill);
-
-    row![editor_panel, side_panel]
+    row![open_panel, editor_panel, workspace_panel]
         .spacing(spacing_large)
         .width(Length::Fill)
         .height(Length::Fill)
@@ -277,6 +195,7 @@ fn render_status_bar(
                     .unwrap_or(0)
             ))
             .size((14.0 * scale).max(10.0)),
+            text(state.format_scale_factor()).size((14.0 * scale).max(10.0)),
             match (state.error(), state.workspace_notice()) {
                 (Some(err), _) => text(format!("Error: {}", err)).size((14.0 * scale).max(10.0)),
                 (None, Some(notice)) => text(notice)
@@ -441,6 +360,156 @@ fn render_keybindings_settings(
         .into()
 }
 
+fn render_open_files_panel(
+    state: &EditorState,
+    scale: f32,
+    spacing_large: f32,
+    spacing_medium: f32,
+    sidebar_width: f32,
+) -> Element<'_, Message> {
+    let list_spacing = ((6.0 * scale).max(3.0)).round() as u16;
+
+    let mut open_list = Column::new().spacing(list_spacing);
+    for (index, document) in state.editor().open_documents().iter().enumerate() {
+        let is_active = index == state.editor().active_index();
+        let mut title = document.display_name().to_string();
+        if document.is_modified {
+            title.push('*');
+        }
+
+        let mut label = column![text(&title).size((14.0 * scale).max(10.0))]
+        .spacing((4.0 * scale).max(2.0));
+
+        if let Some(path) = document.path.as_deref() {
+            if !path.is_empty() {
+                label = label.push(
+                    text(path)
+                        .size((12.0 * scale).max(9.0))
+                        .style(Color::from_rgb8(150, 150, 150)),
+                );
+            }
+        }
+
+        let mut entry = button(label)
+            .padding((6.0 * scale).max(3.0))
+            .width(Length::Fill)
+            .style(document_button())
+            .on_press(Message::DocumentSelected(index));
+
+        if is_active {
+            entry = entry.style(active_document_button());
+        }
+
+        open_list = open_list.push(entry);
+    }
+
+    let open_scroll = scrollable(open_list).height(Length::Fill);
+
+    let mut content = column![
+        text("Open Files").size((16.0 * scale).max(12.0)),
+        open_scroll,
+    ]
+    .spacing(spacing_medium)
+    .height(Length::Fill);
+
+    let recent_files = state.workspace_recent_files();
+    if !recent_files.is_empty() {
+        let mut recent_column = Column::new().spacing(list_spacing);
+        for path in recent_files {
+            let display = Path::new(&path)
+                .file_name()
+                .and_then(|name| name.to_str())
+                .map(|name| name.to_string())
+                .unwrap_or(path.clone());
+
+            let label = column![
+                text(display).size((14.0 * scale).max(10.0)),
+                text(path.clone())
+                    .size((12.0 * scale).max(9.0))
+                    .style(Color::from_rgb8(150, 150, 150)),
+            ]
+            .spacing((4.0 * scale).max(2.0));
+
+            recent_column = recent_column.push(
+                button(label)
+                    .style(theme::Button::Text)
+                    .width(Length::Fill)
+                    .on_press(Message::WorkspaceFileActivated(path.clone())),
+            );
+        }
+
+        content = content
+            .push(Rule::horizontal(1))
+            .push(text("Recent Files").size((14.0 * scale).max(10.0)))
+            .push(recent_column);
+    }
+
+    container(content)
+        .padding(spacing_large)
+        .width(Length::Fixed(sidebar_width))
+        .height(Length::Fill)
+        .style(panel_container())
+        .into()
+}
+
+fn render_workspace_panel(
+    state: &EditorState,
+    scale: f32,
+    spacing_large: f32,
+    spacing_small: f32,
+    sidebar_width: f32,
+) -> Element<'_, Message> {
+    let workspace_title = if let Some(root) = state.editor().workspace_root() {
+        format!("Workspace: {}", root)
+    } else {
+        "Workspace".to_string()
+    };
+
+    let workspace_contents: Element<'_, Message> = if let Some((version, tree)) =
+        state.editor().workspace_snapshot()
+    {
+        let snapshot = WorkspaceSnapshot::new(version, tree);
+        let scale_key = (scale * 100.0).round() as u32;
+        let collapsed_paths = state.workspace_collapsed_paths();
+        let collapsed_version = state.workspace_collapsed_version();
+        lazy(
+            (snapshot, scale_key, collapsed_version, collapsed_paths),
+            |(snapshot, scale_key, _version, collapsed_paths)| -> Element<'static, Message> {
+                let scale = *scale_key as f32 / 100.0;
+                let collapsed_set: HashSet<String> = collapsed_paths.iter().cloned().collect();
+                scrollable(render_workspace_nodes(
+                    snapshot.tree.as_slice(),
+                    0,
+                    scale,
+                    &collapsed_set,
+                ))
+                .height(Length::Fill)
+                .into()
+            },
+        )
+        .into()
+    } else {
+        column![text("Open a folder to browse project files").size((14.0 * scale).max(10.0))]
+            .width(Length::Fill)
+            .height(Length::Shrink)
+            .into()
+    };
+
+    container(
+        column![
+            text(workspace_title).size((16.0 * scale).max(12.0)),
+            workspace_contents,
+        ]
+        .spacing(spacing_small)
+        .height(Length::Fill),
+    )
+    .padding(spacing_large)
+    .width(Length::Fixed(sidebar_width))
+    .height(Length::Fill)
+    .style(panel_container())
+    .into()
+}
+
 fn render_workspace_nodes(
     nodes: &[FileNode],
     indent: u16,
@@ -462,6 +531,7 @@ fn render_command_palette(state: &EditorState) -> Element<'_, Message> {
     let spacing_large = (16.0 * scale).max(8.0);
     let spacing_medium = (12.0 * scale).max(6.0);
     let spacing_small = (8.0 * scale).max(4.0);
+    let drop_width = (360.0 * scale).clamp(260.0, 520.0);
 
     let submit_message = state
         .selected_quick_command()
@@ -512,18 +582,33 @@ fn render_command_palette(state: &EditorState) -> Element<'_, Message> {
         }
     }
 
+    let header = row![
+        text("Command Prompt").size((18.0 * scale).max(14.0)),
+        horizontal_space().width(Length::Fill),
+        button(text("×").size((16.0 * scale).max(12.0)))
+            .style(theme::Button::Text)
+            .on_press(Message::CommandPaletteClosed),
+    ]
+    .spacing(spacing_small)
+    .align_items(Alignment::Center);
+
     let palette_column = column![
-        text("Quick Command Menu").size((18.0 * scale).max(14.0)),
+        header,
         input,
         scrollable(command_list).height(Length::Fixed(240.0 * scale)),
     ]
     .spacing(spacing_medium)
     .width(Length::Fill);
 
-    container(palette_column)
+    let dropdown = container(palette_column)
         .padding(spacing_large)
+        .width(Length::Fixed(drop_width))
+        .style(panel_container());
+
+    container(dropdown)
         .width(Length::Fill)
-        .style(panel_container())
+        .padding([0.0, spacing_large, 0.0, spacing_large])
+        .align_x(Horizontal::Left)
         .into()
 }
 
@@ -535,9 +620,14 @@ fn render_workspace_node(
 ) -> Element<'static, Message> {
     let label_size = (14.0 * scale).max(10.0);
     let is_collapsed = node.is_directory && collapsed.contains(&node.path);
+    let can_expand = node.is_directory && node.has_children;
     let file_label = node.name.clone();
     let entry: Element<'static, Message> = if node.is_directory {
-        let indicator = if is_collapsed { ">" } else { "v" };
+        let indicator = if can_expand {
+            if is_collapsed { "▸" } else { "▾" }
+        } else {
+            "•"
+        };
         let row_content = row![
             text(indicator).size(label_size),
             text(format!("{}/", node.name)).size(label_size),

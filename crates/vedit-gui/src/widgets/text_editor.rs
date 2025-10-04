@@ -99,6 +99,14 @@ where
         self
     }
 
+    pub fn font<F>(mut self, font: F) -> Self
+    where
+        F: Into<<IcedRenderer as TextRenderer>::Font>,
+    {
+        self.inner = self.inner.font(font);
+        self
+    }
+
     pub fn line_number_color(mut self, color: Color) -> Self {
         self.line_color = color;
         self

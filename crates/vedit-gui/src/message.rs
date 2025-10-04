@@ -2,6 +2,7 @@ use crate::commands::WorkspaceData;
 use crate::quick_commands::QuickCommandId;
 use crate::settings::SettingsCategory;
 use iced::keyboard;
+use iced::mouse;
 use crate::widgets::text_editor::Action as TextEditorAction;
 use std::fmt;
 use std::hash::{Hash, Hasher};
@@ -33,6 +34,8 @@ pub enum Message {
     CommandPaletteInputChanged(String),
     CommandPaletteCommandInvoked(QuickCommandId),
     CommandPaletteClosed,
+    CommandPromptToggled,
+    MouseWheelScrolled(mouse::ScrollDelta),
 }
 
 #[derive(Clone)]

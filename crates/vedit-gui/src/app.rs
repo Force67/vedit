@@ -6,7 +6,7 @@ use crate::state::EditorState;
 use crate::view;
 use iced::Subscription;
 use iced::{executor, theme, Application, Command, Element, Settings};
-use iced::event;
+use iced::{event, mouse};
 use vedit_core::{Document, Key, QUICK_COMMAND_MENU_ACTION, SAVE_ACTION};
 
 pub fn run() -> iced::Result {
@@ -88,7 +88,9 @@ impl Application for EditorApp {
                 });
             }
             Message::WorkspaceDirectoryToggled(path) => {
-                self.state.toggle_workspace_directory(path);
+                if let Err(err) = self.state.toggle_workspace_directory(path) {
+                    self.state.set_error(Some(err));
+                }
             }
             Message::BufferAction(action) => {
                 self.state.apply_buffer_action(action);
@@ -172,6 +174,17 @@ impl Application for EditorApp {
                 }
             },
             Message::Keyboard(key_event) => {
+                match key_event {
+                    iced::keyboard::Event::ModifiersChanged(modifiers) => {
+                        self.state.set_modifiers(modifiers);
+                        return Command::none();
+                    }
+                    iced::keyboard::Event::KeyPressed { modifiers, .. }
+                    | iced::keyboard::Event::KeyReleased { modifiers, .. } => {
+                        self.state.set_modifiers(modifiers);
+                    }
+                }
+
                 if let Some(core_event) = keyboard::key_event_from_iced(&key_event) {
                     if self.state.matches_action(QUICK_COMMAND_MENU_ACTION, &core_event) {
                         if self.state.command_palette().is_open() {
@@ -221,6 +234,23 @@ impl Application for EditorApp {
                     }
                 }
             }
+            Message::MouseWheelScrolled(delta) => {
+                let modifiers = self.state.modifiers();
+                if !(modifiers.control() || modifiers.command()) {
+                    return Command::none();
+                }
+
+                let delta_y = match delta {
+                    mouse::ScrollDelta::Lines { y, .. } => y,
+                    mouse::ScrollDelta::Pixels { y, .. } => y,
+                };
+
+                if delta_y > 0.0 {
+                    self.state.increase_scale_factor();
+                } else if delta_y < 0.0 {
+                    self.state.decrease_scale_factor();
+                }
+            }
             Message::CommandPaletteInputChanged(query) => {
                 self.state.set_command_palette_query(query);
             }
@@ -230,6 +260,14 @@ impl Application for EditorApp {
             }
             Message::CommandPaletteClosed => {
                 self.state.close_command_palette();
+            }
+            Message::CommandPromptToggled => {
+                if self.state.command_palette().is_open() {
+                    self.state.close_command_palette();
+                } else {
+                    self.state.set_command_palette_query(String::new());
+                    self.state.open_command_palette();
+                }
             }
         }
 
@@ -247,6 +285,9 @@ impl Application for EditorApp {
     fn subscription(&self) -> Subscription<Self::Message> {
         event::listen_with(|event, _status| match event {
             event::Event::Keyboard(key_event) => Some(Message::Keyboard(key_event)),
+            event::Event::Mouse(mouse::Event::WheelScrolled { delta }) => {
+                Some(Message::MouseWheelScrolled(delta))
+            }
             _ => None,
         })
     }

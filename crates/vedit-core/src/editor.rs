@@ -161,6 +161,39 @@ impl Editor {
         }
     }
 
+    pub fn load_workspace_directory(&mut self, path: &str) -> io::Result<Vec<String>> {
+        if self.workspace_root.is_none() {
+            return Ok(Vec::new());
+        }
+
+        let ignored: Vec<String> = self
+            .workspace_config
+            .as_ref()
+            .map(|config| {
+                config
+                    .ignored_directories()
+                    .map(|entry| entry.to_ascii_lowercase())
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let tree = Arc::make_mut(&mut self.workspace_tree);
+        if let Some(node) = workspace::find_node_mut(tree.as_mut_slice(), path) {
+            if workspace::load_directory_children(node, &ignored)? {
+                self.workspace_generation = self.workspace_generation.wrapping_add(1);
+                let directories = node
+                    .children
+                    .iter()
+                    .filter(|child| child.is_directory)
+                    .map(|child| child.path.clone())
+                    .collect();
+                return Ok(directories);
+            }
+        }
+
+        Ok(Vec::new())
+    }
+
     /// Returns a human-friendly status line reflecting the current editor state.
     pub fn status_line(&self) -> String {
         if let Some(doc) = self.active_document() {

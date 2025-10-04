@@ -3,10 +3,83 @@ use crate::settings::SettingsState;
 use crate::scaling;
 use crate::syntax::{DocumentKey, SyntaxSettings, SyntaxSystem};
 use crate::widgets::text_editor::{Action as TextEditorAction, Content};
+use iced::keyboard;
 use std::collections::HashSet;
 use std::env;
 use std::path::{Path, PathBuf};
 use vedit_core::{Editor, FileNode, KeyCombination, KeyEvent, Keymap, KeymapError, Language, WorkspaceConfig};
+
+const ZOOM_STEP_ENV: &str = "VEDIT_ZOOM_STEP";
+const ZOOM_MIN_ENV: &str = "VEDIT_ZOOM_MIN";
+const ZOOM_MAX_ENV: &str = "VEDIT_ZOOM_MAX";
+const ZOOM_DEFAULT_ENV: &str = "VEDIT_ZOOM_DEFAULT";
+
+#[derive(Debug, Clone, Copy)]
+struct ZoomConfig {
+    min: f64,
+    max: f64,
+    step: f64,
+    default_override: Option<f64>,
+}
+
+fn collect_directory_paths(nodes: &[FileNode], output: &mut Vec<String>) {
+    for node in nodes {
+        if node.is_directory {
+            output.push(node.path.clone());
+            if !node.children.is_empty() {
+                collect_directory_paths(&node.children, output);
+            }
+        }
+    }
+}
+
+impl ZoomConfig {
+    fn load() -> Self {
+        let mut config = Self {
+            min: 0.6,
+            max: 3.0,
+            step: 0.1,
+            default_override: None,
+        };
+
+        if let Some(min) = read_env_f64(ZOOM_MIN_ENV) {
+            if min > 0.1 {
+                config.min = min;
+            }
+        }
+
+        if let Some(max) = read_env_f64(ZOOM_MAX_ENV) {
+            if max > config.min {
+                config.max = max;
+            }
+        }
+
+        if let Some(step) = read_env_f64(ZOOM_STEP_ENV) {
+            if step > 0.0 {
+                config.step = step;
+            }
+        }
+
+        if let Some(default) = read_env_f64(ZOOM_DEFAULT_ENV) {
+            config.default_override = Some(default);
+        }
+
+        config
+    }
+
+    fn clamp(&self, value: f64) -> f64 {
+        value.clamp(self.min, self.max)
+    }
+
+    fn initial_scale(&self, detected: f64) -> f64 {
+        let base = self.default_override.unwrap_or(detected);
+        self.clamp(base)
+    }
+}
+
+fn read_env_f64(name: &str) -> Option<f64> {
+    env::var(name).ok().and_then(|value| value.parse::<f64>().ok())
+}
 
 #[derive(Debug)]
 pub struct EditorState {
@@ -26,6 +99,8 @@ pub struct EditorState {
     workspace_notice: Option<String>,
     workspace_collapsed: HashSet<String>,
     workspace_collapsed_version: u64,
+    zoom_config: ZoomConfig,
+    modifiers: keyboard::Modifiers,
 }
 
 impl Default for EditorState {
@@ -38,6 +113,10 @@ impl Default for EditorState {
             .ok()
             .map(|dir| dir.join("keybindings.toml"));
 
+        let zoom_config = ZoomConfig::load();
+        let detected_scale = scaling::detect_scale_factor().unwrap_or(1.0);
+        let initial_scale = zoom_config.initial_scale(detected_scale);
+
         let mut state = Self {
             editor: Editor::new(),
             error: None,
@@ -45,7 +124,7 @@ impl Default for EditorState {
             keymap,
             quick_commands,
             command_palette: CommandPaletteState::default(),
-            scale_factor: scaling::detect_scale_factor().unwrap_or(1.0),
+            scale_factor: initial_scale,
             syntax: SyntaxSystem::new(),
             settings,
             settings_error: None,
@@ -55,6 +134,8 @@ impl Default for EditorState {
             workspace_notice: None,
             workspace_collapsed: HashSet::new(),
             workspace_collapsed_version: 0,
+            zoom_config,
+            modifiers: keyboard::Modifiers::default(),
         };
         state.sync_buffer_from_editor();
 
@@ -138,11 +219,24 @@ impl EditorState {
         self.workspace_collapsed_version
     }
 
-    pub fn toggle_workspace_directory(&mut self, path: String) {
-        if !self.workspace_collapsed.remove(&path) {
+    pub fn toggle_workspace_directory(&mut self, path: String) -> Result<(), String> {
+        if self.workspace_collapsed.remove(&path) {
+            match self.editor.load_workspace_directory(&path) {
+                Ok(new_directories) => {
+                    for directory in new_directories {
+                        self.workspace_collapsed.insert(directory);
+                    }
+                }
+                Err(err) => {
+                    self.workspace_collapsed.insert(path);
+                    return Err(format!("Failed to read directory: {}", err));
+                }
+            }
+        } else {
             self.workspace_collapsed.insert(path);
         }
         self.workspace_collapsed_version = self.workspace_collapsed_version.wrapping_add(1);
+        Ok(())
     }
 
     pub fn keymap_path_display(&self) -> Option<String> {
@@ -260,6 +354,13 @@ impl EditorState {
         self.editor.set_workspace(root, tree, config);
         self.workspace_notice = None;
         self.workspace_collapsed.clear();
+        if let Some(nodes) = self.editor.workspace_tree() {
+            let mut directories = Vec::new();
+            collect_directory_paths(nodes, &mut directories);
+            for path in directories {
+                self.workspace_collapsed.insert(path);
+            }
+        }
         self.workspace_collapsed_version = self.workspace_collapsed_version.wrapping_add(1);
         self.sync_buffer_from_editor();
     }
@@ -419,7 +520,33 @@ impl EditorState {
     }
 
     pub fn format_scale_factor(&self) -> String {
-        format!("Scale factor: {:.2}", self.scale_factor)
+        format!("Zoom: {:.0}%", self.scale_factor * 100.0)
+    }
+
+    pub fn increase_scale_factor(&mut self) -> bool {
+        self.set_scale_factor(self.scale_factor + self.zoom_config.step)
+    }
+
+    pub fn decrease_scale_factor(&mut self) -> bool {
+        self.set_scale_factor(self.scale_factor - self.zoom_config.step)
+    }
+
+    fn set_scale_factor(&mut self, value: f64) -> bool {
+        let clamped = self.zoom_config.clamp(value);
+        if (clamped - self.scale_factor).abs() > f64::EPSILON {
+            self.scale_factor = clamped;
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn set_modifiers(&mut self, modifiers: keyboard::Modifiers) {
+        self.modifiers = modifiers;
+    }
+
+    pub fn modifiers(&self) -> keyboard::Modifiers {
+        self.modifiers
     }
 
     fn editor_contents_to_string(&self) -> String {
