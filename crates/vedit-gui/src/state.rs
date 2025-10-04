@@ -1,10 +1,11 @@
 use crate::quick_commands::{commands as quick_commands_list, QuickCommand, QuickCommandId};
+use crate::settings::SettingsState;
 use crate::scaling;
 use crate::syntax::{DocumentKey, SyntaxSettings, SyntaxSystem};
 use crate::widgets::text_editor::{Action as TextEditorAction, Content};
 use std::env;
 use std::path::Path;
-use vedit_core::{Editor, KeyEvent, Keymap, KeymapError, Language};
+use vedit_core::{Editor, KeyCombination, KeyEvent, Keymap, KeymapError, Language};
 
 #[derive(Debug)]
 pub struct EditorState {
@@ -16,19 +17,27 @@ pub struct EditorState {
     command_palette: CommandPaletteState,
     scale_factor: f64,
     syntax: SyntaxSystem,
+    settings: SettingsState,
+    settings_error: Option<String>,
 }
 
 impl Default for EditorState {
     fn default() -> Self {
+        let quick_commands = quick_commands_list();
+        let keymap = Keymap::default();
+        let settings = SettingsState::new(quick_commands, &keymap);
+
         let mut state = Self {
             editor: Editor::new(),
             error: None,
             buffer_content: Content::new(),
-            keymap: Keymap::default(),
-            quick_commands: quick_commands_list(),
+            keymap,
+            quick_commands,
             command_palette: CommandPaletteState::default(),
             scale_factor: scaling::detect_scale_factor().unwrap_or(1.0),
             syntax: SyntaxSystem::new(),
+            settings,
+            settings_error: None,
         };
         state.sync_buffer_from_editor();
 
@@ -41,6 +50,8 @@ impl Default for EditorState {
             }
         }
 
+        state.settings.sync_bindings(state.quick_commands, &state.keymap);
+
         state
     }
 }
@@ -50,6 +61,8 @@ impl EditorState {
         let mut merged = Keymap::default();
         merged.merge(Keymap::load_from_file(path)?);
         self.keymap = merged;
+        self.settings
+            .sync_bindings(self.quick_commands, &self.keymap);
         Ok(())
     }
 
@@ -78,12 +91,17 @@ impl EditorState {
         self.error.as_deref()
     }
 
+    pub fn settings_error(&self) -> Option<&str> {
+        self.settings_error.as_deref()
+    }
+
     pub fn set_error(&mut self, message: Option<String>) {
         self.error = message;
     }
 
     pub fn clear_error(&mut self) {
         self.error = None;
+        self.settings_error = None;
     }
 
     pub fn sync_buffer_from_editor(&mut self) {
@@ -145,6 +163,90 @@ impl EditorState {
             .binding(action)
             .map(|binding| binding.matches(event))
             .unwrap_or(false)
+    }
+
+    pub fn handle_document_saved(&mut self, path: Option<String>) {
+        self.editor.mark_active_document_saved(path);
+        if let Some(buffer) = self
+            .editor
+            .active_document()
+            .map(|doc| doc.buffer.clone())
+        {
+            self.refresh_active_highlighting(&buffer);
+        }
+    }
+
+    pub fn open_settings(&mut self) {
+        self.settings.open();
+        self.settings
+            .sync_bindings(self.quick_commands, &self.keymap);
+        self.clear_error();
+        self.command_palette.close();
+    }
+
+    pub fn close_settings(&mut self) {
+        self.settings.close();
+        self.settings_error = None;
+    }
+
+    pub fn settings(&self) -> &SettingsState {
+        &self.settings
+    }
+
+    pub fn settings_mut(&mut self) -> &mut SettingsState {
+        &mut self.settings
+    }
+
+    pub fn clear_binding_error(&mut self, id: QuickCommandId) {
+        self.settings.set_binding_error(id, None);
+        self.settings_error = None;
+    }
+
+    pub fn apply_quick_command_binding(
+        &mut self,
+        id: QuickCommandId,
+    ) -> Result<(), String> {
+        let command = self
+            .quick_commands
+            .iter()
+            .find(|cmd| cmd.id == id)
+            .ok_or_else(|| "Unknown command".to_string())?;
+
+        let action = command
+            .action
+            .ok_or_else(|| "This command cannot be bound".to_string())?;
+
+        let input = self
+            .settings
+            .binding_input(id)
+            .trim()
+            .to_string();
+
+        if input.is_empty() {
+            self.keymap.set_binding(action, None);
+            self.settings.set_binding_error(id, None);
+            self.settings.set_binding_input(id, String::new());
+            self.settings_error = None;
+            return Ok(());
+        }
+
+        match KeyCombination::parse(&input) {
+            Ok(combo) => {
+                let display = combo.to_string();
+                self.keymap.set_binding(action, Some(combo));
+                self.settings.set_binding_input(id, display);
+                self.settings.set_binding_error(id, None);
+                self.settings_error = None;
+                Ok(())
+            }
+            Err(err) => {
+                let message = err.to_string();
+                self.settings
+                    .set_binding_error(id, Some(message.clone()));
+                self.settings_error = Some(message.clone());
+                Err(message)
+            }
+        }
     }
 
     pub fn scale_factor(&self) -> f64 {

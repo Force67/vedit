@@ -7,6 +7,7 @@ use std::path::Path;
 
 /// Identifier used for the quick command menu toggle.
 pub const QUICK_COMMAND_MENU_ACTION: &str = "quick_command_menu.toggle";
+pub const SAVE_ACTION: &str = "file.save";
 
 /// Logical key identifier supported by keybindings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -49,6 +50,24 @@ impl Key {
             }
             other if other.len() == 1 => Ok(Self::Character(other.chars().next().unwrap())),
             other => Err(ParseKeyCombinationError::UnknownKey(other.to_string())),
+        }
+    }
+}
+
+impl fmt::Display for Key {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Key::Character(ch) => write!(f, "{}", ch.to_ascii_uppercase()),
+            Key::Function(value) => write!(f, "F{}", value),
+            Key::Escape => write!(f, "Esc"),
+            Key::Enter => write!(f, "Enter"),
+            Key::Tab => write!(f, "Tab"),
+            Key::Space => write!(f, "Space"),
+            Key::ArrowUp => write!(f, "ArrowUp"),
+            Key::ArrowDown => write!(f, "ArrowDown"),
+            Key::ArrowLeft => write!(f, "ArrowLeft"),
+            Key::ArrowRight => write!(f, "ArrowRight"),
+            Key::Backspace => write!(f, "Backspace"),
         }
     }
 }
@@ -133,6 +152,41 @@ impl KeyCombination {
     }
 }
 
+impl fmt::Display for KeyCombination {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut first = true;
+        if self.ctrl {
+            write!(f, "Ctrl")?;
+            first = false;
+        }
+        if self.shift {
+            if !first {
+                write!(f, "+")?;
+            }
+            write!(f, "Shift")?;
+            first = false;
+        }
+        if self.alt {
+            if !first {
+                write!(f, "+")?;
+            }
+            write!(f, "Alt")?;
+            first = false;
+        }
+        if self.command {
+            if !first {
+                write!(f, "+")?;
+            }
+            write!(f, "Cmd")?;
+            first = false;
+        }
+        if !first {
+            write!(f, "+")?;
+        }
+        write!(f, "{}", self.key)
+    }
+}
+
 /// Error raised while parsing a key combination specification.
 #[derive(Debug)]
 pub enum ParseKeyCombinationError {
@@ -172,6 +226,16 @@ impl Default for Keymap {
                 key: Key::Character('P'),
             },
         );
+        bindings.insert(
+            SAVE_ACTION.to_string(),
+            KeyCombination {
+                ctrl: cfg!(not(target_os = "macos")),
+                shift: false,
+                alt: false,
+                command: cfg!(target_os = "macos"),
+                key: Key::Character('S'),
+            },
+        );
         Self { bindings }
     }
 }
@@ -183,6 +247,15 @@ impl Keymap {
 
     pub fn merge(&mut self, other: Keymap) {
         self.bindings.extend(other.bindings);
+    }
+
+    pub fn set_binding(&mut self, action: impl Into<String>, combination: Option<KeyCombination>) {
+        let action = action.into();
+        if let Some(combination) = combination {
+            self.bindings.insert(action, combination);
+        } else {
+            self.bindings.remove(&action);
+        }
     }
 
     pub fn load_from_file(path: impl AsRef<Path>) -> Result<Self, KeymapError> {

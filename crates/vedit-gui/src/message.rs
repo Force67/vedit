@@ -1,4 +1,5 @@
 use crate::quick_commands::QuickCommandId;
+use crate::settings::SettingsCategory;
 use iced::keyboard;
 use crate::widgets::text_editor::Action as TextEditorAction;
 use std::fmt;
@@ -15,6 +16,12 @@ pub enum Message {
     WorkspaceLoaded(Result<Option<(String, Vec<FileNode>)>, String>),
     WorkspaceFileActivated(String),
     BufferAction(TextEditorAction),
+    DocumentSaved(Result<Option<String>, String>),
+    SettingsOpened,
+    SettingsClosed,
+    SettingsCategorySelected(SettingsCategory),
+    SettingsBindingChanged(QuickCommandId, String),
+    SettingsBindingApplied(QuickCommandId),
     Keyboard(keyboard::Event),
     CommandPaletteInputChanged(String),
     CommandPaletteCommandInvoked(QuickCommandId),

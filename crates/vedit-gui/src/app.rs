@@ -1,4 +1,4 @@
-use crate::commands;
+use crate::commands::{self, SaveDocumentRequest};
 use crate::keyboard;
 use crate::message::Message;
 use crate::quick_commands::QuickCommandId;
@@ -7,7 +7,7 @@ use crate::view;
 use iced::Subscription;
 use iced::{executor, theme, Application, Command, Element, Settings};
 use iced::event;
-use vedit_core::{Document, Key, QUICK_COMMAND_MENU_ACTION};
+use vedit_core::{Document, Key, QUICK_COMMAND_MENU_ACTION, SAVE_ACTION};
 
 pub fn run() -> iced::Result {
     EditorApp::run(Settings::default())
@@ -84,6 +84,36 @@ impl Application for EditorApp {
             Message::BufferAction(action) => {
                 self.state.apply_buffer_action(action);
             }
+            Message::DocumentSaved(result) => match result {
+                Ok(Some(path)) => {
+                    self.state.handle_document_saved(Some(path));
+                    self.state.clear_error();
+                }
+                Ok(None) => {}
+                Err(err) => {
+                    self.state.set_error(Some(err));
+                }
+            },
+            Message::SettingsOpened => {
+                self.state.open_settings();
+            }
+            Message::SettingsClosed => {
+                self.state.close_settings();
+            }
+            Message::SettingsCategorySelected(category) => {
+                self.state.settings_mut().select_category(category);
+            }
+            Message::SettingsBindingChanged(id, value) => {
+                self.state.settings_mut().set_binding_input(id, value);
+                self.state.clear_binding_error(id);
+            }
+            Message::SettingsBindingApplied(id) => {
+                if let Err(err) = self.state.apply_quick_command_binding(id) {
+                    self.state.set_error(Some(err));
+                } else {
+                    self.state.clear_error();
+                }
+            }
             Message::Keyboard(key_event) => {
                 if let Some(core_event) = keyboard::key_event_from_iced(&key_event) {
                     if self.state.matches_action(QUICK_COMMAND_MENU_ACTION, &core_event) {
@@ -94,6 +124,18 @@ impl Application for EditorApp {
                             self.state.open_command_palette();
                         }
                         return Command::none();
+                    }
+
+                    for command in self.state.quick_commands() {
+                        if let Some(action) = command.action {
+                            if self.state.matches_action(action, &core_event) {
+                                return self.execute_quick_command(command.id);
+                            }
+                        }
+                    }
+
+                    if self.state.matches_action(SAVE_ACTION, &core_event) {
+                        return self.save_active_document();
                     }
 
                     if self.state.command_palette().is_open() {
@@ -166,6 +208,7 @@ impl EditorApp {
             QuickCommandId::OpenFolder => {
                 Command::perform(commands::pick_workspace(), Message::WorkspaceLoaded)
             }
+            QuickCommandId::SaveFile => self.save_active_document(),
             QuickCommandId::NewScratchBuffer => {
                 let index = self.state.editor_mut().open_document(Document::default());
                 self.state.editor_mut().set_active(index);
@@ -179,6 +222,19 @@ impl EditorApp {
                 self.state.set_error(Some(scale_info));
                 Command::none()
             }
+        }
+    }
+
+    fn save_active_document(&mut self) -> Command<Message> {
+        if let Some(doc) = self.state.editor().active_document() {
+            let request = SaveDocumentRequest {
+                path: doc.path.clone(),
+                contents: doc.buffer.clone(),
+                suggested_name: Some(doc.display_name().to_string()),
+            };
+            Command::perform(commands::save_document(request), Message::DocumentSaved)
+        } else {
+            Command::none()
         }
     }
 }

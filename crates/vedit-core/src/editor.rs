@@ -84,7 +84,16 @@ impl Editor {
 
     pub fn clear_active_modified(&mut self) {
         if let Some(doc) = self.active_document_mut() {
-            doc.is_modified = false;
+            doc.mark_clean();
+        }
+    }
+
+    pub fn mark_active_document_saved(&mut self, path: Option<String>) {
+        if let Some(doc) = self.active_document_mut() {
+            if let Some(path) = path {
+                doc.set_path(path);
+            }
+            doc.mark_clean();
         }
     }
 

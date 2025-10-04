@@ -1,4 +1,5 @@
 use crate::message::{Message, WorkspaceSnapshot};
+use crate::settings::{SettingsCategory, SETTINGS_CATEGORIES};
 use crate::state::EditorState;
 use crate::syntax::{format_highlight, SyntaxHighlighter};
 use crate::widgets::text_editor::TextEditor as EditorWidget;
@@ -8,7 +9,7 @@ use crate::style::{
 };
 use iced::alignment::Vertical;
 use iced::widget::lazy;
-use iced::widget::{button, column, container, row, scrollable, text, text_input, Column};
+use iced::widget::{button, column, container, horizontal_space, row, scrollable, text, text_input, Column};
 use iced::{theme, Alignment, Color, Element, Length, Padding};
 use vedit_core::FileNode;
 
@@ -18,6 +19,88 @@ pub fn view(state: &EditorState) -> Element<'_, Message> {
     let spacing_medium = (12.0 * scale).max(6.0);
     let spacing_small = (8.0 * scale).max(4.0);
 
+    let top_bar = render_top_bar(state, scale, spacing_large, spacing_medium);
+
+    let mut layout = column![top_bar];
+
+    if state.settings().is_open() {
+        layout = layout.push(render_settings(state, scale, spacing_large, spacing_medium, spacing_small));
+    } else {
+        if state.command_palette().is_open() {
+            layout = layout.push(render_command_palette(state));
+        }
+        layout = layout.push(render_editor_content(
+            state,
+            scale,
+            spacing_large,
+            spacing_medium,
+            spacing_small,
+        ));
+        layout = layout.push(render_status_bar(state, scale, spacing_small, spacing_large));
+    }
+
+    container(
+        layout
+            .spacing(spacing_large)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .align_items(Alignment::Start),
+    )
+    .width(Length::Fill)
+    .height(Length::Fill)
+    .center_x()
+    .center_y()
+    .style(root_container())
+    .into()
+}
+
+fn render_top_bar(
+    state: &EditorState,
+    scale: f32,
+    spacing_large: f32,
+    spacing_medium: f32,
+) -> Element<'_, Message> {
+    let mut row = row![
+        text("vedit")
+            .size((20.0 * scale).max(14.0))
+            .style(Color::from_rgb8(0, 120, 215)),
+        button(text("Open File…").size((14.0 * scale).max(10.0)))
+            .style(top_bar_button())
+            .on_press(Message::OpenFileRequested),
+        button(text("Open Folder…").size((14.0 * scale).max(10.0)))
+            .style(top_bar_button())
+            .on_press(Message::WorkspaceOpenRequested),
+        horizontal_space().width(Length::Fill),
+    ]
+    .spacing(spacing_large)
+    .align_items(Alignment::Center);
+
+    let (label, message) = if state.settings().is_open() {
+        ("Close Settings", Message::SettingsClosed)
+    } else {
+        ("Settings", Message::SettingsOpened)
+    };
+
+    row = row.push(
+        button(text(label).size((14.0 * scale).max(10.0)))
+            .style(top_bar_button())
+            .on_press(message),
+    );
+
+    container(row)
+        .padding([spacing_medium, spacing_large])
+        .width(Length::Fill)
+        .style(ribbon_container())
+        .into()
+}
+
+fn render_editor_content(
+    state: &EditorState,
+    scale: f32,
+    spacing_large: f32,
+    spacing_medium: f32,
+    spacing_small: f32,
+) -> Element<'_, Message> {
     let buffer = EditorWidget::new(state.buffer_content())
         .highlight::<SyntaxHighlighter>(state.syntax_settings(), format_highlight)
         .line_number_color(Color::from_rgb8(133, 133, 133))
@@ -108,30 +191,19 @@ pub fn view(state: &EditorState) -> Element<'_, Message> {
         .width(Length::Fixed(sidebar_width))
         .height(Length::Fill);
 
-    let content_row = row![editor_panel, side_panel]
+    row![editor_panel, side_panel]
         .spacing(spacing_large)
         .width(Length::Fill)
-        .height(Length::Fill);
+        .height(Length::Fill)
+        .into()
+}
 
-    let top_bar = container(
-        row![
-            text("vedit")
-                .size((20.0 * scale).max(14.0))
-                .style(Color::from_rgb8(0, 120, 215)),
-            button(text("Open File…").size((14.0 * scale).max(10.0)))
-                .style(top_bar_button())
-                .on_press(Message::OpenFileRequested),
-            button(text("Open Folder…").size((14.0 * scale).max(10.0)))
-                .style(top_bar_button())
-                .on_press(Message::WorkspaceOpenRequested),
-        ]
-        .spacing(spacing_large)
-        .align_items(Alignment::Center),
-    )
-    .padding([spacing_medium, spacing_large])
-    .width(Length::Fill)
-    .style(ribbon_container());
-
+fn render_status_bar(
+    state: &EditorState,
+    scale: f32,
+    spacing_small: f32,
+    spacing_large: f32,
+) -> Element<'_, Message> {
     let workspace_status = format!(
         "Workspace: {}",
         state.editor().workspace_root().unwrap_or("(none)")
@@ -143,7 +215,7 @@ pub fn view(state: &EditorState) -> Element<'_, Message> {
         .map(|doc| doc.language().display_name())
         .unwrap_or("Plain Text");
 
-    let status_bar = container(
+    container(
         row![
             text(format!("File: {}", state.editor().status_line())).size((14.0 * scale).max(10.0)),
             text(format!("Language: {}", active_language)).size((14.0 * scale).max(10.0)),
@@ -169,30 +241,116 @@ pub fn view(state: &EditorState) -> Element<'_, Message> {
     .padding([spacing_small, spacing_large])
     .width(Length::Fill)
     .align_y(Vertical::Center)
-    .style(status_container());
+    .style(status_container())
+    .into()
+}
 
-    let mut layout = column![top_bar];
+fn render_settings(
+    state: &EditorState,
+    scale: f32,
+    spacing_large: f32,
+    spacing_medium: f32,
+    spacing_small: f32,
+) -> Element<'_, Message> {
+    let mut categories_list = column![text("Categories").size((16.0 * scale).max(12.0))]
+        .spacing(spacing_small);
 
-    if state.command_palette().is_open() {
-        layout = layout.push(render_command_palette(state));
+    for category in SETTINGS_CATEGORIES.iter().copied() {
+        let label = category.label();
+        let mut entry = button(text(label).size((14.0 * scale).max(10.0)))
+            .style(document_button())
+            .width(Length::Fill)
+            .on_press(Message::SettingsCategorySelected(category));
+
+        if category == state.settings().selected_category() {
+            entry = entry.style(active_document_button());
+        }
+
+        categories_list = categories_list.push(entry);
     }
 
-    layout = layout
-        .push(content_row)
-        .push(status_bar);
+    let categories_panel = container(categories_list)
+        .padding(spacing_large)
+        .width(Length::Fixed((220.0 * scale).max(160.0)))
+        .style(panel_container());
 
-    container(
-        layout
-            .spacing(spacing_large)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .align_items(Alignment::Start),
-    )
+    let detail: Element<'_, Message> = match state.settings().selected_category() {
+        SettingsCategory::Keybindings =>
+            render_keybindings_settings(state, scale, spacing_large, spacing_medium, spacing_small),
+    };
+
+    row![categories_panel, detail]
+        .spacing(spacing_large)
         .width(Length::Fill)
         .height(Length::Fill)
-        .center_x()
-        .center_y()
-        .style(root_container())
+        .into()
+}
+
+fn render_keybindings_settings(
+    state: &EditorState,
+    scale: f32,
+    spacing_large: f32,
+    spacing_medium: f32,
+    spacing_small: f32,
+) -> Element<'_, Message> {
+    let mut content = column![
+        text("Quick Command Shortcuts").size((16.0 * scale).max(12.0)),
+        text("Assign keyboard shortcuts to launch quick actions directly.")
+            .size((14.0 * scale).max(10.0)),
+    ]
+    .spacing(spacing_small);
+
+    if let Some(err) = state.settings_error() {
+        content = content.push(
+            text(err)
+                .size((13.0 * scale).max(9.0))
+                .style(Color::from_rgb8(220, 50, 47)),
+        );
+    }
+
+    for command in state
+        .quick_commands()
+        .iter()
+        .filter(|cmd| cmd.action.is_some())
+    {
+        let id = command.id;
+        let binding_value = state.settings().binding_input(id);
+        let field = text_input("e.g. Ctrl+Alt+K", binding_value)
+            .padding(Padding::new((4.0 * scale).max(2.0)))
+            .on_input(move |value| Message::SettingsBindingChanged(id, value))
+            .on_submit(Message::SettingsBindingApplied(id))
+            .width(Length::FillPortion(2));
+
+        let apply_button = button(text("Assign").size((14.0 * scale).max(10.0)))
+            .on_press(Message::SettingsBindingApplied(id));
+
+        let mut entry = column![
+            text(command.title).size((14.0 * scale).max(10.0)),
+            text(command.description)
+                .size((12.0 * scale).max(9.0))
+                .style(Color::from_rgb8(170, 170, 170)),
+            row![field, apply_button]
+                .spacing(spacing_small)
+                .align_items(Alignment::Center),
+        ]
+        .spacing(spacing_small)
+        .padding([spacing_small, 0.0, spacing_small, 0.0]);
+
+        if let Some(err) = state.settings().binding_error(id) {
+            entry = entry.push(
+                text(err)
+                    .size((12.0 * scale).max(9.0))
+                    .style(Color::from_rgb8(220, 50, 47)),
+            );
+        }
+
+        content = content.push(entry);
+    }
+
+    container(content.spacing(spacing_medium))
+        .padding(spacing_large)
+        .width(Length::Fill)
+        .style(panel_container())
         .into()
 }
 

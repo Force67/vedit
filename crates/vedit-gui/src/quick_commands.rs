@@ -1,7 +1,8 @@
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum QuickCommandId {
     OpenFile,
     OpenFolder,
+    SaveFile,
     NewScratchBuffer,
     ShowScaleFactor,
 }
@@ -11,6 +12,7 @@ pub struct QuickCommand {
     pub id: QuickCommandId,
     pub title: &'static str,
     pub description: &'static str,
+    pub action: Option<&'static str>,
 }
 
 static QUICK_COMMANDS: &[QuickCommand] = &[
@@ -18,21 +20,31 @@ static QUICK_COMMANDS: &[QuickCommand] = &[
         id: QuickCommandId::OpenFile,
         title: "Open File…",
         description: "Select a file from disk",
+        action: Some("quick_command.open_file"),
     },
     QuickCommand {
         id: QuickCommandId::OpenFolder,
         title: "Open Folder…",
         description: "Choose a workspace directory",
+        action: Some("quick_command.open_folder"),
+    },
+    QuickCommand {
+        id: QuickCommandId::SaveFile,
+        title: "Save File",
+        description: "Write the current buffer to disk",
+        action: Some("quick_command.save_file"),
     },
     QuickCommand {
         id: QuickCommandId::NewScratchBuffer,
         title: "New Scratch Buffer",
         description: "Create an empty buffer for quick notes",
+        action: Some("quick_command.new_scratch"),
     },
     QuickCommand {
         id: QuickCommandId::ShowScaleFactor,
         title: "Show Detected Scale",
         description: "Log the current UI scale factor",
+        action: None,
     },
 ];
 

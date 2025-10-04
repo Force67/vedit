@@ -25,6 +25,17 @@ impl Document {
         }
     }
 
+    /// Update the document path and refresh its fingerprint.
+    pub fn set_path(&mut self, path: String) {
+        self.fingerprint = Some(compute_fingerprint(&path));
+        self.path = Some(path);
+    }
+
+    /// Mark the document as unchanged relative to disk.
+    pub fn mark_clean(&mut self) {
+        self.is_modified = false;
+    }
+
     pub fn from_path(path: impl AsRef<Path>) -> io::Result<Self> {
         let path_buf = path.as_ref().to_path_buf();
         let contents = fs::read_to_string(&path_buf)?;
