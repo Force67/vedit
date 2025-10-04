@@ -1,3 +1,4 @@
+use crate::language::Language;
 use std::collections::hash_map::DefaultHasher;
 use std::fs;
 use std::hash::{Hash, Hasher};
@@ -44,11 +45,11 @@ impl Document {
         }
     }
 
-    pub fn language(&self) -> &'static str {
+    pub fn language(&self) -> Language {
         self.path
             .as_deref()
             .map(detect_language_from_path)
-            .unwrap_or("Plain Text")
+            .unwrap_or(Language::PlainText)
     }
 }
 
@@ -73,15 +74,15 @@ fn canonicalize_lossy(path: &str) -> String {
         .into_owned()
 }
 
-fn detect_language_from_path(path: &str) -> &'static str {
+fn detect_language_from_path(path: &str) -> Language {
     let path = Path::new(path);
 
     if let Some(name) = path.file_name().and_then(|name| name.to_str()) {
         let lower = name.to_ascii_lowercase();
         match lower.as_str() {
-            "makefile" => return "Makefile",
-            "dockerfile" => return "Dockerfile",
-            "cmakelists.txt" => return "CMake",
+            "makefile" => return Language::Makefile,
+            "dockerfile" => return Language::Dockerfile,
+            "cmakelists.txt" => return Language::CMake,
             _ => {}
         }
     }
@@ -92,51 +93,51 @@ fn detect_language_from_path(path: &str) -> &'static str {
         .map(|ext| ext.to_ascii_lowercase())
     {
         Some(ext) => match ext.as_str() {
-            "rs" => "Rust",
-            "c" => "C",
-            "h" => "C Header",
-            "hh" | "hpp" | "hxx" | "h++" => "C++ Header",
-            "cpp" | "cc" | "cxx" | "c++" => "C++",
-            "m" => "Objective-C",
-            "mm" => "Objective-C++",
-            "swift" => "Swift",
-            "java" => "Java",
-            "kt" | "kts" => "Kotlin",
-            "cs" => "C#",
-            "go" => "Go",
-            "py" => "Python",
-            "rb" => "Ruby",
-            "php" => "PHP",
-            "hs" => "Haskell",
-            "erl" | "hrl" => "Erlang",
-            "ex" | "exs" => "Elixir",
-            "js" => "JavaScript",
-            "jsx" => "JavaScript JSX",
-            "ts" => "TypeScript",
-            "tsx" => "TypeScript JSX",
-            "json" => "JSON",
-            "toml" => "TOML",
-            "yaml" | "yml" => "YAML",
-            "ini" => "INI",
-            "md" | "markdown" => "Markdown",
-            "sql" => "SQL",
-            "html" | "htm" => "HTML",
-            "css" => "CSS",
-            "scss" | "sass" => "SCSS",
-            "less" => "Less",
-            "lua" => "Lua",
-            "zig" => "Zig",
-            "dart" => "Dart",
-            "scala" => "Scala",
-            "sh" | "bash" => "Shell",
-            "fish" => "Fish",
-            "ps1" => "PowerShell",
-            "bat" => "Batch",
-            "vue" => "Vue",
-            "svelte" => "Svelte",
-            _ => "Plain Text",
+            "rs" => Language::Rust,
+            "c" => Language::C,
+            "h" => Language::CHeader,
+            "hh" | "hpp" | "hxx" | "h++" => Language::CppHeader,
+            "cpp" | "cc" | "cxx" | "c++" => Language::Cpp,
+            "m" => Language::ObjectiveC,
+            "mm" => Language::ObjectiveCpp,
+            "swift" => Language::Swift,
+            "java" => Language::Java,
+            "kt" | "kts" => Language::Kotlin,
+            "cs" => Language::CSharp,
+            "go" => Language::Go,
+            "py" => Language::Python,
+            "rb" => Language::Ruby,
+            "php" => Language::Php,
+            "hs" => Language::Haskell,
+            "erl" | "hrl" => Language::Erlang,
+            "ex" | "exs" => Language::Elixir,
+            "js" => Language::JavaScript,
+            "jsx" => Language::Jsx,
+            "ts" => Language::TypeScript,
+            "tsx" => Language::Tsx,
+            "json" => Language::Json,
+            "toml" => Language::Toml,
+            "yaml" | "yml" => Language::Yaml,
+            "ini" => Language::Ini,
+            "md" | "markdown" => Language::Markdown,
+            "sql" => Language::Sql,
+            "html" | "htm" => Language::Html,
+            "css" => Language::Css,
+            "scss" | "sass" => Language::Scss,
+            "less" => Language::Less,
+            "lua" => Language::Lua,
+            "zig" => Language::Zig,
+            "dart" => Language::Dart,
+            "scala" => Language::Scala,
+            "sh" | "bash" => Language::Shell,
+            "fish" => Language::Fish,
+            "ps1" => Language::PowerShell,
+            "bat" => Language::Batch,
+            "vue" => Language::Vue,
+            "svelte" => Language::Svelte,
+            _ => Language::PlainText,
         },
-        None => "Plain Text",
+        None => Language::PlainText,
     }
 }
 
@@ -147,18 +148,18 @@ mod tests {
     #[test]
     fn detects_language_from_extension() {
         let doc = Document::new(Some("/tmp/test.rs".into()), String::new());
-        assert_eq!(doc.language(), "Rust");
+        assert_eq!(doc.language(), Language::Rust);
     }
 
     #[test]
     fn detects_language_from_special_file_name() {
         let doc = Document::new(Some("/tmp/Makefile".into()), String::new());
-        assert_eq!(doc.language(), "Makefile");
+        assert_eq!(doc.language(), Language::Makefile);
     }
 
     #[test]
     fn defaults_to_plain_text_without_path() {
         let doc = Document::default();
-        assert_eq!(doc.language(), "Plain Text");
+        assert_eq!(doc.language(), Language::PlainText);
     }
 }

@@ -1,5 +1,6 @@
 use crate::message::{Message, WorkspaceSnapshot};
 use crate::state::EditorState;
+use crate::syntax::{format_highlight, SyntaxHighlighter};
 use crate::widgets::text_editor::TextEditor as EditorWidget;
 use crate::style::{
     active_document_button, document_button, panel_container, ribbon_container,
@@ -18,6 +19,7 @@ pub fn view(state: &EditorState) -> Element<'_, Message> {
     let spacing_small = (8.0 * scale).max(4.0);
 
     let buffer = EditorWidget::new(state.buffer_content())
+        .highlight::<SyntaxHighlighter>(state.syntax_settings(), format_highlight)
         .line_number_color(Color::from_rgb8(133, 133, 133))
         .on_action(Message::BufferAction)
         .height(Length::Fill)
@@ -138,7 +140,7 @@ pub fn view(state: &EditorState) -> Element<'_, Message> {
     let active_language = state
         .editor()
         .active_document()
-        .map(|doc| doc.language())
+        .map(|doc| doc.language().display_name())
         .unwrap_or("Plain Text");
 
     let status_bar = container(

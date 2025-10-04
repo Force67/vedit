@@ -21,6 +21,7 @@ use iced::Size;
 use iced::Theme as IcedTheme;
 use iced::advanced::text::{LineHeight, Shaping, Text as PrimitiveText};
 use iced::advanced::text::highlighter;
+use iced::advanced::text::Highlighter as IcedHighlighter;
 use iced::advanced::text::Renderer as TextRenderer;
 use iced_graphics::text::Editor as GraphicsEditor;
 use std::cell::{Ref, RefCell};
@@ -28,15 +29,18 @@ use std::cell::{Ref, RefCell};
 const DEFAULT_GUTTER_WIDTH: f32 = 64.0;
 const DEFAULT_LINE_COLOR: Color = Color::from_rgba(0.7, 0.7, 0.7, 1.0);
 
-pub struct TextEditor<'a, Message> {
-    inner: text_editor::TextEditor<'a, highlighter::PlainText, Message>,
+pub struct TextEditor<'a, Message, H = highlighter::PlainText>
+where
+    H: IcedHighlighter,
+{
+    inner: text_editor::TextEditor<'a, H, Message>,
     content: &'a Content,
     base_padding: Padding,
     gutter_width: f32,
     line_color: Color,
 }
 
-impl<'a, Message> TextEditor<'a, Message> {
+impl<'a, Message> TextEditor<'a, Message, highlighter::PlainText> {
     pub fn new(content: &'a Content) -> Self {
         let base_padding = Padding::new(5.0);
         let gutter_width = DEFAULT_GUTTER_WIDTH;
@@ -53,6 +57,31 @@ impl<'a, Message> TextEditor<'a, Message> {
         }
     }
 
+    pub fn highlight<NH>(
+        self,
+        settings: NH::Settings,
+        to_format: fn(
+            &NH::Highlight,
+            &IcedTheme,
+        ) -> highlighter::Format<<IcedRenderer as TextRenderer>::Font>,
+    ) -> TextEditor<'a, Message, NH>
+    where
+        NH: IcedHighlighter,
+    {
+        TextEditor {
+            inner: self.inner.highlight(settings, to_format),
+            content: self.content,
+            base_padding: self.base_padding,
+            gutter_width: self.gutter_width,
+            line_color: self.line_color,
+        }
+    }
+}
+
+impl<'a, Message, H> TextEditor<'a, Message, H>
+where
+    H: IcedHighlighter,
+{
     pub fn on_action(mut self, on_edit: impl Fn(Action) -> Message + 'a) -> Self {
         self.inner = self.inner.on_action(on_edit);
         self
@@ -76,9 +105,10 @@ impl<'a, Message> TextEditor<'a, Message> {
     }
 }
 
-impl<'a, Message> Widget<Message, IcedTheme, IcedRenderer> for TextEditor<'a, Message>
+impl<'a, Message, H> Widget<Message, IcedTheme, IcedRenderer> for TextEditor<'a, Message, H>
 where
     Message: 'a,
+    H: IcedHighlighter,
 {
     fn tag(&self) -> widget::tree::Tag {
         self.inner.tag()
@@ -160,11 +190,12 @@ where
     }
 }
 
-impl<'a, Message> From<TextEditor<'a, Message>> for Element<'a, Message, IcedTheme, IcedRenderer>
+impl<'a, Message, H> From<TextEditor<'a, Message, H>> for Element<'a, Message, IcedTheme, IcedRenderer>
 where
     Message: 'a,
+    H: IcedHighlighter,
 {
-    fn from(editor: TextEditor<'a, Message>) -> Self {
+    fn from(editor: TextEditor<'a, Message, H>) -> Self {
         Element::new(editor)
     }
 }

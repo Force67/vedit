@@ -1,9 +1,10 @@
 use crate::quick_commands::{commands as quick_commands_list, QuickCommand, QuickCommandId};
-use crate::widgets::text_editor::{Action as TextEditorAction, Content};
 use crate::scaling;
+use crate::syntax::{DocumentKey, SyntaxSettings, SyntaxSystem};
+use crate::widgets::text_editor::{Action as TextEditorAction, Content};
 use std::env;
 use std::path::Path;
-use vedit_core::{Editor, KeyEvent, Keymap, KeymapError};
+use vedit_core::{Editor, KeyEvent, Keymap, KeymapError, Language};
 
 #[derive(Debug)]
 pub struct EditorState {
@@ -14,6 +15,7 @@ pub struct EditorState {
     quick_commands: &'static [QuickCommand],
     command_palette: CommandPaletteState,
     scale_factor: f64,
+    syntax: SyntaxSystem,
 }
 
 impl Default for EditorState {
@@ -26,6 +28,7 @@ impl Default for EditorState {
             quick_commands: quick_commands_list(),
             command_palette: CommandPaletteState::default(),
             scale_factor: scaling::detect_scale_factor().unwrap_or(1.0),
+            syntax: SyntaxSystem::new(),
         };
         state.sync_buffer_from_editor();
 
@@ -62,6 +65,15 @@ impl EditorState {
         &self.buffer_content
     }
 
+    pub fn syntax_settings(&self) -> SyntaxSettings {
+        let fallback = DocumentKey::Index(self.editor.active_index());
+        let key = self
+            .active_document_identity()
+            .map(|(key, _)| key)
+            .unwrap_or(fallback);
+        self.syntax.settings_for(key)
+    }
+
     pub fn error(&self) -> Option<&str> {
         self.error.as_deref()
     }
@@ -82,6 +94,7 @@ impl EditorState {
             .unwrap_or_default();
 
         self.buffer_content = Content::with_text(&contents);
+        self.refresh_active_highlighting(&contents);
     }
 
     pub fn apply_buffer_action(&mut self, action: TextEditorAction) {
@@ -90,7 +103,8 @@ impl EditorState {
 
         if is_edit {
             let updated = self.editor_contents_to_string();
-            self.editor.update_active_buffer(updated);
+            self.editor.update_active_buffer(updated.clone());
+            self.refresh_active_highlighting(&updated);
         }
     }
 
@@ -147,6 +161,23 @@ impl EditorState {
             text.pop();
         }
         text
+    }
+
+    fn refresh_active_highlighting(&mut self, contents: &str) {
+        if let Some((key, language)) = self.active_document_identity() {
+            self.syntax.update_document(key, language, contents);
+        }
+    }
+
+    fn active_document_identity(&self) -> Option<(DocumentKey, Language)> {
+        let index = self.editor.active_index();
+        self.editor.active_document().map(|doc| {
+            let key = doc
+                .fingerprint
+                .map(DocumentKey::Fingerprint)
+                .unwrap_or(DocumentKey::Index(index));
+            (key, doc.language())
+        })
     }
 }
 

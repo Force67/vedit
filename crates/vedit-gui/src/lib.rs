@@ -8,5 +8,6 @@ mod view;
 mod keyboard;
 mod widgets;
 mod style;
+mod syntax;
 
 pub use app::run;
