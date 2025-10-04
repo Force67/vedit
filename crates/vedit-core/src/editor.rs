@@ -1,89 +1,7 @@
-use std::cmp::Ordering;
-use std::fs;
+use crate::document::Document;
+use crate::workspace::{self, FileNode};
 use std::io;
-use std::path::Path;
 use std::sync::Arc;
-
-const SKIPPED_DIRECTORIES: &[&str] = &[".git", "target", "node_modules", ".idea", ".vscode"];
-
-/// Represents an open file in the editor workspace.
-#[derive(Debug, Clone)]
-pub struct Document {
-    pub path: Option<String>,
-    pub buffer: String,
-    pub is_modified: bool,
-}
-
-impl Document {
-    pub fn new(path: Option<String>, buffer: String) -> Self {
-        Self {
-            path,
-            buffer,
-            is_modified: false,
-        }
-    }
-
-    pub fn from_path(path: impl AsRef<Path>) -> io::Result<Self> {
-        let path_buf = path.as_ref().to_path_buf();
-        let contents = fs::read_to_string(&path_buf)?;
-        Ok(Self::new(
-            Some(path_buf.to_string_lossy().to_string()),
-            contents,
-        ))
-    }
-
-    pub fn display_name(&self) -> &str {
-        if let Some(path) = &self.path {
-            Path::new(path)
-                .file_name()
-                .and_then(|name| name.to_str())
-                .unwrap_or(path)
-        } else {
-            "(scratch)"
-        }
-    }
-}
-
-impl Default for Document {
-    fn default() -> Self {
-        Self::new(None, String::new())
-    }
-}
-
-/// Node of a workspace file tree.
-#[derive(Debug, Clone)]
-pub struct FileNode {
-    pub name: String,
-    pub path: String,
-    pub is_directory: bool,
-    pub children: Vec<FileNode>,
-}
-
-impl FileNode {
-    fn from_path(path: &Path) -> io::Result<Self> {
-        let metadata = fs::metadata(path)?;
-        let is_directory = metadata.is_dir();
-        let name = path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .map(|name| name.to_string())
-            .unwrap_or_else(|| path.to_string_lossy().to_string());
-        let path_string = path.to_string_lossy().to_string();
-
-        let children = if is_directory {
-            Editor::collect_directory(path)?
-        } else {
-            Vec::new()
-        };
-
-        Ok(Self {
-            name,
-            path: path_string,
-            is_directory,
-            children,
-        })
-    }
-}
 
 /// High-level editor session managing open documents and workspace state.
 #[derive(Debug)]
@@ -194,48 +112,8 @@ impl Editor {
     }
 
     /// Build a workspace tree for the provided directory.
-    pub fn build_workspace_tree(root: impl AsRef<Path>) -> io::Result<Vec<FileNode>> {
-        Self::collect_directory(root.as_ref())
-    }
-
-    fn collect_directory(path: &Path) -> io::Result<Vec<FileNode>> {
-        let mut children = Vec::new();
-
-        for entry in fs::read_dir(path)? {
-            let entry = entry?;
-            let entry_path = entry.path();
-
-            if entry.file_type()?.is_dir() {
-                if let Some(name) = entry.file_name().to_str() {
-                    if SKIPPED_DIRECTORIES
-                        .iter()
-                        .any(|skip| name.eq_ignore_ascii_case(skip))
-                    {
-                        continue;
-                    }
-                }
-            }
-
-            // Skip directories we cannot access gracefully.
-            match FileNode::from_path(&entry_path) {
-                Ok(node) => children.push(node),
-                Err(err) => {
-                    if err.kind() == io::ErrorKind::PermissionDenied {
-                        continue;
-                    } else {
-                        return Err(err);
-                    }
-                }
-            }
-        }
-
-        children.sort_by(|a, b| match (a.is_directory, b.is_directory) {
-            (true, false) => Ordering::Less,
-            (false, true) => Ordering::Greater,
-            _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
-        });
-
-        Ok(children)
+    pub fn build_workspace_tree(root: impl AsRef<std::path::Path>) -> io::Result<Vec<FileNode>> {
+        workspace::build_tree(root)
     }
 
     /// Returns a human-friendly status line reflecting the current editor state.
