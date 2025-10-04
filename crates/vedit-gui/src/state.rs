@@ -1,4 +1,5 @@
 use crate::quick_commands::{commands as quick_commands_list, QuickCommand, QuickCommandId};
+use crate::scaling;
 use iced::widget::text_editor::{Action as TextEditorAction, Content};
 use std::env;
 use std::path::Path;
@@ -12,6 +13,7 @@ pub struct EditorState {
     keymap: Keymap,
     quick_commands: &'static [QuickCommand],
     command_palette: CommandPaletteState,
+    scale_factor: f64,
 }
 
 impl Default for EditorState {
@@ -23,6 +25,7 @@ impl Default for EditorState {
             keymap: Keymap::default(),
             quick_commands: quick_commands_list(),
             command_palette: CommandPaletteState::default(),
+            scale_factor: scaling::detect_scale_factor().unwrap_or(1.0),
         };
         state.sync_buffer_from_editor();
 
@@ -128,6 +131,14 @@ impl EditorState {
             .binding(action)
             .map(|binding| binding.matches(event))
             .unwrap_or(false)
+    }
+
+    pub fn scale_factor(&self) -> f64 {
+        self.scale_factor
+    }
+
+    pub fn format_scale_factor(&self) -> String {
+        format!("Scale factor: {:.2}", self.scale_factor)
     }
 
     fn editor_contents_to_string(&self) -> String {

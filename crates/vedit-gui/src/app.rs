@@ -151,6 +151,10 @@ impl Application for EditorApp {
             _ => None,
         })
     }
+
+    fn scale_factor(&self) -> f64 {
+        self.state.scale_factor()
+    }
 }
 
 impl EditorApp {
@@ -167,6 +171,12 @@ impl EditorApp {
                 self.state.editor_mut().set_active(index);
                 self.state.clear_error();
                 self.state.sync_buffer_from_editor();
+                Command::none()
+            }
+            QuickCommandId::ShowScaleFactor => {
+                let scale_info = self.state.format_scale_factor();
+                println!("{}", scale_info);
+                self.state.set_error(Some(scale_info));
                 Command::none()
             }
         }

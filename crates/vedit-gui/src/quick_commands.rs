@@ -3,6 +3,7 @@ pub enum QuickCommandId {
     OpenFile,
     OpenFolder,
     NewScratchBuffer,
+    ShowScaleFactor,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -27,6 +28,11 @@ static QUICK_COMMANDS: &[QuickCommand] = &[
         id: QuickCommandId::NewScratchBuffer,
         title: "New Scratch Buffer",
         description: "Create an empty buffer for quick notes",
+    },
+    QuickCommand {
+        id: QuickCommandId::ShowScaleFactor,
+        title: "Show Detected Scale",
+        description: "Log the current UI scale factor",
     },
 ];
 
