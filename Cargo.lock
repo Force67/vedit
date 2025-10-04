@@ -3466,7 +3466,9 @@ dependencies = [
 name = "vedit-gui"
 version = "0.1.0"
 dependencies = [
+ "cosmic-text",
  "iced",
+ "iced_graphics",
  "rfd",
  "vedit-core",
 ]

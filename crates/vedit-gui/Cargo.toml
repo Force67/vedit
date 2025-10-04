@@ -7,6 +7,8 @@ edition = "2021"
 path = "src/lib.rs"
 
 [dependencies]
-iced = { version = "0.12", features = ["wgpu", "tokio", "lazy"] }
+iced = { version = "0.12", features = ["wgpu", "tokio", "lazy", "advanced"] }
+iced_graphics = "0.12"
+cosmic-text = "0.10"
 rfd = "0.14"
 vedit-core = { path = "../vedit-core" }

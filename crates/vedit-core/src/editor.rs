@@ -58,6 +58,18 @@ impl Editor {
     }
 
     pub fn open_document(&mut self, document: Document) -> usize {
+        if let Some(fingerprint) = document.fingerprint {
+            if let Some(index) = self
+                .open_documents
+                .iter()
+                .position(|doc| doc.fingerprint == Some(fingerprint))
+            {
+                self.open_documents[index] = document;
+                self.active_index = index;
+                return index;
+            }
+        }
+
         self.open_documents.push(document);
         self.active_index = self.open_documents.len() - 1;
         self.active_index
@@ -129,5 +141,48 @@ impl Editor {
         } else {
             "No document".to_string()
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn reopening_same_path_reuses_existing_document() {
+        let mut editor = Editor::new();
+        let unique = format!(
+            "vedit_core_test_{}_{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+
+        let temp_dir = std::env::temp_dir().join(unique);
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        let file_path = temp_dir.join("sample.txt");
+        fs::write(&file_path, "hello world").unwrap();
+
+        let doc_one = Document::from_path(&file_path).unwrap();
+        let base_count = editor.document_count();
+        let first_index = editor.open_document(doc_one);
+
+        assert_eq!(editor.document_count(), base_count + 1);
+
+        let doc_two = Document::from_path(&file_path).unwrap();
+        let count_before = editor.document_count();
+        let second_index = editor.open_document(doc_two);
+
+        assert_eq!(second_index, first_index);
+        assert_eq!(editor.document_count(), count_before);
+        assert!(editor.active_document().is_some());
+
+        let _ = fs::remove_file(&file_path);
+        let _ = fs::remove_dir_all(&temp_dir);
     }
 }

@@ -1,6 +1,6 @@
 use crate::quick_commands::QuickCommandId;
 use iced::keyboard;
-use iced::widget::text_editor::Action as TextEditorAction;
+use crate::widgets::text_editor::Action as TextEditorAction;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;

@@ -1,6 +1,6 @@
 use crate::quick_commands::{commands as quick_commands_list, QuickCommand, QuickCommandId};
+use crate::widgets::text_editor::{Action as TextEditorAction, Content};
 use crate::scaling;
-use iced::widget::text_editor::{Action as TextEditorAction, Content};
 use std::env;
 use std::path::Path;
 use vedit_core::{Editor, KeyEvent, Keymap, KeymapError};

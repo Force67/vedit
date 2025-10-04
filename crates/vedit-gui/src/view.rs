@@ -1,22 +1,24 @@
 use crate::message::{Message, WorkspaceSnapshot};
 use crate::state::EditorState;
-use iced::alignment::{Horizontal, Vertical};
+use crate::widgets::text_editor::TextEditor as EditorWidget;
+use crate::style::{
+    active_document_button, document_button, panel_container, ribbon_container,
+    root_container, status_container, top_bar_button,
+};
+use iced::alignment::Vertical;
 use iced::widget::lazy;
-use iced::widget::{button, column, container, row, scrollable, text, text_editor, text_input, Column};
-use iced::{theme, Alignment, Element, Length, Padding};
-use vedit_core::{startup_banner, FileNode};
+use iced::widget::{button, column, container, row, scrollable, text, text_input, Column};
+use iced::{theme, Alignment, Color, Element, Length, Padding};
+use vedit_core::FileNode;
 
 pub fn view(state: &EditorState) -> Element<'_, Message> {
-    let banner = text(startup_banner())
-        .size(28)
-        .horizontal_alignment(Horizontal::Center);
-
     let scale = state.scale_factor() as f32;
     let spacing_large = (16.0 * scale).max(8.0);
     let spacing_medium = (12.0 * scale).max(6.0);
     let spacing_small = (8.0 * scale).max(4.0);
 
-    let buffer = text_editor::TextEditor::new(state.buffer_content())
+    let buffer = EditorWidget::new(state.buffer_content())
+        .line_number_color(Color::from_rgb8(133, 133, 133))
         .on_action(Message::BufferAction)
         .height(Length::Fill)
         .padding((12.0 * scale).max(6.0));
@@ -27,7 +29,7 @@ pub fn view(state: &EditorState) -> Element<'_, Message> {
             .padding((4.0 * scale).max(2.0))
             .width(Length::Fill)
             .height(Length::Fill)
-            .style(theme::Container::Box),
+            .style(panel_container()),
     ]
     .spacing(spacing_medium)
     .padding(spacing_large)
@@ -44,16 +46,14 @@ pub fn view(state: &EditorState) -> Element<'_, Message> {
         if document.is_modified {
             label.push('*');
         }
-        if is_active {
-            label = format!("• {}", label);
-        }
 
-            let mut entry = button(text(label).size((14.0 * scale).max(10.0)))
-                .width(Length::Fill)
-                .on_press(Message::DocumentSelected(index));
+        let mut entry = button(text(label).size((14.0 * scale).max(10.0)))
+            .width(Length::Fill)
+            .style(document_button())
+            .on_press(Message::DocumentSelected(index));
 
         if is_active {
-            entry = entry.style(theme::Button::Primary);
+            entry = entry.style(active_document_button());
         }
 
         documents_column = documents_column.push(entry);
@@ -62,7 +62,7 @@ pub fn view(state: &EditorState) -> Element<'_, Message> {
     let open_files_section = container(documents_column)
         .padding(spacing_large)
         .width(Length::Fill)
-        .style(theme::Container::Box);
+        .style(panel_container());
 
     let workspace_title = if let Some(root) = state.editor().workspace_root() {
         format!("Workspace: {}", root)
@@ -97,7 +97,7 @@ pub fn view(state: &EditorState) -> Element<'_, Message> {
     .padding(spacing_large)
     .width(Length::Fill)
     .height(Length::Fill)
-    .style(theme::Container::Box);
+    .style(panel_container());
 
     let sidebar_width = (240.0 / state.scale_factor()).clamp(180.0, 320.0) as f32;
 
@@ -113,16 +113,22 @@ pub fn view(state: &EditorState) -> Element<'_, Message> {
 
     let top_bar = container(
         row![
-            text("vedit").size((20.0 * scale).max(14.0)),
-            button(text("Open File…").size((14.0 * scale).max(10.0))).on_press(Message::OpenFileRequested),
-            button(text("Open Folder…").size((14.0 * scale).max(10.0))).on_press(Message::WorkspaceOpenRequested),
+            text("vedit")
+                .size((20.0 * scale).max(14.0))
+                .style(Color::from_rgb8(0, 120, 215)),
+            button(text("Open File…").size((14.0 * scale).max(10.0)))
+                .style(top_bar_button())
+                .on_press(Message::OpenFileRequested),
+            button(text("Open Folder…").size((14.0 * scale).max(10.0)))
+                .style(top_bar_button())
+                .on_press(Message::WorkspaceOpenRequested),
         ]
         .spacing(spacing_large)
         .align_items(Alignment::Center),
     )
     .padding([spacing_medium, spacing_large])
     .width(Length::Fill)
-    .style(theme::Container::Box);
+    .style(ribbon_container());
 
     let workspace_status = format!(
         "Workspace: {}",
@@ -153,7 +159,8 @@ pub fn view(state: &EditorState) -> Element<'_, Message> {
     )
     .padding([spacing_small, spacing_large])
     .width(Length::Fill)
-    .align_y(Vertical::Center);
+    .align_y(Vertical::Center)
+    .style(status_container());
 
     let mut layout = column![top_bar];
 
@@ -162,7 +169,6 @@ pub fn view(state: &EditorState) -> Element<'_, Message> {
     }
 
     layout = layout
-        .push(banner)
         .push(content_row)
         .push(status_bar);
 
@@ -177,6 +183,7 @@ pub fn view(state: &EditorState) -> Element<'_, Message> {
         .height(Length::Fill)
         .center_x()
         .center_y()
+        .style(root_container())
         .into()
 }
 
@@ -218,7 +225,7 @@ fn render_command_palette(state: &EditorState) -> Element<'_, Message> {
             container(text("No commands match your search").size((14.0 * scale).max(10.0)))
                 .padding(spacing_small)
                 .width(Length::Fill)
-                .style(theme::Container::Box),
+                .style(panel_container()),
         );
     } else {
         for (position, index) in filtered.iter().enumerate() {
@@ -257,7 +264,7 @@ fn render_command_palette(state: &EditorState) -> Element<'_, Message> {
     container(palette_column)
         .padding(spacing_large)
         .width(Length::Fill)
-        .style(theme::Container::Box)
+        .style(panel_container())
         .into()
 }
 
