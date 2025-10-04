@@ -3,6 +3,7 @@ use crate::settings::SettingsState;
 use crate::scaling;
 use crate::syntax::{DocumentKey, SyntaxSettings, SyntaxSystem};
 use crate::widgets::text_editor::{Action as TextEditorAction, Content};
+use std::collections::HashSet;
 use std::env;
 use std::path::{Path, PathBuf};
 use vedit_core::{Editor, FileNode, KeyCombination, KeyEvent, Keymap, KeymapError, Language, WorkspaceConfig};
@@ -23,6 +24,8 @@ pub struct EditorState {
     settings_dirty: bool,
     keymap_path: Option<PathBuf>,
     workspace_notice: Option<String>,
+    workspace_collapsed: HashSet<String>,
+    workspace_collapsed_version: u64,
 }
 
 impl Default for EditorState {
@@ -50,6 +53,8 @@ impl Default for EditorState {
             settings_dirty: false,
             keymap_path,
             workspace_notice: None,
+            workspace_collapsed: HashSet::new(),
+            workspace_collapsed_version: 0,
         };
         state.sync_buffer_from_editor();
 
@@ -121,6 +126,23 @@ impl EditorState {
 
     pub fn workspace_display_name(&self) -> Option<&str> {
         self.editor.workspace_name()
+    }
+
+    pub fn workspace_collapsed_paths(&self) -> Vec<String> {
+        let mut paths: Vec<String> = self.workspace_collapsed.iter().cloned().collect();
+        paths.sort();
+        paths
+    }
+
+    pub fn workspace_collapsed_version(&self) -> u64 {
+        self.workspace_collapsed_version
+    }
+
+    pub fn toggle_workspace_directory(&mut self, path: String) {
+        if !self.workspace_collapsed.remove(&path) {
+            self.workspace_collapsed.insert(path);
+        }
+        self.workspace_collapsed_version = self.workspace_collapsed_version.wrapping_add(1);
     }
 
     pub fn keymap_path_display(&self) -> Option<String> {
@@ -237,6 +259,8 @@ impl EditorState {
     ) {
         self.editor.set_workspace(root, tree, config);
         self.workspace_notice = None;
+        self.workspace_collapsed.clear();
+        self.workspace_collapsed_version = self.workspace_collapsed_version.wrapping_add(1);
         self.sync_buffer_from_editor();
     }
 

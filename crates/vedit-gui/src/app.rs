@@ -87,6 +87,9 @@ impl Application for EditorApp {
                     Message::FileLoaded(result.map(Some))
                 });
             }
+            Message::WorkspaceDirectoryToggled(path) => {
+                self.state.toggle_workspace_directory(path);
+            }
             Message::BufferAction(action) => {
                 self.state.apply_buffer_action(action);
             }

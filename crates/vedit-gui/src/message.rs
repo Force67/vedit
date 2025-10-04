@@ -16,6 +16,7 @@ pub enum Message {
     WorkspaceOpenRequested,
     WorkspaceLoaded(Result<Option<WorkspaceData>, String>),
     WorkspaceFileActivated(String),
+    WorkspaceDirectoryToggled(String),
     BufferAction(TextEditorAction),
     DocumentSaved(Result<Option<String>, String>),
     WorkspaceConfigSaved(Result<String, String>),

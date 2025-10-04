@@ -11,8 +11,9 @@ use iced::alignment::Vertical;
 use iced::widget::lazy;
 use iced::widget::{button, column, container, horizontal_space, row, scrollable, text, text_input, Column};
 use iced::{theme, Alignment, Color, Element, Length, Padding};
-use vedit_core::FileNode;
+use std::collections::HashSet;
 use std::path::Path;
+use vedit_core::FileNode;
 
 pub fn view(state: &EditorState) -> Element<'_, Message> {
     let scale = state.scale_factor() as f32;
@@ -161,12 +162,23 @@ fn render_editor_content(
     {
         let snapshot = WorkspaceSnapshot::new(version, tree);
         let scale_key = (scale * 100.0).round() as u32;
-        lazy((snapshot, scale_key), |(snapshot, scale_key)| -> Element<'static, Message> {
-            let scale = *scale_key as f32 / 100.0;
-            scrollable(render_workspace_nodes(snapshot.tree.as_slice(), 0, scale))
+        let collapsed_paths = state.workspace_collapsed_paths();
+        let collapsed_version = state.workspace_collapsed_version();
+        lazy(
+            (snapshot, scale_key, collapsed_version, collapsed_paths),
+            |(snapshot, scale_key, _version, collapsed_paths)| -> Element<'static, Message> {
+                let scale = *scale_key as f32 / 100.0;
+                let collapsed_set: HashSet<String> = collapsed_paths.iter().cloned().collect();
+                scrollable(render_workspace_nodes(
+                    snapshot.tree.as_slice(),
+                    0,
+                    scale,
+                    &collapsed_set,
+                ))
                 .height(Length::Fill)
                 .into()
-        })
+            },
+        )
         .into()
     } else {
         column![text("Open a folder to browse project files").size((14.0 * scale).max(10.0))]
@@ -429,10 +441,15 @@ fn render_keybindings_settings(
         .into()
 }
 
-fn render_workspace_nodes(nodes: &[FileNode], indent: u16, scale: f32) -> Column<'static, Message> {
+fn render_workspace_nodes(
+    nodes: &[FileNode],
+    indent: u16,
+    scale: f32,
+    collapsed: &HashSet<String>,
+) -> Column<'static, Message> {
     let spacing = ((4.0 * scale).max(2.0)).round() as u16;
     nodes.iter().fold(Column::new().spacing(spacing), |column, node| {
-        column.push(render_workspace_node(node, indent, scale))
+        column.push(render_workspace_node(node, indent, scale, collapsed))
     })
 }
 
@@ -510,18 +527,31 @@ fn render_command_palette(state: &EditorState) -> Element<'_, Message> {
         .into()
 }
 
-fn render_workspace_node(node: &FileNode, indent: u16, scale: f32) -> Element<'static, Message> {
+fn render_workspace_node(
+    node: &FileNode,
+    indent: u16,
+    scale: f32,
+    collapsed: &HashSet<String>,
+) -> Element<'static, Message> {
     let label_size = (14.0 * scale).max(10.0);
-    let label = if node.is_directory {
-        format!("{}/", node.name)
-    } else {
-        node.name.clone()
-    };
-
+    let is_collapsed = node.is_directory && collapsed.contains(&node.path);
+    let file_label = node.name.clone();
     let entry: Element<'static, Message> = if node.is_directory {
-        text(label).size(label_size).into()
+        let indicator = if is_collapsed { ">" } else { "v" };
+        let row_content = row![
+            text(indicator).size(label_size),
+            text(format!("{}/", node.name)).size(label_size),
+        ]
+        .spacing((6.0 * scale).max(3.0))
+        .align_items(Alignment::Center);
+
+        button(row_content)
+            .style(theme::Button::Text)
+            .width(Length::Fill)
+            .on_press(Message::WorkspaceDirectoryToggled(node.path.clone()))
+            .into()
     } else {
-        button(text(label).size(label_size))
+        button(text(file_label).size(label_size))
             .style(theme::Button::Text)
             .width(Length::Fill)
             .on_press(Message::WorkspaceFileActivated(node.path.clone()))
@@ -533,8 +563,13 @@ fn render_workspace_node(node: &FileNode, indent: u16, scale: f32) -> Element<'s
     let mut column = Column::new();
     column = column.push(container(entry).padding(Padding::from([0, 0, 0, indent_padding])));
 
-    if node.is_directory && !node.children.is_empty() {
-        column = column.push(render_workspace_nodes(&node.children, indent + 1, scale));
+    if node.is_directory && !is_collapsed && !node.children.is_empty() {
+        column = column.push(render_workspace_nodes(
+            &node.children,
+            indent + 1,
+            scale,
+            collapsed,
+        ));
     }
 
     column.into()
