@@ -240,9 +240,21 @@ impl StickyNoteRecord {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+pub struct ConsoleWorkspaceState {
+    #[serde(default)]
+    pub visible: bool,
+    #[serde(default)]
+    pub shell_tabs: usize,
+    #[serde(default)]
+    pub active_shell: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
 pub struct WorkspaceMetadata {
     #[serde(default)]
     pub sticky_notes: Vec<StickyNoteRecord>,
+    #[serde(default)]
+    pub console: ConsoleWorkspaceState,
 }
 
 impl WorkspaceMetadata {

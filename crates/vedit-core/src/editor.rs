@@ -267,6 +267,12 @@ impl Editor {
         self.workspace_metadata.as_mut()
     }
 
+    pub fn mark_workspace_metadata_dirty(&mut self) {
+        if self.workspace_metadata.is_some() {
+            self.workspace_metadata_dirty = true;
+        }
+    }
+
     pub fn active_sticky_notes(&self) -> Option<&[StickyNote]> {
         self.active_document().map(|doc| doc.sticky_notes())
     }

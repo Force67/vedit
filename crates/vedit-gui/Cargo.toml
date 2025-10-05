@@ -12,6 +12,7 @@ iced_graphics = "0.12"
 cosmic-text = "0.10"
 rfd = "0.14"
 crossbeam-channel = "0.5"
+portable-pty = "0.8"
 vedit-application = { path = "../vedit-application" }
 vedit-core = { path = "../vedit-core" }
 vedit-config = { path = "../vedit-config" }

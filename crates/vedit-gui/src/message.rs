@@ -65,6 +65,11 @@ pub enum Message {
     CommandPaletteCommandInvoked(QuickCommandId),
     CommandPaletteClosed,
     CommandPromptToggled,
+    ConsoleVisibilityToggled,
+    ConsoleTabSelected(u64),
+    ConsoleNewRequested,
+    ConsoleInputChanged(u64, String),
+    ConsoleInputSubmitted(u64),
     MouseWheelScrolled(mouse::ScrollDelta),
     NotificationDismissed(u64),
 }

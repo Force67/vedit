@@ -221,6 +221,7 @@ pub struct DebuggerState {
     next_breakpoint_id: u64,
     launch_script: String,
     console: Vec<DebuggerConsoleEntry>,
+    console_cursor: usize,
     command_input: String,
     manual_target: ManualTargetDraft,
     breakpoint_draft: BreakpointDraft,
@@ -263,6 +264,15 @@ impl DebuggerState {
 
     pub fn console(&self) -> &[DebuggerConsoleEntry] {
         &self.console
+    }
+
+    pub fn take_console_updates(&mut self) -> Vec<DebuggerConsoleEntry> {
+        if self.console_cursor >= self.console.len() {
+            return Vec::new();
+        }
+        let updates = self.console[self.console_cursor..].to_vec();
+        self.console_cursor = self.console.len();
+        updates
     }
 
     pub fn target_filter(&self) -> &str {
@@ -879,6 +889,11 @@ impl DebuggerState {
         if self.console.len() > MAX_CONSOLE_ENTRIES {
             let overflow = self.console.len() - MAX_CONSOLE_ENTRIES;
             self.console.drain(0..overflow);
+            if self.console_cursor >= overflow {
+                self.console_cursor -= overflow;
+            } else {
+                self.console_cursor = 0;
+            }
         }
     }
 

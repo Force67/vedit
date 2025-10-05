@@ -47,10 +47,14 @@ impl Application for EditorApp {
 
     fn update(&mut self, message: Self::Message) -> Command<Self::Message> {
         let debugger_events = self.state.process_debugger_events();
+        self.state.process_console_events();
         self.handle_debugger_events(debugger_events);
         match message {
             Message::OpenFileRequested => {
-                return Command::perform(commands::pick_document(), Message::FileLoaded);
+                return self.wrap_command(Command::perform(
+                    commands::pick_document(),
+                    Message::FileLoaded,
+                ));
             }
             Message::FileLoaded(result) => match result {
                 Ok(Some(document)) => {
@@ -58,10 +62,10 @@ impl Application for EditorApp {
                     self.state.clear_error();
                     self.state.sync_buffer_from_editor();
                     if let Some((root, config)) = self.state.record_recent_workspace_file() {
-                        return Command::perform(
-                            commands::save_workspace_config(root, config),
-                            Message::WorkspaceConfigSaved,
-                        );
+                return self.wrap_command(Command::perform(
+                    commands::save_workspace_config(root, config),
+                    Message::WorkspaceConfigSaved,
+                ));
                     }
                 }
                 Ok(None) => {
@@ -76,10 +80,16 @@ impl Application for EditorApp {
                 self.state.sync_buffer_from_editor();
             }
             Message::WorkspaceOpenRequested => {
-                return Command::perform(commands::pick_workspace(), Message::WorkspaceLoaded);
+                return self.wrap_command(Command::perform(
+                    commands::pick_workspace(),
+                    Message::WorkspaceLoaded,
+                ));
             }
             Message::SolutionOpenRequested => {
-                return Command::perform(commands::pick_solution(), Message::SolutionLoaded);
+                return self.wrap_command(Command::perform(
+                    commands::pick_solution(),
+                    Message::SolutionLoaded,
+                ));
             }
             Message::WorkspaceLoaded(result) => match result {
                 Ok(Some(WorkspaceData {
@@ -116,9 +126,10 @@ impl Application for EditorApp {
                 }
             },
             Message::WorkspaceFileActivated(path) => {
-                return Command::perform(commands::load_document_from_path(path), |result| {
-                    Message::FileLoaded(result.map(Some))
-                });
+                return self.wrap_command(Command::perform(
+                    commands::load_document_from_path(path),
+                    |result| Message::FileLoaded(result.map(Some)),
+                ));
             }
             Message::WorkspaceDirectoryToggled(path) => {
                 if let Err(err) = self.state.toggle_workspace_directory(path) {
@@ -128,10 +139,10 @@ impl Application for EditorApp {
             Message::BufferAction(action) => {
                 self.state.apply_buffer_action(action);
                 if let Some((root, metadata)) = self.state.take_workspace_metadata_payload() {
-                    return Command::perform(
+                    return self.wrap_command(Command::perform(
                         commands::save_workspace_metadata(root, metadata),
                         Message::WorkspaceMetadataSaved,
-                    );
+                    ));
                 }
             }
             Message::BufferScrollChanged(position) => {
@@ -144,10 +155,10 @@ impl Application for EditorApp {
                     if let Some((root, metadata)) =
                         self.state.take_workspace_metadata_payload()
                     {
-                        return Command::perform(
+                        return self.wrap_command(Command::perform(
                             commands::save_workspace_metadata(root, metadata),
                             Message::WorkspaceMetadataSaved,
-                        );
+                        ));
                     }
                 }
                 Ok(None) => {}
@@ -178,28 +189,28 @@ impl Application for EditorApp {
                     self.state.clear_error();
                 }
                 if let Some((root, metadata)) = self.state.take_workspace_metadata_payload() {
-                    return Command::perform(
+                    return self.wrap_command(Command::perform(
                         commands::save_workspace_metadata(root, metadata),
                         Message::WorkspaceMetadataSaved,
-                    );
+                    ));
                 }
             }
             Message::StickyNoteContentChanged(id, value) => {
                 self.state.update_sticky_note_content(id, value);
                 if let Some((root, metadata)) = self.state.take_workspace_metadata_payload() {
-                    return Command::perform(
+                    return self.wrap_command(Command::perform(
                         commands::save_workspace_metadata(root, metadata),
                         Message::WorkspaceMetadataSaved,
-                    );
+                    ));
                 }
             }
             Message::StickyNoteDeleted(id) => {
                 self.state.remove_sticky_note(id);
                 if let Some((root, metadata)) = self.state.take_workspace_metadata_payload() {
-                    return Command::perform(
-                        commands::save_workspace_metadata(root, metadata),
-                        Message::WorkspaceMetadataSaved,
-                    );
+                        return self.wrap_command(Command::perform(
+                            commands::save_workspace_metadata(root, metadata),
+                            Message::WorkspaceMetadataSaved,
+                        ));
                 }
             }
             Message::SettingsOpened => {
@@ -228,10 +239,10 @@ impl Application for EditorApp {
                 match self.state.keymap_save_payload() {
                     Ok((path, contents)) => {
                         let request = SaveKeymapRequest { path, contents };
-                        return Command::perform(
-                            commands::save_keymap(request),
-                            Message::SettingsBindingsSaved,
-                        );
+                return self.wrap_command(Command::perform(
+                    commands::save_keymap(request),
+                    Message::SettingsBindingsSaved,
+                ));
                     }
                     Err(err) => {
                         self.state.set_error(Some(err));
@@ -248,10 +259,10 @@ impl Application for EditorApp {
             },
             Message::SettingsKeymapPathRequested => {
                 let current = self.state.keymap_path_display();
-                return Command::perform(
+                return self.wrap_command(Command::perform(
                     commands::pick_keymap_location(current),
                     Message::SettingsKeymapPathSelected,
-                );
+                ));
             }
             Message::SettingsKeymapPathSelected(result) => match result {
                 Ok(Some(path)) => {
@@ -299,7 +310,7 @@ impl Application for EditorApp {
                                     Message::WorkspaceConfigSaved,
                                 ));
                             }
-                            return Command::batch(commands_list);
+                            return self.wrap_command(Command::batch(commands_list));
                         } else {
                             self.state.set_error(Some("No debug targets selected".to_string()));
                         }
@@ -393,7 +404,7 @@ impl Application for EditorApp {
                 match key_event {
                     iced::keyboard::Event::ModifiersChanged(modifiers) => {
                         self.state.set_modifiers(modifiers);
-                        return Command::none();
+                        return self.wrap_command(Command::none());
                     }
                     iced::keyboard::Event::KeyPressed { modifiers, .. }
                     | iced::keyboard::Event::KeyReleased { modifiers, .. } => {
@@ -409,41 +420,44 @@ impl Application for EditorApp {
                             self.state.set_command_palette_query(String::new());
                             self.state.open_command_palette();
                         }
-                        return Command::none();
+                        return self.wrap_command(Command::none());
                     }
 
                     for command in self.state.quick_commands() {
                         if let Some(action) = command.action {
                             if self.state.matches_action(action, &core_event) {
-                                return self.execute_quick_command(command.id);
+                                let cmd = self.execute_quick_command(command.id);
+                                return self.wrap_command(cmd);
                             }
                         }
                     }
 
                     if self.state.matches_action(SAVE_ACTION, &core_event) {
-                        return self.save_active_document();
+                        let cmd = self.save_active_document();
+                        return self.wrap_command(cmd);
                     }
 
                     if self.state.command_palette().is_open() {
                         match core_event.key {
                             Key::ArrowDown => {
                                 self.state.handle_quick_command_navigation(1);
-                                return Command::none();
+                                return self.wrap_command(Command::none());
                             }
                             Key::ArrowUp => {
                                 self.state.handle_quick_command_navigation(-1);
-                                return Command::none();
+                                return self.wrap_command(Command::none());
                             }
                             Key::Enter => {
                                 if let Some(command) = self.state.selected_quick_command() {
                                     self.state.close_command_palette();
-                                    return self.execute_quick_command(command);
+                                    let cmd = self.execute_quick_command(command);
+                                    return self.wrap_command(cmd);
                                 }
-                                return Command::none();
+                                return self.wrap_command(Command::none());
                             }
                             Key::Escape => {
                                 self.state.close_command_palette();
-                                return Command::none();
+                                return self.wrap_command(Command::none());
                             }
                             _ => {}
                         }
@@ -453,7 +467,7 @@ impl Application for EditorApp {
             Message::MouseWheelScrolled(delta) => {
                 let modifiers = self.state.modifiers();
                 if !(modifiers.control() || modifiers.command()) {
-                    return Command::none();
+                    return self.wrap_command(Command::none());
                 }
 
                 let delta_y = match delta {
@@ -472,7 +486,8 @@ impl Application for EditorApp {
             }
             Message::CommandPaletteCommandInvoked(command_id) => {
                 self.state.close_command_palette();
-                return self.execute_quick_command(command_id);
+                let cmd = self.execute_quick_command(command_id);
+                return self.wrap_command(cmd);
             }
             Message::CommandPaletteClosed => {
                 self.state.close_command_palette();
@@ -486,6 +501,27 @@ impl Application for EditorApp {
                     self.state.open_command_palette();
                 }
             }
+            Message::ConsoleVisibilityToggled => {
+                if let Err(err) = self.state.toggle_console_visibility() {
+                    self.state.set_error(Some(err));
+                }
+            }
+            Message::ConsoleNewRequested => {
+                if let Err(err) = self.state.create_console_tab() {
+                    self.state.set_error(Some(err));
+                }
+            }
+            Message::ConsoleTabSelected(id) => {
+                self.state.select_console_tab(id);
+            }
+            Message::ConsoleInputChanged(id, value) => {
+                self.state.set_console_input(id, value);
+            }
+            Message::ConsoleInputSubmitted(id) => {
+                if let Err(err) = self.state.submit_console_input(id) {
+                    self.state.set_error(Some(err));
+                }
+            }
             Message::DebuggerTick => {
                 self.state.tick_notifications(Duration::from_millis(200));
             }
@@ -494,7 +530,7 @@ impl Application for EditorApp {
             }
         }
 
-        Command::none()
+        self.wrap_command(Command::none())
     }
 
     fn view(&self) -> Element<'_, Self::Message> {
@@ -547,6 +583,18 @@ fn session_request_from_plan(plan: &DebugLaunchPlan) -> DebugSessionRequest {
 }
 
 impl EditorApp {
+    fn wrap_command(&mut self, command: Command<Message>) -> Command<Message> {
+        if let Some((root, metadata)) = self.state.take_workspace_metadata_payload() {
+            let save = Command::perform(
+                commands::save_workspace_metadata(root, metadata),
+                Message::WorkspaceMetadataSaved,
+            );
+            Command::batch(vec![command, save])
+        } else {
+            command
+        }
+    }
+
     fn execute_quick_command(&mut self, command: QuickCommandId) -> Command<Message> {
         match command {
             QuickCommandId::OpenFile => {

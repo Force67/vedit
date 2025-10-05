@@ -1,4 +1,5 @@
-use crate::debugger::{DebugLaunchPlan, DebuggerState, DebuggerUiEvent, DebugTarget};
+use crate::console::{ConsoleKind, ConsoleLineKind, ConsoleState};
+use crate::debugger::{DebugLaunchPlan, DebuggerConsoleEntry, DebuggerState, DebuggerUiEvent, DebugTarget};
 use crate::notifications::{Notification, NotificationCenter, NotificationRequest};
 use crate::scaling;
 use crate::syntax::{DocumentKey, SyntaxSettings, SyntaxSystem};
@@ -98,6 +99,9 @@ pub struct EditorState {
     zoom_config: ZoomConfig,
     modifiers: keyboard::Modifiers,
     debugger: DebuggerState,
+    console: ConsoleState,
+    active_debug_console: Option<u64>,
+    debug_console_counter: u32,
     notifications: NotificationCenter,
 }
 
@@ -118,6 +122,9 @@ impl Default for EditorState {
             zoom_config,
             modifiers: keyboard::Modifiers::default(),
             debugger: DebuggerState::default(),
+            console: ConsoleState::new(),
+            active_debug_console: None,
+            debug_console_counter: 0,
             notifications: NotificationCenter::new(),
         };
         state.sync_buffer_from_editor();
@@ -132,6 +139,10 @@ impl EditorState {
 
     pub fn editor_mut(&mut self) -> &mut Editor {
         self.app.editor_mut()
+    }
+
+    pub fn console(&self) -> &ConsoleState {
+        &self.console
     }
 
     pub fn buffer_content(&self) -> &Content {
@@ -149,6 +160,46 @@ impl EditorState {
             .clamp(0.0, max_scroll)
             .round() as usize;
         scroll_to(&mut self.buffer_content, target);
+    }
+
+    pub fn toggle_console_visibility(&mut self) -> Result<(), String> {
+        if self.console.is_visible() {
+            self.console.set_visible(false);
+            self.notify_console_metadata_changed();
+            return Ok(());
+        }
+
+        if self.console.tabs().is_empty() {
+            self.console.spawn_shell_tab()?;
+        }
+        self.console.set_visible(true);
+        self.notify_console_metadata_changed();
+        Ok(())
+    }
+
+    pub fn create_console_tab(&mut self) -> Result<(), String> {
+        self.console.spawn_shell_tab()?;
+        self.console.set_visible(true);
+        self.notify_console_metadata_changed();
+        Ok(())
+    }
+
+    pub fn select_console_tab(&mut self, id: u64) {
+        if self.console.select_tab(id) {
+            self.notify_console_metadata_changed();
+        }
+    }
+
+    pub fn set_console_input(&mut self, id: u64, value: String) {
+        self.console.set_input(id, value);
+    }
+
+    pub fn submit_console_input(&mut self, id: u64) -> Result<(), String> {
+        self.console.submit_input(id)
+    }
+
+    pub fn process_console_events(&mut self) {
+        self.console.process_events();
     }
 
     pub fn syntax_settings(&self) -> SyntaxSettings {
@@ -321,6 +372,9 @@ impl EditorState {
         let last_target = self.app.workspace_last_debug_target();
         self.debugger
             .set_recent_target_history(recent_targets, last_target);
+        if let Err(err) = self.restore_console_from_metadata() {
+            self.set_error(Some(err));
+        }
         self.workspace_collapsed.clear();
         if let Some(nodes) = self.app.editor().workspace_tree() {
             let mut directories = Vec::new();
@@ -471,7 +525,9 @@ impl EditorState {
 
     pub fn refresh_debug_targets(&mut self) -> Result<(), String> {
         let root = self.app.editor().workspace_root();
-        self.debugger.refresh_targets(root)
+        let result = self.debugger.refresh_targets(root);
+        self.drain_debugger_console_updates();
+        result
     }
 
     pub fn debugger_menu_open(&self) -> bool {
@@ -522,17 +578,27 @@ impl EditorState {
         &mut self,
         target: &DebugTarget,
     ) -> Option<(String, WorkspaceConfig)> {
+        self.debug_console_counter = self.debug_console_counter.wrapping_add(1);
+        let title = format!("Debug {}: {}", self.debug_console_counter, target.name);
+        let tab_id = self.console.create_debug_tab(title);
+        self.console.set_visible(true);
+        self.active_debug_console = Some(tab_id);
         self.debugger.begin_launch_for(target);
+        self.drain_debugger_console_updates();
+        self.notify_console_metadata_changed();
         self.app
             .record_recent_debug_target(&target.name, &target.executable)
     }
 
     pub fn stop_debug_session(&mut self) {
         self.debugger.stop_session();
+        self.drain_debugger_console_updates();
     }
 
     pub fn submit_gdb_command(&mut self) -> Result<(), String> {
-        self.debugger.submit_gdb_command()
+        let result = self.debugger.submit_gdb_command();
+        self.drain_debugger_console_updates();
+        result
     }
 
     pub fn attach_debugger_session(&mut self, session: GdbSession) {
@@ -544,7 +610,9 @@ impl EditorState {
     }
 
     pub fn process_debugger_events(&mut self) -> Vec<DebuggerUiEvent> {
-        self.debugger.process_runtime_events()
+        let events = self.debugger.process_runtime_events();
+        self.drain_debugger_console_updates();
+        events
     }
 
     pub fn push_notification(&mut self, request: NotificationRequest) {
@@ -591,5 +659,127 @@ impl EditorState {
                 .unwrap_or(DocumentKey::Index(index));
             (key, doc.language())
         })
+    }
+
+    fn drain_debugger_console_updates(&mut self) {
+        let entries = self.debugger.take_console_updates();
+        if entries.is_empty() {
+            return;
+        }
+
+        self.push_debug_console_entries(entries);
+    }
+
+    fn push_debug_console_entries(&mut self, entries: Vec<DebuggerConsoleEntry>) {
+        if entries.is_empty() {
+            return;
+        }
+
+        if self.active_debug_console.is_none() {
+            self.debug_console_counter = self.debug_console_counter.wrapping_add(1);
+            let title = format!("Debug {}", self.debug_console_counter);
+            let tab_id = self.console.create_debug_tab(title);
+            self.console.set_visible(true);
+            self.active_debug_console = Some(tab_id);
+        }
+
+        if let Some(tab_id) = self.active_debug_console {
+            let mapped: Vec<(ConsoleLineKind, String)> = entries
+                .into_iter()
+                .flat_map(|entry| Self::map_debug_entry(entry))
+                .collect();
+            if !mapped.is_empty() {
+                self.console.push_lines(tab_id, mapped);
+            }
+        }
+
+        self.notify_console_metadata_changed();
+    }
+
+    fn map_debug_entry(entry: DebuggerConsoleEntry) -> Vec<(ConsoleLineKind, String)> {
+        let kind = match entry.kind {
+            crate::debugger::DebuggerConsoleEntryKind::Command => ConsoleLineKind::Command,
+            crate::debugger::DebuggerConsoleEntryKind::Output => ConsoleLineKind::Output,
+            crate::debugger::DebuggerConsoleEntryKind::Error => ConsoleLineKind::Error,
+            crate::debugger::DebuggerConsoleEntryKind::Info => ConsoleLineKind::Info,
+        };
+
+        if entry.message.is_empty() {
+            return vec![(kind, String::new())];
+        }
+
+        entry
+            .message
+            .split('\n')
+            .map(|line| (kind, line.to_string()))
+            .collect()
+    }
+
+    fn restore_console_from_metadata(&mut self) -> Result<(), String> {
+        self.console = ConsoleState::new();
+        self.active_debug_console = None;
+        self.debug_console_counter = 0;
+
+        let Some(metadata) = self.app.editor().workspace_metadata() else {
+            self.console.set_visible(false);
+            return Ok(());
+        };
+
+        for _ in 0..metadata.console.shell_tabs {
+            self.console.spawn_shell_tab()?;
+        }
+
+        if let Some(active_shell) = metadata.console.active_shell {
+            if active_shell < self.console.shell_tab_count() {
+                self.console.select_shell_at(active_shell);
+            }
+        }
+
+        self.console.set_visible(metadata.console.visible);
+        Ok(())
+    }
+
+    fn notify_console_metadata_changed(&mut self) {
+        if self.app.editor().workspace_root().is_none() {
+            return;
+        }
+
+        let visible = self.console.is_visible();
+        let shell_ids: Vec<u64> = self
+            .console
+            .tabs()
+            .iter()
+            .filter(|tab| tab.kind() == ConsoleKind::Shell)
+            .map(|tab| tab.id())
+            .collect();
+        let shell_count = shell_ids.len();
+        let mut active_shell = self
+            .console
+            .active_tab_id()
+            .and_then(|id| shell_ids.iter().position(|tab_id| *tab_id == id));
+
+        let editor = self.app.editor_mut();
+        let mut mark_dirty = false;
+        {
+            if let Some(metadata) = editor.workspace_metadata_mut() {
+                let previous_active = metadata.console.active_shell;
+                if active_shell.is_none() {
+                    if let Some(prev) = previous_active {
+                        if prev < shell_count {
+                            active_shell = Some(prev);
+                        }
+                    }
+                }
+
+                metadata.console.visible = visible;
+                metadata.console.shell_tabs = shell_count;
+                metadata.console.active_shell = active_shell;
+                mark_dirty = true;
+            }
+        }
+
+        if mark_dirty {
+            editor.mark_workspace_metadata_dirty();
+        }
     }
 }
