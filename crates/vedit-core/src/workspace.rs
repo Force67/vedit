@@ -2,6 +2,7 @@ use std::cmp::Ordering;
 use std::fs;
 use std::io;
 use std::path::{Component, Path, PathBuf};
+use vedit_make::{Makefile, MakefileError};
 use vedit_vs::{Solution, SolutionProject, VcxProject, VisualStudioError};
 
 const SKIPPED_DIRECTORIES: &[&str] = &[".git", "target", "node_modules", ".idea", ".vscode"];
@@ -88,22 +89,44 @@ fn collect_directory(path: &Path, ignored: &[String]) -> io::Result<Vec<FileNode
         }
 
         let mut handled_special = false;
-        if let Some(ext) = entry_path.extension().and_then(|ext| ext.to_str()) {
-            if ext.eq_ignore_ascii_case("sln") {
-                match try_build_solution_node(&entry_path) {
+        if let Some(file_name) = entry_path.file_name().and_then(|name| name.to_str()) {
+            if is_makefile_name(file_name) {
+                match try_build_makefile_node(&entry_path) {
                     Ok(node) => {
                         children.push(node);
                         handled_special = true;
                     }
                     Err(_) => {}
                 }
-            } else if ext.eq_ignore_ascii_case("vcxproj") {
-                match try_build_vcxproj_node(&entry_path) {
-                    Ok(node) => {
-                        children.push(node);
-                        handled_special = true;
+            }
+        }
+
+        if !handled_special {
+            if let Some(ext) = entry_path.extension().and_then(|ext| ext.to_str()) {
+                if ext.eq_ignore_ascii_case("sln") {
+                    match try_build_solution_node(&entry_path) {
+                        Ok(node) => {
+                            children.push(node);
+                            handled_special = true;
+                        }
+                        Err(_) => {}
                     }
-                    Err(_) => {}
+                } else if ext.eq_ignore_ascii_case("vcxproj") {
+                    match try_build_vcxproj_node(&entry_path) {
+                        Ok(node) => {
+                            children.push(node);
+                            handled_special = true;
+                        }
+                        Err(_) => {}
+                    }
+                } else if ext.eq_ignore_ascii_case("mk") {
+                    match try_build_makefile_node(&entry_path) {
+                        Ok(node) => {
+                            children.push(node);
+                            handled_special = true;
+                        }
+                        Err(_) => {}
+                    }
                 }
             }
         }
@@ -307,18 +330,55 @@ fn try_build_vcxproj_node(path: &Path) -> Result<FileNode, VisualStudioError> {
     })
 }
 
+fn try_build_makefile_node(path: &Path) -> Result<FileNode, MakefileError> {
+    let makefile = Makefile::from_path(path)?;
+    let mut children = build_makefile_children(&makefile);
+    sort_nodes(&mut children);
+    let has_children = !children.is_empty();
+
+    Ok(FileNode {
+        name: makefile.name.clone(),
+        path: path.to_string_lossy().to_string(),
+        is_directory: true,
+        children,
+        has_children,
+        is_fully_scanned: true,
+        kind: NodeKind::Project,
+    })
+}
+
 fn build_vcxproj_children(project: &VcxProject) -> Vec<FileNode> {
+    build_project_children(
+        project
+            .files
+            .iter()
+            .map(|item| (item.include.as_path(), item.full_path.as_path())),
+    )
+}
+
+fn build_makefile_children(makefile: &Makefile) -> Vec<FileNode> {
+    build_project_children(
+        makefile
+            .files
+            .iter()
+            .map(|item| (item.include.as_path(), item.full_path.as_path())),
+    )
+}
+
+fn build_project_children<'a, I>(items: I) -> Vec<FileNode>
+where
+    I: IntoIterator<Item = (&'a Path, &'a Path)>,
+{
     let mut nodes = Vec::new();
-    for item in &project.files {
-        let segments: Vec<String> = item
-            .include
+    for (include, full_path) in items {
+        let segments: Vec<String> = include
             .components()
             .filter_map(|component| component.as_os_str().to_str().map(|s| s.to_string()))
             .collect();
         if segments.is_empty() {
             continue;
         }
-        insert_item(&mut nodes, &segments, &item.full_path, segments.len(), 0);
+        insert_item(&mut nodes, &segments, full_path, segments.len(), 0);
     }
     nodes
 }
@@ -397,6 +457,11 @@ fn ancestor_for_depth(
         remove -= 1;
     }
     Some(current)
+}
+
+fn is_makefile_name(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    lower == "makefile" || lower == "gnumakefile" || lower.ends_with(".makefile")
 }
 
 fn sort_nodes(nodes: &mut Vec<FileNode>) {

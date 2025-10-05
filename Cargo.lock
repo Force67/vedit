@@ -3712,6 +3712,7 @@ dependencies = [
  "serde",
  "toml",
  "vedit-config",
+ "vedit-make",
  "vedit-vs",
 ]
 
@@ -3739,6 +3740,14 @@ dependencies = [
  "vedit-application",
  "vedit-config",
  "vedit-core",
+]
+
+[[package]]
+name = "vedit-make"
+version = "0.1.0"
+dependencies = [
+ "tempfile",
+ "thiserror 1.0.69",
 ]
 
 [[package]]
