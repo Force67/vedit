@@ -2,11 +2,12 @@ use crate::commands::{
     self, DebugSessionBreakpoint, DebugSessionRequest, SaveDocumentRequest, SaveKeymapRequest,
     WorkspaceData,
 };
-use crate::debugger::DebugLaunchPlan;
+use crate::debugger::{DebugLaunchPlan, DebuggerUiEvent};
 use crate::keyboard;
 use crate::message::Message;
 use crate::state::EditorState;
 use crate::view;
+use crate::notifications::{NotificationKind, NotificationRequest};
 use iced::Subscription;
 use iced::{executor, theme, time, Application, Command, Element, Settings};
 use std::time::Duration;
@@ -45,7 +46,8 @@ impl Application for EditorApp {
     }
 
     fn update(&mut self, message: Self::Message) -> Command<Self::Message> {
-        self.state.process_debugger_events();
+        let debugger_events = self.state.process_debugger_events();
+        self.handle_debugger_events(debugger_events);
         match message {
             Message::OpenFileRequested => {
                 return Command::perform(commands::pick_document(), Message::FileLoaded);
@@ -285,6 +287,7 @@ impl Application for EditorApp {
                         if let Some(plan) = plans.first() {
                             self.state.clear_error();
                             self.state.close_debugger_menu();
+                            self.state.begin_debug_launch(&plan.target);
                             let request = session_request_from_plan(plan);
                             return Command::perform(
                                 commands::start_debug_session(request),
@@ -302,7 +305,8 @@ impl Application for EditorApp {
             Message::DebuggerSessionStarted(result) => match result {
                 Ok(session) => {
                     self.state.attach_debugger_session(session);
-                    self.state.process_debugger_events();
+                    let events = self.state.process_debugger_events();
+                    self.handle_debugger_events(events);
                 }
                 Err(err) => {
                     self.state.set_error(Some(err));
@@ -476,7 +480,10 @@ impl Application for EditorApp {
                 }
             }
             Message::DebuggerTick => {
-                self.state.process_debugger_events();
+                self.state.tick_notifications(Duration::from_millis(200));
+            }
+            Message::NotificationDismissed(id) => {
+                self.state.dismiss_notification(id);
             }
         }
 
@@ -585,6 +592,36 @@ impl EditorApp {
             Command::perform(commands::save_document(request), Message::DocumentSaved)
         } else {
             Command::none()
+        }
+    }
+
+    fn handle_debugger_events(&mut self, events: Vec<DebuggerUiEvent>) {
+        for event in events {
+            match event {
+                DebuggerUiEvent::SessionStarted { target } => {
+                    let (title, body) = match target {
+                        Some(name) => (
+                            format!("{} is running", name),
+                            format!("Debugger attached to \"{}\" successfully.", name),
+                        ),
+                        None => (
+                            "Debug session started".to_string(),
+                            "Debugger attached successfully.".to_string(),
+                        ),
+                    };
+                    let request = NotificationRequest::title(title)
+                        .body(body)
+                        .kind(NotificationKind::Success);
+                    self.state.push_notification(request);
+                }
+                DebuggerUiEvent::SessionError { message } => {
+                    let request = NotificationRequest::title("Debugger error")
+                        .body(message)
+                        .kind(NotificationKind::Error)
+                        .timeout(None);
+                    self.state.push_notification(request);
+                }
+            }
         }
     }
 }

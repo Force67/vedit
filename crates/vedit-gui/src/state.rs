@@ -1,4 +1,5 @@
-use crate::debugger::{DebugLaunchPlan, DebuggerState};
+use crate::debugger::{DebugLaunchPlan, DebuggerState, DebuggerUiEvent, DebugTarget};
+use crate::notifications::{Notification, NotificationCenter, NotificationRequest};
 use crate::scaling;
 use crate::syntax::{DocumentKey, SyntaxSettings, SyntaxSystem};
 use crate::widgets::text_editor::{
@@ -7,6 +8,7 @@ use crate::widgets::text_editor::{
 use iced::keyboard;
 use std::collections::HashSet;
 use std::env;
+use std::time::Duration;
 use vedit_application::{AppState, CommandPaletteState, QuickCommand, QuickCommandId, SettingsState};
 use vedit_core::{Editor, FileNode, KeyEvent, Language, StickyNote, WorkspaceConfig};
 use vedit_debugger::GdbSession;
@@ -96,6 +98,7 @@ pub struct EditorState {
     zoom_config: ZoomConfig,
     modifiers: keyboard::Modifiers,
     debugger: DebuggerState,
+    notifications: NotificationCenter,
 }
 
 impl Default for EditorState {
@@ -115,6 +118,7 @@ impl Default for EditorState {
             zoom_config,
             modifiers: keyboard::Modifiers::default(),
             debugger: DebuggerState::default(),
+            notifications: NotificationCenter::new(),
         };
         state.sync_buffer_from_editor();
         state
@@ -510,6 +514,10 @@ impl EditorState {
         self.debugger.prepare_launches()
     }
 
+    pub fn begin_debug_launch(&mut self, target: &DebugTarget) {
+        self.debugger.begin_launch_for(target);
+    }
+
     pub fn stop_debug_session(&mut self) {
         self.debugger.stop_session();
     }
@@ -526,8 +534,28 @@ impl EditorState {
         self.debugger.has_runtime()
     }
 
-    pub fn process_debugger_events(&mut self) {
-        self.debugger.process_runtime_events();
+    pub fn process_debugger_events(&mut self) -> Vec<DebuggerUiEvent> {
+        self.debugger.process_runtime_events()
+    }
+
+    pub fn push_notification(&mut self, request: NotificationRequest) {
+        self.notifications.notify(request);
+    }
+
+    pub fn notifications(&self) -> &[Notification] {
+        self.notifications.notifications()
+    }
+
+    pub fn has_notifications(&self) -> bool {
+        self.notifications.has_active()
+    }
+
+    pub fn dismiss_notification(&mut self, id: u64) {
+        self.notifications.dismiss(id);
+    }
+
+    pub fn tick_notifications(&mut self, delta: Duration) {
+        self.notifications.tick(delta);
     }
 
     fn editor_contents_to_string(&self) -> String {

@@ -66,6 +66,7 @@ pub enum Message {
     CommandPaletteClosed,
     CommandPromptToggled,
     MouseWheelScrolled(mouse::ScrollDelta),
+    NotificationDismissed(u64),
 }
 
 #[derive(Clone)]

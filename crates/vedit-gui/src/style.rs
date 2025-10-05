@@ -1,6 +1,6 @@
 use iced::theme;
 use iced::widget::{button, container};
-use iced::{Background, Border, Color, Vector};
+use iced::{Background, Border, Color, Shadow, Vector};
 
 const fn rgb(r: u8, g: u8, b: u8) -> Color {
     Color::from_rgb(r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0)
@@ -14,6 +14,10 @@ const BG_STATUS: Color = rgb(40, 40, 43);
 const BG_RIBBON: Color = rgb(37, 37, 38);
 const TEXT_PRIMARY: Color = rgb(231, 231, 231);
 const TEXT_MUTED: Color = rgb(180, 180, 180);
+const NOTIFY_SUCCESS: Color = rgb(39, 174, 96);
+const NOTIFY_INFO: Color = rgb(52, 152, 219);
+const NOTIFY_ERROR: Color = rgb(231, 76, 60);
+const NOTIFY_SURFACE: Color = rgb(36, 36, 39);
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct RootContainer;
@@ -197,6 +201,55 @@ pub fn panel_container() -> theme::Container {
 
 pub fn ribbon_container() -> theme::Container {
     theme::Container::Custom(Box::new(RibbonContainer))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NotificationTone {
+    Info,
+    Success,
+    Error,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct NotificationContainer {
+    tone: NotificationTone,
+}
+
+impl NotificationContainer {
+    pub fn new(tone: NotificationTone) -> Self {
+        Self { tone }
+    }
+}
+
+impl container::StyleSheet for NotificationContainer {
+    type Style = theme::Theme;
+
+    fn appearance(&self, _style: &Self::Style) -> container::Appearance {
+        let accent = match self.tone {
+            NotificationTone::Info => NOTIFY_INFO,
+            NotificationTone::Success => NOTIFY_SUCCESS,
+            NotificationTone::Error => NOTIFY_ERROR,
+        };
+
+        container::Appearance {
+            background: Some(Background::Color(NOTIFY_SURFACE)),
+            border: Border {
+                radius: 12.0.into(),
+                width: 1.0,
+                color: Color::from_rgba(accent.r, accent.g, accent.b, 0.75),
+            },
+            text_color: Some(TEXT_PRIMARY),
+            shadow: Shadow {
+                offset: Vector::new(0.0, 6.0),
+                blur_radius: 18.0,
+                color: Color::from_rgba(0.0, 0.0, 0.0, 0.45),
+            },
+        }
+    }
+}
+
+pub fn notification_container(tone: NotificationTone) -> theme::Container {
+    theme::Container::Custom(Box::new(NotificationContainer::new(tone)))
 }
 
 pub fn status_container() -> theme::Container {

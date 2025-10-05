@@ -143,6 +143,12 @@ impl DebuggerConsoleEntry {
     }
 }
 
+#[derive(Debug, Clone)]
+pub enum DebuggerUiEvent {
+    SessionStarted { target: Option<String> },
+    SessionError { message: String },
+}
+
 #[derive(Debug, Default, Clone)]
 pub struct ManualTargetDraft {
     pub name: String,
@@ -179,6 +185,8 @@ pub struct DebuggerState {
     manual_target: ManualTargetDraft,
     breakpoint_draft: BreakpointDraft,
     status: DebugSessionStatus,
+    pending_target_name: Option<String>,
+    active_target_name: Option<String>,
     menu_open: bool,
     runtime: Option<DebuggerRuntime>,
     target_filter: String,
@@ -669,6 +677,11 @@ impl DebuggerState {
         Ok(plans)
     }
 
+    pub fn begin_launch_for(&mut self, target: &DebugTarget) {
+        self.pending_target_name = Some(target.name.clone());
+        self.active_target_name = None;
+    }
+
     pub fn stop_session(&mut self) {
         if self.status != DebugSessionStatus::Idle {
             if let Some(runtime) = &self.runtime {
@@ -676,6 +689,8 @@ impl DebuggerState {
             }
             self.runtime = None;
             self.status = DebugSessionStatus::Idle;
+            self.pending_target_name = None;
+            self.active_target_name = None;
             self.push_console(DebuggerConsoleEntry::info("Debugger session stopped"));
         }
     }
@@ -683,13 +698,18 @@ impl DebuggerState {
     pub fn attach_runtime(&mut self, session: GdbSession) {
         self.runtime = Some(DebuggerRuntime::new(session));
         self.status = DebugSessionStatus::Launching;
+        if self.active_target_name.is_none() {
+            self.active_target_name = self.pending_target_name.clone();
+        }
     }
 
     pub fn has_runtime(&self) -> bool {
         self.runtime.is_some()
     }
 
-    pub fn process_runtime_events(&mut self) {
+    pub fn process_runtime_events(&mut self) -> Vec<DebuggerUiEvent> {
+        let mut ui_events = Vec::new();
+
         loop {
             let event = match self.runtime.as_ref().and_then(|runtime| runtime.try_recv()) {
                 Some(event) => event,
@@ -700,6 +720,9 @@ impl DebuggerState {
                 GdbEvent::Started => {
                     self.status = DebugSessionStatus::Running;
                     self.push_console(DebuggerConsoleEntry::info("gdb session started".to_string()));
+                    ui_events.push(DebuggerUiEvent::SessionStarted {
+                        target: self.active_target_name.clone(),
+                    });
                 }
                 GdbEvent::Stdout(line) => {
                     self.push_console(DebuggerConsoleEntry::output(line));
@@ -714,12 +737,17 @@ impl DebuggerState {
                     )));
                     self.status = DebugSessionStatus::Exited;
                     self.runtime = None;
+                    self.active_target_name = None;
+                    self.pending_target_name = None;
                 }
                 GdbEvent::Error(err) => {
-                    self.push_console(DebuggerConsoleEntry::error(err));
+                    self.push_console(DebuggerConsoleEntry::error(err.clone()));
+                    ui_events.push(DebuggerUiEvent::SessionError { message: err });
                 }
             }
         }
+
+        ui_events
     }
 
     pub fn push_console(&mut self, entry: DebuggerConsoleEntry) {
