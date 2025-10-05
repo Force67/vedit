@@ -3,6 +3,7 @@ use std::fs;
 use std::path::PathBuf;
 use vedit_config::{WorkspaceConfig, WorkspaceMetadata};
 use vedit_core::{Document, Editor, FileNode};
+use vedit_debugger::{Breakpoint as DebuggerBreakpoint, GdbSession, LaunchConfig as DebuggerLaunchConfig};
 
 #[derive(Debug, Clone)]
 pub struct SaveDocumentRequest {
@@ -23,6 +24,21 @@ pub struct WorkspaceData {
     pub tree: Vec<FileNode>,
     pub config: WorkspaceConfig,
     pub metadata: WorkspaceMetadata,
+}
+#[derive(Debug, Clone)]
+pub struct DebugSessionBreakpoint {
+    pub file: String,
+    pub line: u32,
+    pub condition: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct DebugSessionRequest {
+    pub executable: String,
+    pub working_directory: String,
+    pub arguments: Vec<String>,
+    pub breakpoints: Vec<DebugSessionBreakpoint>,
+    pub launch_script: Option<String>,
 }
 
 pub async fn pick_keymap_location(current: Option<String>) -> Result<Option<String>, String> {
@@ -173,4 +189,32 @@ pub async fn save_workspace_metadata(
         .save(&root)
         .map_err(|err| format!("Failed to save workspace metadata: {}", err))?;
     Ok(root)
+}
+
+pub async fn start_debug_session(request: DebugSessionRequest) -> Result<GdbSession, String> {
+    let DebugSessionRequest {
+        executable,
+        working_directory,
+        arguments,
+        breakpoints,
+        launch_script,
+    } = request;
+
+    let config = DebuggerLaunchConfig {
+        executable: PathBuf::from(executable),
+        working_directory: PathBuf::from(working_directory),
+        arguments,
+        breakpoints: breakpoints
+            .into_iter()
+            .map(|bp| DebuggerBreakpoint {
+                file: PathBuf::from(bp.file),
+                line: bp.line,
+                condition: bp.condition,
+            })
+            .collect(),
+        launch_script,
+        gdb_path: None,
+    };
+
+    vedit_debugger::spawn_session(config).map_err(|err| err.to_string())
 }

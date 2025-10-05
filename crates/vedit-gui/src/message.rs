@@ -7,6 +7,7 @@ use std::sync::Arc;
 use vedit_core::{Document, FileNode};
 use vedit_application::{QuickCommandId, SettingsCategory};
 use crate::commands::WorkspaceData;
+use vedit_debugger::GdbSession;
 
 #[derive(Debug, Clone)]
 pub enum Message {
@@ -36,6 +37,29 @@ pub enum Message {
     SettingsBindingsSaved(Result<String, String>),
     SettingsKeymapPathRequested,
     SettingsKeymapPathSelected(Result<Option<String>, String>),
+    DebuggerTargetsRefreshRequested,
+    DebuggerMenuToggled,
+    DebuggerTargetToggled(u64, bool),
+    DebuggerTargetFilterChanged(String),
+    DebuggerLaunchRequested,
+    DebuggerSessionStarted(Result<GdbSession, String>),
+    DebuggerStopRequested,
+    DebuggerGdbCommandInputChanged(String),
+    DebuggerGdbCommandSubmitted,
+    DebuggerBreakpointToggled(u64),
+    DebuggerBreakpointRemoved(u64),
+    DebuggerBreakpointConditionChanged(u64, String),
+    DebuggerBreakpointDraftFileChanged(String),
+    DebuggerBreakpointDraftLineChanged(String),
+    DebuggerBreakpointDraftConditionChanged(String),
+    DebuggerBreakpointDraftSubmitted,
+    DebuggerManualTargetNameChanged(String),
+    DebuggerManualTargetExecutableChanged(String),
+    DebuggerManualTargetWorkingDirectoryChanged(String),
+    DebuggerManualTargetArgumentsChanged(String),
+    DebuggerManualTargetSaved,
+    DebuggerLaunchScriptChanged(String),
+    DebuggerTick,
     Keyboard(keyboard::Event),
     CommandPaletteInputChanged(String),
     CommandPaletteCommandInvoked(QuickCommandId),

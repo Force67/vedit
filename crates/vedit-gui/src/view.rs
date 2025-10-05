@@ -1,6 +1,7 @@
 use crate::message::{Message, WorkspaceSnapshot};
 use crate::state::EditorState;
 use crate::syntax::{format_highlight, SyntaxHighlighter};
+use crate::widgets::debugger;
 use crate::widgets::text_editor::TextEditor as EditorWidget;
 use crate::style::{
     active_document_button, document_button, panel_container, ribbon_container,
@@ -28,6 +29,16 @@ pub fn view(state: &EditorState) -> Element<'_, Message> {
     let top_bar = render_top_bar(state, scale, spacing_large, spacing_medium);
 
     let mut layout = column![top_bar];
+
+    if state.debugger_menu_open() {
+        layout = layout.push(debugger::menu(
+            state.debugger(),
+            scale,
+            spacing_large,
+            spacing_medium,
+            spacing_small,
+        ));
+    }
 
     if state.settings().is_open() {
         layout = layout.push(render_settings(state, scale, spacing_large, spacing_medium, spacing_small));
@@ -89,6 +100,20 @@ fn render_top_bar(
             button(text(label).size((14.0 * scale).max(10.0)))
                 .style(top_bar_button())
                 .on_press(Message::CommandPromptToggled)
+        },
+        button(text("▶ Run").size((14.0 * scale).max(10.0)))
+            .style(top_bar_button())
+            .on_press(Message::DebuggerLaunchRequested),
+        button(text("■ Stop").size((14.0 * scale).max(10.0)))
+            .style(top_bar_button())
+            .on_press(Message::DebuggerStopRequested),
+        {
+            let summary = state.debugger().selection_summary();
+            let arrow = if state.debugger_menu_open() { '▲' } else { '▼' };
+            let label = format!("{} {}", summary, arrow);
+            button(text(label).size((14.0 * scale).max(10.0)))
+                .style(top_bar_button())
+                .on_press(Message::DebuggerMenuToggled)
         },
         horizontal_space().width(Length::Fill),
     ]

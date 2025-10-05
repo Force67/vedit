@@ -1,10 +1,15 @@
-use crate::commands::{self, SaveDocumentRequest, SaveKeymapRequest, WorkspaceData};
+use crate::commands::{
+    self, DebugSessionBreakpoint, DebugSessionRequest, SaveDocumentRequest, SaveKeymapRequest,
+    WorkspaceData,
+};
+use crate::debugger::DebugLaunchPlan;
 use crate::keyboard;
 use crate::message::Message;
 use crate::state::EditorState;
 use crate::view;
 use iced::Subscription;
-use iced::{executor, theme, Application, Command, Element, Settings};
+use iced::{executor, theme, time, Application, Command, Element, Settings};
+use std::time::Duration;
 use iced::{event, mouse};
 use vedit_core::{Document, Key, QUICK_COMMAND_MENU_ACTION, SAVE_ACTION};
 use vedit_application::QuickCommandId;
@@ -40,6 +45,7 @@ impl Application for EditorApp {
     }
 
     fn update(&mut self, message: Self::Message) -> Command<Self::Message> {
+        self.state.process_debugger_events();
         match message {
             Message::OpenFileRequested => {
                 return Command::perform(commands::pick_document(), Message::FileLoaded);
@@ -195,9 +201,11 @@ impl Application for EditorApp {
                 }
             }
             Message::SettingsOpened => {
+                self.state.close_debugger_menu();
                 self.state.open_settings();
             }
             Message::SettingsClosed => {
+                self.state.close_debugger_menu();
                 self.state.close_settings();
             }
             Message::SettingsCategorySelected(category) => {
@@ -254,6 +262,122 @@ impl Application for EditorApp {
                     self.state.set_error(Some(err));
                 }
             },
+            Message::DebuggerTargetsRefreshRequested => {
+                if let Err(err) = self.state.refresh_debug_targets() {
+                    self.state.set_error(Some(err));
+                }
+            }
+            Message::DebuggerMenuToggled => {
+                self.state.toggle_debugger_menu();
+            }
+            Message::DebuggerTargetToggled(id, selected) => {
+                self.state.set_debug_target_selected(id, selected);
+            }
+            Message::DebuggerTargetFilterChanged(value) => {
+                self.state.set_debug_target_filter(value);
+            }
+            Message::DebuggerLaunchRequested => {
+                if self.state.debugger_has_runtime() {
+                    self.state.stop_debug_session();
+                }
+                match self.state.prepare_debug_launches() {
+                    Ok(plans) => {
+                        if let Some(plan) = plans.first() {
+                            self.state.clear_error();
+                            self.state.close_debugger_menu();
+                            let request = session_request_from_plan(plan);
+                            return Command::perform(
+                                commands::start_debug_session(request),
+                                Message::DebuggerSessionStarted,
+                            );
+                        } else {
+                            self.state.set_error(Some("No debug targets selected".to_string()));
+                        }
+                    }
+                    Err(err) => {
+                        self.state.set_error(Some(err));
+                    }
+                }
+            }
+            Message::DebuggerSessionStarted(result) => match result {
+                Ok(session) => {
+                    self.state.attach_debugger_session(session);
+                    self.state.process_debugger_events();
+                }
+                Err(err) => {
+                    self.state.set_error(Some(err));
+                }
+            },
+            Message::DebuggerStopRequested => {
+                self.state.stop_debug_session();
+            }
+            Message::DebuggerGdbCommandInputChanged(value) => {
+                self.state.debugger_mut().set_gdb_command_input(value);
+            }
+            Message::DebuggerGdbCommandSubmitted => {
+                if let Err(err) = self.state.submit_gdb_command() {
+                    self.state.set_error(Some(err));
+                }
+            }
+            Message::DebuggerBreakpointToggled(id) => {
+                self.state.toggle_breakpoint(id);
+            }
+            Message::DebuggerBreakpointRemoved(id) => {
+                self.state.remove_breakpoint(id);
+            }
+            Message::DebuggerBreakpointConditionChanged(id, value) => {
+                self.state.set_breakpoint_condition(id, value);
+            }
+            Message::DebuggerBreakpointDraftFileChanged(value) => {
+                self.state
+                    .debugger_mut()
+                    .set_breakpoint_draft_file(value);
+            }
+            Message::DebuggerBreakpointDraftLineChanged(value) => {
+                self.state
+                    .debugger_mut()
+                    .set_breakpoint_draft_line(value);
+            }
+            Message::DebuggerBreakpointDraftConditionChanged(value) => {
+                self.state
+                    .debugger_mut()
+                    .set_breakpoint_draft_condition(value);
+            }
+            Message::DebuggerBreakpointDraftSubmitted => {
+                match self.state.commit_breakpoint_from_draft() {
+                    Ok(()) => self.state.clear_error(),
+                    Err(err) => self.state.set_error(Some(err)),
+                }
+            }
+            Message::DebuggerManualTargetNameChanged(value) => {
+                self.state
+                    .debugger_mut()
+                    .set_manual_target_name(value);
+            }
+            Message::DebuggerManualTargetExecutableChanged(value) => {
+                self.state
+                    .debugger_mut()
+                    .set_manual_target_executable(value);
+            }
+            Message::DebuggerManualTargetWorkingDirectoryChanged(value) => {
+                self.state
+                    .debugger_mut()
+                    .set_manual_target_working_directory(value);
+            }
+            Message::DebuggerManualTargetArgumentsChanged(value) => {
+                self.state
+                    .debugger_mut()
+                    .set_manual_target_arguments(value);
+            }
+            Message::DebuggerManualTargetSaved => {
+                match self.state.commit_manual_debug_target() {
+                    Ok(()) => self.state.clear_error(),
+                    Err(err) => self.state.set_error(Some(err)),
+                }
+            }
+            Message::DebuggerLaunchScriptChanged(value) => {
+                self.state.debugger_mut().set_launch_script(value);
+            }
             Message::Keyboard(key_event) => {
                 match key_event {
                     iced::keyboard::Event::ModifiersChanged(modifiers) => {
@@ -343,12 +467,16 @@ impl Application for EditorApp {
                 self.state.close_command_palette();
             }
             Message::CommandPromptToggled => {
+                self.state.close_debugger_menu();
                 if self.state.command_palette().is_open() {
                     self.state.close_command_palette();
                 } else {
                     self.state.set_command_palette_query(String::new());
                     self.state.open_command_palette();
                 }
+            }
+            Message::DebuggerTick => {
+                self.state.process_debugger_events();
             }
         }
 
@@ -364,17 +492,43 @@ impl Application for EditorApp {
     }
 
     fn subscription(&self) -> Subscription<Self::Message> {
-        event::listen_with(|event, _status| match event {
+        let input = event::listen_with(|event, _status| match event {
             event::Event::Keyboard(key_event) => Some(Message::Keyboard(key_event)),
             event::Event::Mouse(mouse::Event::WheelScrolled { delta }) => {
                 Some(Message::MouseWheelScrolled(delta))
             }
             _ => None,
-        })
+        });
+
+        let tick = time::every(Duration::from_millis(200)).map(|_| Message::DebuggerTick);
+
+        Subscription::batch(vec![input, tick])
     }
 
     fn scale_factor(&self) -> f64 {
         self.state.scale_factor()
+    }
+}
+
+fn session_request_from_plan(plan: &DebugLaunchPlan) -> DebugSessionRequest {
+    DebugSessionRequest {
+        executable: plan.target.executable.to_string_lossy().to_string(),
+        working_directory: plan
+            .target
+            .working_directory
+            .to_string_lossy()
+            .to_string(),
+        arguments: plan.target.args.clone(),
+        breakpoints: plan
+            .breakpoints
+            .iter()
+            .map(|bp| DebugSessionBreakpoint {
+                file: bp.file.to_string_lossy().to_string(),
+                line: bp.line,
+                condition: bp.condition.clone(),
+            })
+            .collect(),
+        launch_script: plan.launch_script.clone(),
     }
 }
 

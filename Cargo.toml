@@ -6,6 +6,7 @@ members = [
     "crates/vedit-application",
     "crates/vedit-vs",
     "crates/vedit-make",
+    "crates/vedit-debugger",
 ]
 resolver = "2"
 

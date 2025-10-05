@@ -1,5 +1,6 @@
 mod app;
 mod commands;
+mod debugger;
 mod message;
 mod scaling;
 mod state;

@@ -1,3 +1,4 @@
+use crate::debugger::{DebugLaunchPlan, DebuggerState};
 use crate::scaling;
 use crate::syntax::{DocumentKey, SyntaxSettings, SyntaxSystem};
 use crate::widgets::text_editor::{
@@ -8,6 +9,7 @@ use std::collections::HashSet;
 use std::env;
 use vedit_application::{AppState, CommandPaletteState, QuickCommand, QuickCommandId, SettingsState};
 use vedit_core::{Editor, FileNode, KeyEvent, Language, StickyNote, WorkspaceConfig};
+use vedit_debugger::GdbSession;
 use vedit_config::WorkspaceMetadata;
 
 const ZOOM_STEP_ENV: &str = "VEDIT_ZOOM_STEP";
@@ -93,6 +95,7 @@ pub struct EditorState {
     workspace_collapsed_version: u64,
     zoom_config: ZoomConfig,
     modifiers: keyboard::Modifiers,
+    debugger: DebuggerState,
 }
 
 impl Default for EditorState {
@@ -111,6 +114,7 @@ impl Default for EditorState {
             workspace_collapsed_version: 0,
             zoom_config,
             modifiers: keyboard::Modifiers::default(),
+            debugger: DebuggerState::default(),
         };
         state.sync_buffer_from_editor();
         state
@@ -318,6 +322,9 @@ impl EditorState {
             }
         }
         self.workspace_collapsed_version = self.workspace_collapsed_version.wrapping_add(1);
+        if let Err(err) = self.refresh_debug_targets() {
+            self.set_error(Some(err));
+        }
         self.sync_buffer_from_editor();
     }
 
@@ -444,6 +451,83 @@ impl EditorState {
 
     pub fn modifiers(&self) -> keyboard::Modifiers {
         self.modifiers
+    }
+
+    pub fn debugger(&self) -> &DebuggerState {
+        &self.debugger
+    }
+
+    pub fn debugger_mut(&mut self) -> &mut DebuggerState {
+        &mut self.debugger
+    }
+
+    pub fn refresh_debug_targets(&mut self) -> Result<(), String> {
+        let root = self.app.editor().workspace_root();
+        self.debugger.refresh_targets(root)
+    }
+
+    pub fn debugger_menu_open(&self) -> bool {
+        self.debugger.menu_open()
+    }
+
+    pub fn toggle_debugger_menu(&mut self) {
+        self.debugger.toggle_menu();
+    }
+
+    pub fn close_debugger_menu(&mut self) {
+        self.debugger.close_menu();
+    }
+
+    pub fn set_debug_target_selected(&mut self, id: u64, selected: bool) {
+        self.debugger.set_target_selected(id, selected);
+    }
+
+    pub fn set_debug_target_filter(&mut self, value: String) {
+        self.debugger.set_target_filter(value);
+    }
+
+    pub fn commit_manual_debug_target(&mut self) -> Result<(), String> {
+        self.debugger.commit_manual_target()
+    }
+
+    pub fn commit_breakpoint_from_draft(&mut self) -> Result<(), String> {
+        self.debugger.commit_breakpoint_from_draft()
+    }
+
+    pub fn toggle_breakpoint(&mut self, id: u64) {
+        self.debugger.toggle_breakpoint(id);
+    }
+
+    pub fn remove_breakpoint(&mut self, id: u64) {
+        self.debugger.remove_breakpoint(id);
+    }
+
+    pub fn set_breakpoint_condition(&mut self, id: u64, condition: String) {
+        self.debugger.set_breakpoint_condition(id, condition);
+    }
+
+    pub fn prepare_debug_launches(&mut self) -> Result<Vec<DebugLaunchPlan>, String> {
+        self.debugger.prepare_launches()
+    }
+
+    pub fn stop_debug_session(&mut self) {
+        self.debugger.stop_session();
+    }
+
+    pub fn submit_gdb_command(&mut self) -> Result<(), String> {
+        self.debugger.submit_gdb_command()
+    }
+
+    pub fn attach_debugger_session(&mut self, session: GdbSession) {
+        self.debugger.attach_runtime(session);
+    }
+
+    pub fn debugger_has_runtime(&self) -> bool {
+        self.debugger.has_runtime()
+    }
+
+    pub fn process_debugger_events(&mut self) {
+        self.debugger.process_runtime_events();
     }
 
     fn editor_contents_to_string(&self) -> String {

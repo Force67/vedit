@@ -55,6 +55,7 @@ pub struct VcxProject {
     pub name: String,
     pub path: PathBuf,
     pub files: Vec<VcxItem>,
+    pub produces_executable: bool,
 }
 
 /// A file entry inside a Visual Studio C/C++ project.
@@ -169,12 +170,22 @@ impl VcxProject {
             .map(normalize_path)
             .unwrap_or_else(|| PathBuf::from("."));
         let mut files = Vec::new();
+        let mut produces_executable = false;
 
         for node in document.descendants() {
             if !node.is_element() {
                 continue;
             }
             let tag_name = node.tag_name().name();
+            if tag_name.eq_ignore_ascii_case("ConfigurationType") {
+                if node
+                    .text()
+                    .map(|value| value.trim().eq_ignore_ascii_case("Application"))
+                    .unwrap_or(false)
+                {
+                    produces_executable = true;
+                }
+            }
             let kind = match VcxItemKind::from_tag(tag_name) {
                 Some(kind) => kind,
                 None => continue,
@@ -203,6 +214,7 @@ impl VcxProject {
                 .unwrap_or_else(|| path.to_string_lossy().to_string()),
             path: normalize_path(path),
             files,
+            produces_executable,
         })
     }
 }

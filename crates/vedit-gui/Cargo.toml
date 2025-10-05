@@ -11,9 +11,13 @@ iced = { version = "0.12", features = ["wgpu", "tokio", "lazy", "advanced"] }
 iced_graphics = "0.12"
 cosmic-text = "0.10"
 rfd = "0.14"
+crossbeam-channel = "0.5"
 vedit-application = { path = "../vedit-application" }
 vedit-core = { path = "../vedit-core" }
 vedit-config = { path = "../vedit-config" }
+vedit-make = { path = "../vedit-make" }
+vedit-vs = { path = "../vedit-vs" }
+vedit-debugger = { path = "../vedit-debugger" }
 tree-sitter = "0.25"
 tree-sitter-highlight = "0.25"
 tree-sitter-rust = "0.24"
