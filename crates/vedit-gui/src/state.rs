@@ -317,6 +317,10 @@ impl EditorState {
     ) {
         self.app
             .install_workspace(root, tree, config, metadata);
+        let recent_targets = self.app.workspace_recent_debug_targets();
+        let last_target = self.app.workspace_last_debug_target();
+        self.debugger
+            .set_recent_target_history(recent_targets, last_target);
         self.workspace_collapsed.clear();
         if let Some(nodes) = self.app.editor().workspace_tree() {
             let mut directories = Vec::new();
@@ -514,8 +518,13 @@ impl EditorState {
         self.debugger.prepare_launches()
     }
 
-    pub fn begin_debug_launch(&mut self, target: &DebugTarget) {
+    pub fn begin_debug_launch(
+        &mut self,
+        target: &DebugTarget,
+    ) -> Option<(String, WorkspaceConfig)> {
         self.debugger.begin_launch_for(target);
+        self.app
+            .record_recent_debug_target(&target.name, &target.executable)
     }
 
     pub fn stop_debug_session(&mut self) {

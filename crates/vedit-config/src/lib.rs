@@ -11,6 +11,40 @@ const WORKSPACE_DIR: &str = ".vedit";
 const WORKSPACE_FILE: &str = "workspace.toml";
 const WORKSPACE_METADATA_FILE: &str = "metadata.json";
 const MAX_RECENT_FILES: usize = 10;
+pub const MAX_RECENT_DEBUG_TARGETS: usize = 8;
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DebugTargetRecord {
+    pub name: String,
+    pub executable: String,
+}
+
+impl DebugTargetRecord {
+    pub fn new(name: impl Into<String>, executable: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            executable: executable.into(),
+        }
+    }
+
+    fn normalized(name: impl Into<String>, executable: &Path) -> Option<Self> {
+        let name = name.into().trim().to_string();
+        if name.is_empty() {
+            return None;
+        }
+
+        let executable = normalize_path(executable);
+        if executable.trim().is_empty() {
+            return None;
+        }
+
+        Some(Self { name, executable })
+    }
+
+    fn is_valid(&self) -> bool {
+        !self.name.trim().is_empty() && !self.executable.trim().is_empty()
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct WorkspaceConfig {
@@ -20,6 +54,10 @@ pub struct WorkspaceConfig {
     pub ignored_directories: Vec<String>,
     #[serde(default)]
     recent_files: VecDeque<String>,
+    #[serde(default)]
+    recent_debug_targets: VecDeque<DebugTargetRecord>,
+    #[serde(default)]
+    last_debug_target: Option<DebugTargetRecord>,
 }
 
 impl Default for WorkspaceConfig {
@@ -28,6 +66,8 @@ impl Default for WorkspaceConfig {
             name: None,
             ignored_directories: Vec::new(),
             recent_files: VecDeque::new(),
+            recent_debug_targets: VecDeque::new(),
+            last_debug_target: None,
         }
     }
 }
@@ -69,6 +109,14 @@ impl WorkspaceConfig {
         self.recent_files.iter().map(|entry| entry.as_str())
     }
 
+    pub fn recent_debug_targets(&self) -> impl Iterator<Item = &DebugTargetRecord> {
+        self.recent_debug_targets.iter()
+    }
+
+    pub fn last_debug_target(&self) -> Option<&DebugTargetRecord> {
+        self.last_debug_target.as_ref()
+    }
+
     pub fn record_recent_file(&mut self, file: impl AsRef<Path>) -> bool {
         let file = file.as_ref();
         if file.as_os_str().is_empty() {
@@ -93,6 +141,39 @@ impl WorkspaceConfig {
         true
     }
 
+    pub fn record_debug_target(&mut self, name: &str, executable: impl AsRef<Path>) -> bool {
+        let Some(record) = DebugTargetRecord::normalized(name, executable.as_ref()) else {
+            return false;
+        };
+
+        let mut changed = false;
+
+        if let Some(position) = self
+            .recent_debug_targets
+            .iter()
+            .position(|entry| entry == &record)
+        {
+            if position != 0 {
+                self.recent_debug_targets.remove(position);
+                self.recent_debug_targets.push_front(record.clone());
+                changed = true;
+            }
+        } else {
+            self.recent_debug_targets.push_front(record.clone());
+            changed = true;
+            while self.recent_debug_targets.len() > MAX_RECENT_DEBUG_TARGETS {
+                self.recent_debug_targets.pop_back();
+            }
+        }
+
+        if self.last_debug_target.as_ref() != Some(&record) {
+            self.last_debug_target = Some(record);
+            changed = true;
+        }
+
+        changed
+    }
+
     fn normalize(&mut self) {
         self.ignored_directories
             .iter_mut()
@@ -107,6 +188,32 @@ impl WorkspaceConfig {
             }
         }
         self.recent_files = deduped;
+
+        let mut deduped_targets: VecDeque<DebugTargetRecord> = VecDeque::new();
+        for entry in self.recent_debug_targets.drain(..) {
+            if entry.is_valid() && !deduped_targets.contains(&entry) {
+                deduped_targets.push_back(entry);
+            }
+        }
+        while deduped_targets.len() > MAX_RECENT_DEBUG_TARGETS {
+            deduped_targets.pop_back();
+        }
+        self.recent_debug_targets = deduped_targets;
+
+        if let Some(last) = self.last_debug_target.as_ref() {
+            if !last.is_valid() {
+                self.last_debug_target = None;
+            }
+        }
+
+        if let Some(last) = self.last_debug_target.clone() {
+            if !self.recent_debug_targets.contains(&last) {
+                self.recent_debug_targets.push_front(last);
+                while self.recent_debug_targets.len() > MAX_RECENT_DEBUG_TARGETS {
+                    self.recent_debug_targets.pop_back();
+                }
+            }
+        }
     }
 }
 
@@ -275,6 +382,27 @@ mod tests {
 
         assert!(config.record_recent_file("file5"));
         assert_eq!(config.recent_files().next().unwrap(), "file5");
+    }
+
+    #[test]
+    fn record_recent_debug_target_promotes_and_limits() {
+        let mut config = WorkspaceConfig::default();
+        for idx in 0..10 {
+            let exe = format!("/bin/tool{}", idx);
+            assert!(config.record_debug_target(&format!("tool{}", idx), &exe));
+        }
+
+        assert!(config
+            .recent_debug_targets()
+            .count()
+            <= MAX_RECENT_DEBUG_TARGETS);
+        let first = config.recent_debug_targets().next().unwrap();
+        assert_eq!(first.name, "tool9");
+
+        assert!(config.record_debug_target("tool3", "/bin/tool3"));
+        let new_first = config.recent_debug_targets().next().unwrap();
+        assert_eq!(new_first.name, "tool3");
+        assert_eq!(config.last_debug_target().unwrap().name, "tool3");
     }
 
     #[test]

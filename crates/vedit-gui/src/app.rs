@@ -287,12 +287,19 @@ impl Application for EditorApp {
                         if let Some(plan) = plans.first() {
                             self.state.clear_error();
                             self.state.close_debugger_menu();
-                            self.state.begin_debug_launch(&plan.target);
+                            let save_payload = self.state.begin_debug_launch(&plan.target);
                             let request = session_request_from_plan(plan);
-                            return Command::perform(
+                            let mut commands_list = vec![Command::perform(
                                 commands::start_debug_session(request),
                                 Message::DebuggerSessionStarted,
-                            );
+                            )];
+                            if let Some((root, config)) = save_payload {
+                                commands_list.push(Command::perform(
+                                    commands::save_workspace_config(root, config),
+                                    Message::WorkspaceConfigSaved,
+                                ));
+                            }
+                            return Command::batch(commands_list);
                         } else {
                             self.state.set_error(Some("No debug targets selected".to_string()));
                         }

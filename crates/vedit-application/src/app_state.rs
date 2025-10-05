@@ -2,7 +2,7 @@ use crate::quick_commands::{list as quick_commands_list, QuickCommand, QuickComm
 use crate::settings::SettingsState;
 use std::env;
 use std::path::{Path, PathBuf};
-use vedit_config::{WorkspaceConfig, WorkspaceMetadata};
+use vedit_config::{WorkspaceConfig, WorkspaceMetadata, DebugTargetRecord};
 use vedit_core::{Editor, FileNode, KeyCombination, KeyEvent, Keymap, KeymapError, StickyNote};
 
 /// Core application state that owns the editor session, keymap, and workspace logic.
@@ -165,6 +165,19 @@ impl AppState {
             .unwrap_or_default()
     }
 
+    pub fn workspace_recent_debug_targets(&self) -> Vec<DebugTargetRecord> {
+        self.editor
+            .workspace_config()
+            .map(|config| config.recent_debug_targets().cloned().collect())
+            .unwrap_or_default()
+    }
+
+    pub fn workspace_last_debug_target(&self) -> Option<DebugTargetRecord> {
+        self.editor
+            .workspace_config()
+            .and_then(|config| config.last_debug_target().cloned())
+    }
+
     pub fn record_recent_workspace_file(&mut self) -> Option<(String, WorkspaceConfig)> {
         let path = self
             .editor
@@ -177,6 +190,25 @@ impl AppState {
             if !config.record_recent_file(&path) {
                 return None;
             }
+        }
+
+        let snapshot = self.editor.workspace_config()?.clone();
+        Some((root, snapshot))
+    }
+
+    pub fn record_recent_debug_target(
+        &mut self,
+        name: &str,
+        executable: impl AsRef<Path>,
+    ) -> Option<(String, WorkspaceConfig)> {
+        let root = self.editor.workspace_root()?.to_string();
+        let changed = {
+            let config = self.editor.workspace_config_mut()?;
+            config.record_debug_target(name, executable)
+        };
+
+        if !changed {
+            return None;
         }
 
         let snapshot = self.editor.workspace_config()?.clone();

@@ -1,4 +1,5 @@
 use crossbeam_channel::{Receiver, Sender};
+use std::cmp::Ordering;
 use std::collections::BTreeSet;
 use std::ffi::OsStr;
 use std::fmt;
@@ -8,6 +9,7 @@ use std::path::{Path, PathBuf};
 use vedit_make::Makefile;
 use vedit_debugger::{DebuggerCommand as GdbCommand, DebuggerEvent as GdbEvent, GdbSession};
 use vedit_vs::{Solution, VcxProject};
+use vedit_config::{DebugTargetRecord, MAX_RECENT_DEBUG_TARGETS};
 
 const IGNORED_DIRECTORIES: [&str; 4] = ["target", ".git", ".hg", ".svn"];
 const MAX_CONSOLE_ENTRIES: usize = 200;
@@ -42,6 +44,41 @@ pub struct DebugTarget {
     pub args: Vec<String>,
     pub source: DebugTargetSource,
     pub notes: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DebugTargetIdentity {
+    name: String,
+    executable: String,
+}
+
+impl DebugTargetIdentity {
+    fn from_record(record: DebugTargetRecord) -> Option<Self> {
+        if record.name.trim().is_empty() || record.executable.trim().is_empty() {
+            None
+        } else {
+            Some(Self {
+                name: record.name,
+                executable: record.executable,
+            })
+        }
+    }
+
+    fn from_target(target: &DebugTarget) -> Option<Self> {
+        let executable = normalize_executable_path(&target.executable);
+        if executable.trim().is_empty() {
+            return None;
+        }
+
+        Some(Self {
+            name: target.name.clone(),
+            executable,
+        })
+    }
+
+    fn matches(&self, target: &DebugTarget) -> bool {
+        self.executable == normalize_executable_path(&target.executable)
+    }
 }
 
 impl fmt::Display for DebugTarget {
@@ -176,6 +213,9 @@ pub struct DebuggerState {
     workspace_root: Option<PathBuf>,
     targets: Vec<DebugTarget>,
     selected_targets: BTreeSet<u64>,
+    recent_target_history: Vec<DebugTargetIdentity>,
+    last_target_identity: Option<DebugTargetIdentity>,
+    apply_history_selection: bool,
     breakpoints: Vec<DebuggerBreakpoint>,
     next_target_id: u64,
     next_breakpoint_id: u64,
@@ -320,6 +360,83 @@ impl DebuggerState {
         self.selected_targets.len()
     }
 
+    pub fn set_recent_target_history(
+        &mut self,
+        recent: Vec<DebugTargetRecord>,
+        last: Option<DebugTargetRecord>,
+    ) {
+        self.recent_target_history = recent
+            .into_iter()
+            .filter_map(DebugTargetIdentity::from_record)
+            .collect();
+        if self.recent_target_history.len() > MAX_RECENT_DEBUG_TARGETS {
+            self.recent_target_history
+                .truncate(MAX_RECENT_DEBUG_TARGETS);
+        }
+        self.last_target_identity = last.and_then(DebugTargetIdentity::from_record);
+        self.apply_history_selection = true;
+        self.sort_targets_by_history();
+    }
+
+    fn sort_targets_by_history(&mut self) {
+        if self.recent_target_history.is_empty() {
+            return;
+        }
+
+        let history = self.recent_target_history.clone();
+        self.targets.sort_by(|a, b| {
+            let pos_a = history.iter().position(|entry| entry.matches(a));
+            let pos_b = history.iter().position(|entry| entry.matches(b));
+            match (pos_a, pos_b) {
+                (Some(a_idx), Some(b_idx)) => a_idx.cmp(&b_idx),
+                (Some(_), None) => Ordering::Less,
+                (None, Some(_)) => Ordering::Greater,
+                (None, None) => Ordering::Equal,
+            }
+        });
+    }
+
+    fn apply_history_selection_if_needed(&mut self) {
+        if self.apply_history_selection {
+            self.apply_history_selection = false;
+            if let Some(identity) = &self.last_target_identity {
+                if let Some(target) = self.targets.iter().find(|target| identity.matches(target)) {
+                    self.selected_targets.clear();
+                    self.selected_targets.insert(target.id);
+                    self.prune_selected_targets();
+                    return;
+                }
+            }
+        }
+
+        self.prune_selected_targets();
+    }
+
+    fn touch_recent_history(&mut self, target: &DebugTarget) {
+        let Some(identity) = DebugTargetIdentity::from_target(target) else {
+            return;
+        };
+
+        if let Some(position) = self
+            .recent_target_history
+            .iter()
+            .position(|entry| entry == &identity)
+        {
+            if position != 0 {
+                self.recent_target_history.remove(position);
+                self.recent_target_history.insert(0, identity.clone());
+            }
+        } else {
+            self.recent_target_history.insert(0, identity.clone());
+            if self.recent_target_history.len() > MAX_RECENT_DEBUG_TARGETS {
+                self.recent_target_history.truncate(MAX_RECENT_DEBUG_TARGETS);
+            }
+        }
+
+        self.last_target_identity = Some(identity);
+        self.sort_targets_by_history();
+    }
+
     pub fn selection_summary(&self) -> String {
         let selected = self.selected_targets();
         if selected.is_empty() {
@@ -383,7 +500,11 @@ impl DebuggerState {
 
         let workspace_root = match self.workspace_root.clone() {
             Some(root) => root,
-            None => return Ok(()),
+            None => {
+                self.sort_targets_by_history();
+                self.apply_history_selection_if_needed();
+                return Ok(());
+            }
         };
 
         let mut vcx_projects = BTreeSet::new();
@@ -466,7 +587,8 @@ impl DebuggerState {
             }
         }
 
-        self.prune_selected_targets();
+        self.sort_targets_by_history();
+        self.apply_history_selection_if_needed();
 
         self.push_console(DebuggerConsoleEntry::info(format!(
             "Discovered {} debug target(s).",
@@ -534,6 +656,7 @@ impl DebuggerState {
         self.targets.push(target);
         self.selected_targets.insert(id);
         self.prune_selected_targets();
+        self.sort_targets_by_history();
         self.manual_target = ManualTargetDraft::default();
         Ok(())
     }
@@ -680,6 +803,7 @@ impl DebuggerState {
     pub fn begin_launch_for(&mut self, target: &DebugTarget) {
         self.pending_target_name = Some(target.name.clone());
         self.active_target_name = None;
+        self.touch_recent_history(target);
     }
 
     pub fn stop_session(&mut self) {
@@ -778,6 +902,15 @@ impl DebuggerState {
             .max()
             .unwrap_or(0)
             .wrapping_add(1);
+    }
+}
+
+fn normalize_executable_path(path: &Path) -> String {
+    let display = path.to_string_lossy().to_string();
+    if cfg!(windows) {
+        display.replace('\\', "/")
+    } else {
+        display
     }
 }
 
