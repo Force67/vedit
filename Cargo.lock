@@ -3687,6 +3687,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "vedit-application"
+version = "0.1.0"
+dependencies = [
+ "vedit-config",
+ "vedit-core",
+]
+
+[[package]]
 name = "vedit-config"
 version = "0.1.0"
 dependencies = [
@@ -3728,6 +3736,7 @@ dependencies = [
  "tree-sitter-rust",
  "tree-sitter-typescript",
  "tree-sitter-yaml",
+ "vedit-application",
  "vedit-config",
  "vedit-core",
 ]

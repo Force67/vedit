@@ -1,13 +1,13 @@
 use crate::commands::{self, SaveDocumentRequest, SaveKeymapRequest, WorkspaceData};
 use crate::keyboard;
 use crate::message::Message;
-use crate::quick_commands::QuickCommandId;
 use crate::state::EditorState;
 use crate::view;
 use iced::Subscription;
 use iced::{executor, theme, Application, Command, Element, Settings};
 use iced::{event, mouse};
 use vedit_core::{Document, Key, QUICK_COMMAND_MENU_ACTION, SAVE_ACTION};
+use vedit_application::QuickCommandId;
 
 pub fn run() -> iced::Result {
     EditorApp::run(Settings::default())

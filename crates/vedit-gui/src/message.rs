@@ -1,6 +1,3 @@
-use crate::commands::WorkspaceData;
-use crate::quick_commands::QuickCommandId;
-use crate::settings::SettingsCategory;
 use iced::keyboard;
 use iced::mouse;
 use crate::widgets::text_editor::Action as TextEditorAction;
@@ -8,6 +5,8 @@ use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use vedit_core::{Document, FileNode};
+use vedit_application::{QuickCommandId, SettingsCategory};
+use crate::commands::WorkspaceData;
 
 #[derive(Debug, Clone)]
 pub enum Message {

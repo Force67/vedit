@@ -1,5 +1,3 @@
-use crate::quick_commands::{commands as quick_commands_list, QuickCommand, QuickCommandId};
-use crate::settings::SettingsState;
 use crate::scaling;
 use crate::syntax::{DocumentKey, SyntaxSettings, SyntaxSystem};
 use crate::widgets::text_editor::{
@@ -8,8 +6,8 @@ use crate::widgets::text_editor::{
 use iced::keyboard;
 use std::collections::HashSet;
 use std::env;
-use std::path::{Path, PathBuf};
-use vedit_core::{Editor, FileNode, KeyCombination, KeyEvent, Keymap, KeymapError, Language, StickyNote, WorkspaceConfig};
+use vedit_application::{AppState, CommandPaletteState, QuickCommand, QuickCommandId, SettingsState};
+use vedit_core::{Editor, FileNode, KeyEvent, Language, StickyNote, WorkspaceConfig};
 use vedit_config::WorkspaceMetadata;
 
 const ZOOM_STEP_ENV: &str = "VEDIT_ZOOM_STEP";
@@ -86,20 +84,11 @@ fn read_env_f64(name: &str) -> Option<f64> {
 
 #[derive(Debug)]
 pub struct EditorState {
-    editor: Editor,
-    error: Option<String>,
+    app: AppState,
     buffer_content: Content,
-    keymap: Keymap,
-    quick_commands: &'static [QuickCommand],
     command_palette: CommandPaletteState,
     scale_factor: f64,
     syntax: SyntaxSystem,
-    settings: SettingsState,
-    settings_error: Option<String>,
-    settings_notice: Option<String>,
-    settings_dirty: bool,
-    keymap_path: Option<PathBuf>,
-    workspace_notice: Option<String>,
     workspace_collapsed: HashSet<String>,
     workspace_collapsed_version: u64,
     zoom_config: ZoomConfig,
@@ -108,75 +97,33 @@ pub struct EditorState {
 
 impl Default for EditorState {
     fn default() -> Self {
-        let quick_commands = quick_commands_list();
-        let keymap = Keymap::default();
-        let settings = SettingsState::new(quick_commands, &keymap);
-
-        let keymap_path = env::current_dir()
-            .ok()
-            .map(|dir| dir.join("keybindings.toml"));
-
         let zoom_config = ZoomConfig::load();
         let detected_scale = scaling::detect_scale_factor().unwrap_or(1.0);
         let initial_scale = zoom_config.initial_scale(detected_scale);
 
         let mut state = Self {
-            editor: Editor::new(),
-            error: None,
+            app: AppState::new(),
             buffer_content: Content::new(),
-            keymap,
-            quick_commands,
             command_palette: CommandPaletteState::default(),
             scale_factor: initial_scale,
             syntax: SyntaxSystem::new(),
-            settings,
-            settings_error: None,
-            settings_notice: None,
-            settings_dirty: false,
-            keymap_path,
-            workspace_notice: None,
             workspace_collapsed: HashSet::new(),
             workspace_collapsed_version: 0,
             zoom_config,
             modifiers: keyboard::Modifiers::default(),
         };
         state.sync_buffer_from_editor();
-
-        if let Ok(current_dir) = env::current_dir() {
-            let candidate = current_dir.join("keybindings.toml");
-            if candidate.exists() {
-                if let Err(err) = state.load_keymap_from_file(&candidate) {
-                    state.error = Some(format!("Failed to load keybindings: {}", err));
-                }
-            }
-        }
-
-        state.settings.sync_bindings(state.quick_commands, &state.keymap);
-
         state
     }
 }
 
 impl EditorState {
-    pub fn load_keymap_from_file(&mut self, path: impl AsRef<Path>) -> Result<(), KeymapError> {
-        let mut merged = Keymap::default();
-        let path_ref = path.as_ref();
-        merged.merge(Keymap::load_from_file(path_ref)?);
-        self.keymap = merged;
-        self.keymap_path = Some(path_ref.to_path_buf());
-        self.settings
-            .sync_bindings(self.quick_commands, &self.keymap);
-        self.settings_dirty = false;
-        self.settings_notice = None;
-        Ok(())
-    }
-
     pub fn editor(&self) -> &Editor {
-        &self.editor
+        self.app.editor()
     }
 
     pub fn editor_mut(&mut self) -> &mut Editor {
-        &mut self.editor
+        self.app.editor_mut()
     }
 
     pub fn buffer_content(&self) -> &Content {
@@ -197,7 +144,7 @@ impl EditorState {
     }
 
     pub fn syntax_settings(&self) -> SyntaxSettings {
-        let fallback = DocumentKey::Index(self.editor.active_index());
+        let fallback = DocumentKey::Index(self.app.editor().active_index());
         let key = self
             .active_document_identity()
             .map(|(key, _)| key)
@@ -206,23 +153,23 @@ impl EditorState {
     }
 
     pub fn error(&self) -> Option<&str> {
-        self.error.as_deref()
+        self.app.error()
     }
 
     pub fn settings_error(&self) -> Option<&str> {
-        self.settings_error.as_deref()
+        self.app.settings_error()
     }
 
     pub fn settings_notice(&self) -> Option<&str> {
-        self.settings_notice.as_deref()
+        self.app.settings_notice()
     }
 
     pub fn workspace_notice(&self) -> Option<&str> {
-        self.workspace_notice.as_deref()
+        self.app.workspace_notice()
     }
 
     pub fn workspace_display_name(&self) -> Option<&str> {
-        self.editor.workspace_name()
+        self.app.workspace_display_name()
     }
 
     pub fn workspace_collapsed_paths(&self) -> Vec<String> {
@@ -237,7 +184,12 @@ impl EditorState {
 
     pub fn toggle_workspace_directory(&mut self, path: String) -> Result<(), String> {
         if self.workspace_collapsed.remove(&path) {
-            match self.editor.load_workspace_directory(&path) {
+            let result = {
+                let editor = self.app.editor_mut();
+                editor.load_workspace_directory(&path)
+            };
+
+            match result {
                 Ok(new_directories) => {
                     for directory in new_directories {
                         self.workspace_collapsed.insert(directory);
@@ -256,28 +208,21 @@ impl EditorState {
     }
 
     pub fn keymap_path_display(&self) -> Option<String> {
-        self.keymap_path
-            .as_ref()
-            .map(|path| path.to_string_lossy().to_string())
+        self.app.keymap_path_display()
     }
 
     pub fn set_error(&mut self, message: Option<String>) {
-        self.error = message;
-        if self.error.is_some() {
-            self.workspace_notice = None;
-        }
+        self.app.set_error(message);
     }
 
     pub fn clear_error(&mut self) {
-        self.error = None;
-        self.settings_error = None;
-        self.settings_notice = None;
-        self.workspace_notice = None;
+        self.app.clear_messages();
     }
 
     pub fn sync_buffer_from_editor(&mut self) {
         let contents = self
-            .editor
+            .app
+            .editor()
             .active_document()
             .map(|doc| doc.buffer.to_string())
             .unwrap_or_default();
@@ -292,13 +237,13 @@ impl EditorState {
 
         if is_edit {
             let updated = self.editor_contents_to_string();
-            self.editor.update_active_buffer(updated.clone());
+            self.app.editor_mut().update_active_buffer(updated.clone());
             self.refresh_active_highlighting(&updated);
         }
     }
 
     pub fn quick_commands(&self) -> &'static [QuickCommand] {
-        self.quick_commands
+        self.app.quick_commands()
     }
 
     pub fn command_palette(&self) -> &CommandPaletteState {
@@ -306,7 +251,8 @@ impl EditorState {
     }
 
     pub fn open_command_palette(&mut self) {
-        self.command_palette.open(self.quick_commands);
+        let commands = self.app.quick_commands();
+        self.command_palette.open(commands);
     }
 
     pub fn close_command_palette(&mut self) {
@@ -314,32 +260,30 @@ impl EditorState {
     }
 
     pub fn set_command_palette_query(&mut self, query: String) {
-        self.command_palette
-            .set_query(query, self.quick_commands);
+        let commands = self.app.quick_commands();
+        self.command_palette.set_query(query, commands);
     }
 
     pub fn selected_quick_command(&self) -> Option<QuickCommandId> {
         self.command_palette
-            .selected_command(self.quick_commands)
+            .selected_command(self.app.quick_commands())
             .map(|command| command.id)
     }
 
     pub fn handle_quick_command_navigation(&mut self, delta: i32) {
-        self.command_palette
-            .move_selection(delta, self.quick_commands);
+        let commands = self.app.quick_commands();
+        self.command_palette.move_selection(delta, commands);
     }
 
     pub fn matches_action(&self, action: &str, event: &KeyEvent) -> bool {
-        self.keymap
-            .binding(action)
-            .map(|binding| binding.matches(event))
-            .unwrap_or(false)
+        self.app.matches_action(action, event)
     }
 
     pub fn handle_document_saved(&mut self, path: Option<String>) {
-        self.editor.mark_active_document_saved(path);
+        self.app.handle_document_saved(path);
         if let Some(buffer) = self
-            .editor
+            .app
+            .editor()
             .active_document()
             .map(|doc| doc.buffer.to_string())
         {
@@ -348,17 +292,12 @@ impl EditorState {
     }
 
     pub fn open_settings(&mut self) {
-        self.settings.open();
-        self.settings
-            .sync_bindings(self.quick_commands, &self.keymap);
-        self.clear_error();
+        self.app.open_settings();
         self.command_palette.close();
     }
 
     pub fn close_settings(&mut self) {
-        self.settings.close();
-        self.settings_error = None;
-        self.settings_notice = None;
+        self.app.close_settings();
     }
 
     pub fn install_workspace(
@@ -368,11 +307,10 @@ impl EditorState {
         config: WorkspaceConfig,
         metadata: WorkspaceMetadata,
     ) {
-        self.editor
-            .set_workspace(root, tree, config, metadata);
-        self.workspace_notice = None;
+        self.app
+            .install_workspace(root, tree, config, metadata);
         self.workspace_collapsed.clear();
-        if let Some(nodes) = self.editor.workspace_tree() {
+        if let Some(nodes) = self.app.editor().workspace_tree() {
             let mut directories = Vec::new();
             collect_directory_paths(nodes, &mut directories);
             for path in directories {
@@ -384,51 +322,31 @@ impl EditorState {
     }
 
     pub fn workspace_recent_files(&self) -> Vec<String> {
-        self.editor
-            .workspace_config()
-            .map(|config| config.recent_files().map(|entry| entry.to_string()).collect())
-            .unwrap_or_default()
+        self.app.workspace_recent_files()
     }
 
     pub fn record_recent_workspace_file(&mut self) -> Option<(String, WorkspaceConfig)> {
-        let path = self
-            .editor
-            .active_document()
-            .and_then(|doc| doc.path.clone())?;
-        let root = self.editor.workspace_root()?.to_string();
-
-        {
-            let config = self.editor.workspace_config_mut()?;
-            if !config.record_recent_file(&path) {
-                return None;
-            }
-        }
-
-        let snapshot = self.editor.workspace_config()?.clone();
-        Some((root, snapshot))
+        self.app.record_recent_workspace_file()
     }
 
     pub fn apply_workspace_config_saved(&mut self, root: String) {
-        self.workspace_notice = Some(format!("Workspace preferences saved for {}", root));
+        self.app.apply_workspace_config_saved(root);
     }
 
     pub fn apply_workspace_metadata_saved(&mut self, root: String) {
-        self.workspace_notice = Some(format!("Workspace notes saved for {}", root));
+        self.app.apply_workspace_metadata_saved(root);
     }
 
     pub fn take_workspace_metadata_payload(&mut self) -> Option<(String, WorkspaceMetadata)> {
-        self.editor.take_workspace_metadata_payload()
+        self.app.take_workspace_metadata_payload()
     }
 
     pub fn active_sticky_notes(&self) -> Vec<StickyNote> {
-        self.editor
-            .active_sticky_notes()
-            .map(|notes| notes.to_vec())
-            .unwrap_or_default()
+        self.app.active_sticky_notes()
     }
 
     pub fn add_sticky_note_at_cursor(&mut self) -> Result<(), String> {
-        if self.editor.workspace_root().is_none() {
+        if self.app.editor().workspace_root().is_none() {
             return Err("Sticky notes require an open workspace".to_string());
         }
 
@@ -444,147 +362,54 @@ impl EditorState {
             .unwrap_or(1);
 
         self
-            .editor
+            .app
+            .editor_mut()
             .add_sticky_note(line_number, column, String::new())
             .map(|_| ())
             .ok_or_else(|| "Unable to add sticky note".to_string())
     }
 
     pub fn update_sticky_note_content(&mut self, id: u64, content: String) {
-        if self.editor.update_sticky_note_content(id, content) {
-            self.workspace_notice = None;
-        } else {
-            self.workspace_notice = Some("Unable to update sticky note".to_string());
-        }
+        self.app.update_sticky_note_content(id, content);
     }
 
     pub fn remove_sticky_note(&mut self, id: u64) {
-        if self.editor.remove_sticky_note(id) {
-            self.workspace_notice = None;
-        } else {
-            self.workspace_notice = Some("Failed to remove sticky note".to_string());
-        }
+        self.app.remove_sticky_note(id);
     }
 
     pub fn settings(&self) -> &SettingsState {
-        &self.settings
+        self.app.settings()
     }
 
     pub fn settings_mut(&mut self) -> &mut SettingsState {
-        &mut self.settings
+        self.app.settings_mut()
     }
 
     pub fn clear_binding_error(&mut self, id: QuickCommandId) {
-        self.settings.set_binding_error(id, None);
-        self.settings_error = None;
+        self.app.clear_binding_error(id);
     }
 
     pub fn apply_quick_command_binding(
         &mut self,
         id: QuickCommandId,
     ) -> Result<(), String> {
-        let command = self
-            .quick_commands
-            .iter()
-            .find(|cmd| cmd.id == id)
-            .ok_or_else(|| "Unknown command".to_string())?;
-
-        let action = command
-            .action
-            .ok_or_else(|| "This command cannot be bound".to_string())?;
-
-        let input = self
-            .settings
-            .binding_input(id)
-            .trim()
-            .to_string();
-
-        if input.is_empty() {
-            self.keymap.set_binding(action, None);
-            self.settings.set_binding_error(id, None);
-            self.settings.set_binding_input(id, String::new());
-            self.settings_error = None;
-            self.settings_notice = Some("Binding removed. Save to persist changes.".to_string());
-            self.settings_dirty = true;
-            return Ok(());
-        }
-
-        match KeyCombination::parse(&input) {
-            Ok(combo) => {
-                let display = combo.to_string();
-                self.keymap.set_binding(action, Some(combo));
-                self.settings.set_binding_input(id, display);
-                self.settings.set_binding_error(id, None);
-                self.settings_error = None;
-                self.settings_notice = Some("Binding updated. Save to persist changes.".to_string());
-                self.settings_dirty = true;
-                Ok(())
-            }
-            Err(err) => {
-                let message = err.to_string();
-                self.settings
-                    .set_binding_error(id, Some(message.clone()));
-                self.settings_error = Some(message.clone());
-                self.settings_notice = None;
-                Err(message)
-            }
-        }
+        self.app.apply_quick_command_binding(id)
     }
 
     pub fn settings_dirty(&self) -> bool {
-        self.settings_dirty
+        self.app.settings_dirty()
     }
 
     pub fn keymap_save_payload(&self) -> Result<(String, String), String> {
-        let path = self
-            .keymap_path
-            .clone()
-            .ok_or_else(|| "No keymap file path available".to_string())?;
-
-        let contents = self
-            .keymap
-            .to_toml_string()
-            .map_err(|err| format!("Failed to serialize keymap: {}", err))?;
-
-        Ok((path.to_string_lossy().to_string(), contents))
+        self.app.keymap_save_payload()
     }
 
     pub fn mark_keymap_saved(&mut self, path: String) {
-        self.keymap_path = Some(PathBuf::from(&path));
-        self.settings_dirty = false;
-        self.settings_error = None;
-        self.settings_notice = Some(format!("Saved keybindings to {}", path));
+        self.app.mark_keymap_saved(path);
     }
 
     pub fn apply_selected_keymap_path(&mut self, path: String) -> Result<(), String> {
-        let candidate = PathBuf::from(&path);
-
-        if candidate.exists() {
-            match Keymap::load_from_file(&candidate) {
-                Ok(loaded) => {
-                    let mut merged = Keymap::default();
-                    merged.merge(loaded);
-                    self.keymap = merged;
-                    self.settings
-                        .sync_bindings(self.quick_commands, &self.keymap);
-                    self.keymap_path = Some(candidate);
-                    self.settings_dirty = false;
-                    self.settings_error = None;
-                    self.settings_notice = Some(format!("Loaded keybindings from {}", path));
-                    Ok(())
-                }
-                Err(err) => Err(err.to_string()),
-            }
-        } else {
-            self.keymap_path = Some(candidate);
-            self.settings_dirty = true;
-            self.settings_notice = Some(format!(
-                "New keymap location selected: {}. Save to create this file.",
-                path
-            ));
-            self.settings_error = None;
-            Ok(())
-        }
+        self.app.apply_selected_keymap_path(path)
     }
 
     pub fn scale_factor(&self) -> f64 {
@@ -636,105 +461,14 @@ impl EditorState {
     }
 
     fn active_document_identity(&self) -> Option<(DocumentKey, Language)> {
-        let index = self.editor.active_index();
-        self.editor.active_document().map(|doc| {
+        let editor = self.app.editor();
+        let index = editor.active_index();
+        editor.active_document().map(|doc| {
             let key = doc
                 .fingerprint
                 .map(DocumentKey::Fingerprint)
                 .unwrap_or(DocumentKey::Index(index));
             (key, doc.language())
         })
-    }
-}
-
-#[derive(Debug, Default)]
-pub struct CommandPaletteState {
-    is_open: bool,
-    query: String,
-    selection: usize,
-}
-
-impl CommandPaletteState {
-    pub fn is_open(&self) -> bool {
-        self.is_open
-    }
-
-    pub fn query(&self) -> &str {
-        &self.query
-    }
-
-    pub fn selection_index(&self) -> usize {
-        self.selection
-    }
-
-    pub fn open(&mut self, commands: &[QuickCommand]) {
-        self.is_open = true;
-        if self.query.is_empty() {
-            self.selection = 0;
-        } else {
-            self.ensure_selection(commands);
-        }
-    }
-
-    pub fn close(&mut self) {
-        self.is_open = false;
-    }
-
-    pub fn set_query(&mut self, query: String, commands: &[QuickCommand]) {
-        self.query = query;
-        self.selection = 0;
-        self.ensure_selection(commands);
-    }
-
-    pub fn filtered_indices(&self, commands: &[QuickCommand]) -> Vec<usize> {
-        let query = self.query.to_ascii_lowercase();
-        commands
-            .iter()
-            .enumerate()
-            .filter(|(_, command)| {
-                if query.is_empty() {
-                    true
-                } else {
-                    command
-                        .title
-                        .to_ascii_lowercase()
-                        .contains(&query)
-                        || command
-                            .description
-                            .to_ascii_lowercase()
-                            .contains(&query)
-                }
-            })
-            .map(|(index, _)| index)
-            .collect()
-    }
-
-    pub fn selected_command<'a>(&self, commands: &'a [QuickCommand]) -> Option<&'a QuickCommand> {
-        let filtered = self.filtered_indices(commands);
-        filtered
-            .get(self.selection)
-            .and_then(|index| commands.get(*index))
-    }
-
-    pub fn move_selection(&mut self, delta: i32, commands: &[QuickCommand]) {
-        let filtered = self.filtered_indices(commands);
-        if filtered.is_empty() {
-            self.selection = 0;
-            return;
-        }
-
-        let len = filtered.len() as i32;
-        let current = self.selection as i32;
-        let next = (current + delta).rem_euclid(len);
-        self.selection = next as usize;
-    }
-
-    pub fn ensure_selection(&mut self, commands: &[QuickCommand]) {
-        let filtered = self.filtered_indices(commands);
-        if filtered.is_empty() {
-            self.selection = 0;
-        } else if self.selection >= filtered.len() {
-            self.selection = filtered.len() - 1;
-        }
     }
 }

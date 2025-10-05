@@ -11,6 +11,7 @@ iced = { version = "0.12", features = ["wgpu", "tokio", "lazy", "advanced"] }
 iced_graphics = "0.12"
 cosmic-text = "0.10"
 rfd = "0.14"
+vedit-application = { path = "../vedit-application" }
 vedit-core = { path = "../vedit-core" }
 vedit-config = { path = "../vedit-config" }
 tree-sitter = "0.25"

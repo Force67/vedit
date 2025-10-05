@@ -1,0 +1,11 @@
+[package]
+name = "vedit-application"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+vedit-core = { path = "../vedit-core" }
+vedit-config = { path = "../vedit-config" }

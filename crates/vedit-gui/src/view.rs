@@ -1,5 +1,4 @@
 use crate::message::{Message, WorkspaceSnapshot};
-use crate::settings::{SettingsCategory, SETTINGS_CATEGORIES};
 use crate::state::EditorState;
 use crate::syntax::{format_highlight, SyntaxHighlighter};
 use crate::widgets::text_editor::TextEditor as EditorWidget;
@@ -18,6 +17,7 @@ use iced::{theme, Alignment, Color, Element, Font, Length, Padding};
 use std::collections::HashSet;
 use std::path::Path;
 use vedit_core::{FileNode, NodeKind};
+use vedit_application::{SettingsCategory, SETTINGS_CATEGORIES};
 
 pub fn view(state: &EditorState) -> Element<'_, Message> {
     let scale = state.scale_factor() as f32;

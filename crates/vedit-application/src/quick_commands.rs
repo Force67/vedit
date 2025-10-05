@@ -62,6 +62,6 @@ static QUICK_COMMANDS: &[QuickCommand] = &[
     },
 ];
 
-pub fn commands() -> &'static [QuickCommand] {
+pub fn list() -> &'static [QuickCommand] {
     QUICK_COMMANDS
 }
