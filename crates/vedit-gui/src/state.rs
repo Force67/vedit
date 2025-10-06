@@ -29,6 +29,13 @@ struct ZoomConfig {
     default_override: Option<f64>,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum ResizeDirection {
+    Right,
+    Bottom,
+    Both,
+}
+
 fn collect_directory_paths(nodes: &[FileNode], output: &mut Vec<String>) {
     for node in nodes {
         if node.is_directory {
@@ -104,6 +111,12 @@ pub struct EditorState {
     active_debug_console: Option<u64>,
     debug_console_counter: u32,
     notifications: NotificationCenter,
+    pub current_window_size: iced::Size,
+    pub is_maximized: bool,
+    pub previous_size: Option<iced::Size>,
+    pub resize_start_pos: Option<iced::Point>,
+    pub resize_start_size: Option<iced::Size>,
+    pub resize_direction: Option<ResizeDirection>,
 }
 
 impl Default for EditorState {
@@ -127,6 +140,12 @@ impl Default for EditorState {
             active_debug_console: None,
             debug_console_counter: 0,
             notifications: NotificationCenter::new(),
+            current_window_size: iced::Size::new(800.0, 600.0),
+            is_maximized: false,
+            previous_size: None,
+            resize_start_pos: None,
+            resize_start_size: None,
+            resize_direction: None,
         };
         state.sync_buffer_from_editor();
         state

@@ -12,7 +12,7 @@ use crate::notifications::{Notification, NotificationKind};
 use iced::alignment::{Horizontal, Vertical};
 use iced::widget::lazy;
 use iced::widget::{
-    button, column, container, horizontal_space, row, scrollable, text, text_input, Column, Rule,
+    button, column, container, horizontal_space, mouse_area, row, scrollable, text, text_input, Column, Rule,
     vertical_slider,
 };
 use iced::widget::slider;
@@ -28,9 +28,9 @@ pub fn view(state: &EditorState) -> Element<'_, Message> {
     let spacing_medium = (12.0 * scale).max(6.0);
     let spacing_small = (8.0 * scale).max(4.0);
 
-    let top_bar = render_top_bar(state, scale, spacing_large, spacing_medium);
+    let title_bar = render_title_bar(state, scale, spacing_large, spacing_medium, spacing_small);
 
-    let mut layout = column![top_bar];
+    let mut layout = column![title_bar];
 
     if state.debugger_menu_open() {
         layout = layout.push(debugger::menu(
@@ -76,11 +76,12 @@ pub fn view(state: &EditorState) -> Element<'_, Message> {
     .into()
 }
 
-fn render_top_bar(
+fn render_title_bar(
     state: &EditorState,
     scale: f32,
     spacing_large: f32,
     spacing_medium: f32,
+    spacing_small: f32,
 ) -> Element<'_, Message> {
     let mut row = row![
         text("vedit")
@@ -136,19 +137,38 @@ fn render_top_bar(
     .spacing(spacing_large)
     .align_items(Alignment::Center);
 
-    let (label, message) = if state.settings().is_open() {
-        ("Close Settings", Message::SettingsClosed)
+    let message = if state.settings().is_open() {
+        Message::SettingsClosed
     } else {
-        ("Settings", Message::SettingsOpened)
+        Message::SettingsOpened
     };
 
-    row = row.push(
-        button(text(label).size((14.0 * scale).max(10.0)))
-            .style(top_bar_button())
-            .on_press(message),
-    );
+    let settings_button = button(text("⚙").size((16.0 * scale).max(12.0)))
+        .style(top_bar_button())
+        .on_press(message);
 
-    container(row)
+    let window_buttons = row![
+        button(text("—").size((14.0 * scale).max(10.0)))
+            .style(top_bar_button())
+            .on_press(Message::WindowMinimize),
+        button(text("□").size((14.0 * scale).max(10.0)))
+            .style(top_bar_button())
+            .on_press(Message::WindowMaximize),
+        button(text("×").size((14.0 * scale).max(10.0)))
+            .style(top_bar_button())
+            .on_press(Message::WindowClose),
+    ]
+    .spacing(spacing_small);
+
+    row = row.push(horizontal_space().width(Length::Fill));
+    row = row.push(settings_button);
+    row = row.push(horizontal_space().width(Length::Fixed(20.0)));
+    row = row.push(window_buttons);
+
+    let title_bar = mouse_area(row)
+        .on_press(Message::WindowDragStart);
+
+    container(title_bar)
         .padding([spacing_medium, spacing_large])
         .width(Length::Fill)
         .style(ribbon_container())

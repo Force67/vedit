@@ -9,14 +9,20 @@ use crate::state::EditorState;
 use crate::view;
 use crate::notifications::{NotificationKind, NotificationRequest};
 use iced::Subscription;
-use iced::{executor, theme, time, Application, Command, Element, Settings};
+use iced::{event, mouse, window, Application, Command, Element, executor, theme, time, Settings};
 use std::time::Duration;
-use iced::{event, mouse};
 use vedit_core::{Document, Key, QUICK_COMMAND_MENU_ACTION, SAVE_ACTION};
 use vedit_application::QuickCommandId;
 
 pub fn run() -> iced::Result {
-    EditorApp::run(Settings::default())
+    let settings = Settings {
+        window: window::Settings {
+            decorations: false,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    EditorApp::run(settings)
 }
 
 struct EditorApp {
@@ -531,6 +537,55 @@ impl Application for EditorApp {
             Message::NotificationDismissed(id) => {
                 self.state.dismiss_notification(id);
             }
+            Message::WindowMinimize => {
+                return window::minimize(window::Id::MAIN, true);
+            }
+            Message::WindowMaximize => {
+                if self.state.is_maximized {
+                    self.state.is_maximized = false;
+                    let mut commands = vec![window::maximize(window::Id::MAIN, false)];
+                    if let Some(size) = self.state.previous_size {
+                        commands.push(window::resize(window::Id::MAIN, size));
+                        self.state.current_window_size = size;
+                    }
+                    return iced::Command::batch(commands);
+                } else {
+                    self.state.is_maximized = true;
+                    self.state.previous_size = Some(self.state.current_window_size);
+                    return window::maximize(window::Id::MAIN, true);
+                }
+            }
+            Message::WindowClose => {
+                return window::close(window::Id::MAIN);
+            }
+            Message::WindowDragStart => {
+                return window::drag(window::Id::MAIN);
+            }
+            Message::WindowResizeStart(pos) => {
+                let size = self.state.current_window_size;
+                let right = pos.x > size.width - 20.0;
+                let bottom = pos.y > size.height - 20.0;
+                if right || bottom {
+                    self.state.resize_start_pos = Some(pos);
+                    self.state.resize_start_size = Some(size);
+                    self.state.resize_direction = Some(if right && bottom { crate::state::ResizeDirection::Both } else if right { crate::state::ResizeDirection::Right } else { crate::state::ResizeDirection::Bottom });
+                }
+            }
+            Message::WindowResizeMove(pos) => {
+                if let (Some(start_pos), Some(start_size), Some(dir)) = (self.state.resize_start_pos, self.state.resize_start_size, self.state.resize_direction) {
+                    let delta = pos - start_pos;
+                    let new_width = if matches!(dir, crate::state::ResizeDirection::Right | crate::state::ResizeDirection::Both) { (start_size.width + delta.x).max(200.0) } else { start_size.width };
+                    let new_height = if matches!(dir, crate::state::ResizeDirection::Bottom | crate::state::ResizeDirection::Both) { (start_size.height + delta.y).max(100.0) } else { start_size.height };
+                    let new_size = iced::Size::new(new_width, new_height);
+                    self.state.current_window_size = new_size;
+                    return window::resize(window::Id::MAIN, new_size);
+                }
+            }
+            Message::WindowResizeEnd => {
+                self.state.resize_start_pos = None;
+                self.state.resize_start_size = None;
+                self.state.resize_direction = None;
+            }
         }
 
         self.wrap_command(Command::none())
@@ -545,12 +600,35 @@ impl Application for EditorApp {
     }
 
     fn subscription(&self) -> Subscription<Self::Message> {
-        let input = event::listen_with(|event, _status| match event {
-            event::Event::Keyboard(key_event) => Some(Message::Keyboard(key_event)),
-            event::Event::Mouse(mouse::Event::WheelScrolled { delta }) => {
-                Some(Message::MouseWheelScrolled(delta))
+        let input = event::listen_with(|event, _status| {
+            unsafe {
+                static mut CURSOR_POS: iced::Point = iced::Point::ORIGIN;
+                match event {
+                    event::Event::Keyboard(key_event) => Some(Message::Keyboard(key_event)),
+                    event::Event::Mouse(mouse::Event::CursorMoved { position }) => {
+                        CURSOR_POS = position;
+                        Some(Message::WindowResizeMove(position))
+                    }
+                    event::Event::Mouse(mouse::Event::ButtonPressed(button)) => {
+                        if button == mouse::Button::Left {
+                            Some(Message::WindowResizeStart(CURSOR_POS))
+                        } else {
+                            None
+                        }
+                    }
+                    event::Event::Mouse(mouse::Event::ButtonReleased(button)) => {
+                        if button == mouse::Button::Left {
+                            Some(Message::WindowResizeEnd)
+                        } else {
+                            None
+                        }
+                    }
+                    event::Event::Mouse(mouse::Event::WheelScrolled { delta }) => {
+                        Some(Message::MouseWheelScrolled(delta))
+                    }
+                    _ => None,
+                }
             }
-            _ => None,
         });
 
         let tick = time::every(Duration::from_millis(200)).map(|_| Message::DebuggerTick);

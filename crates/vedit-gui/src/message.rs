@@ -74,6 +74,13 @@ pub enum Message {
     ConsoleInputSubmitted(u64),
     MouseWheelScrolled(mouse::ScrollDelta),
     NotificationDismissed(u64),
+    WindowMinimize,
+    WindowMaximize,
+    WindowClose,
+    WindowDragStart,
+    WindowResizeStart(iced::Point),
+    WindowResizeMove(iced::Point),
+    WindowResizeEnd,
 }
 
 #[derive(Clone)]
