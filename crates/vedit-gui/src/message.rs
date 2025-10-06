@@ -7,7 +7,8 @@ use std::sync::Arc;
 use vedit_core::{Document, FileNode};
 use vedit_application::{QuickCommandId, SettingsCategory};
 use crate::commands::WorkspaceData;
-use vedit_debugger_gdb::GdbSession;
+use crate::commands::DebugSession;
+use crate::debugger::DebuggerType;
 
 #[derive(Debug, Clone)]
 pub enum Message {
@@ -41,8 +42,9 @@ pub enum Message {
     DebuggerMenuToggled,
     DebuggerTargetToggled(u64, bool),
     DebuggerTargetFilterChanged(String),
+    DebuggerTypeChanged(DebuggerType),
     DebuggerLaunchRequested,
-    DebuggerSessionStarted(Result<GdbSession, String>),
+    DebuggerSessionStarted(Result<DebugSession, String>),
     DebuggerStopRequested,
     DebuggerGdbCommandInputChanged(String),
     DebuggerGdbCommandSubmitted,

@@ -1,4 +1,4 @@
-use crate::debugger::{DebuggerConsoleEntryKind, DebuggerState};
+use crate::debugger::{DebuggerConsoleEntryKind, DebuggerState, DebuggerType};
 use crate::message::Message;
 use crate::style::panel_container;
 use iced::alignment::{Horizontal, Vertical};
@@ -246,7 +246,7 @@ pub fn menu<'a>(
             )
         });
 
-    let command_input = text_input("(gdb) command", debugger.gdb_command_input())
+    let command_input = text_input("command", debugger.command_input())
         .on_input(Message::DebuggerGdbCommandInputChanged)
         .on_submit(Message::DebuggerGdbCommandSubmitted)
         .padding((6.0 * scale).max(4.0))
@@ -268,10 +268,24 @@ pub fn menu<'a>(
     ]
     .spacing(spacing_small);
 
+    let debugger_type_selector = row![
+        text("Debugger Type:").size((14.0 * scale).max(10.0)),
+        iced::widget::radio("GDB", DebuggerType::Gdb, Some(debugger.debugger_type()), |dt| Message::DebuggerTypeChanged(dt)),
+        iced::widget::radio("Vedit", DebuggerType::Vedit, Some(debugger.debugger_type()), |dt| Message::DebuggerTypeChanged(dt)),
+    ]
+    .spacing(spacing_small)
+    .align_items(Alignment::Center);
+
+    let debugger_title = match debugger.debugger_type() {
+        DebuggerType::Gdb => "Debugger (gdb)",
+        DebuggerType::Vedit => "Debugger (vedit)",
+    };
+
     let layout = column![
-        text("Debugger (gdb)")
+        text(debugger_title)
             .size((18.0 * scale).max(14.0))
             .horizontal_alignment(Horizontal::Left),
+        debugger_type_selector,
         targets_section,
         breakpoints_section,
         manual_target_form,

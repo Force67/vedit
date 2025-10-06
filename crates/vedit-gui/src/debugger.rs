@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 
 use vedit_make::Makefile;
 use vedit_debugger_gdb::{DebuggerCommand as GdbCommand, DebuggerEvent as GdbEvent, GdbSession};
+use vedit_debugger::{DebuggerCommand as VeditCommand, DebuggerEvent as VeditEvent, VeditSession};
 use vedit_vs::{Solution, VcxProject};
 use vedit_config::{DebugTargetRecord, MAX_RECENT_DEBUG_TARGETS};
 
@@ -105,6 +106,13 @@ impl DebuggerBreakpoint {
         }
         self.file.display().to_string()
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum DebuggerType {
+    #[default]
+    Gdb,
+    Vedit,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -231,6 +239,7 @@ pub struct DebuggerState {
     menu_open: bool,
     runtime: Option<DebuggerRuntime>,
     target_filter: String,
+    debugger_type: DebuggerType,
 }
 
 impl DebuggerState {
@@ -254,11 +263,19 @@ impl DebuggerState {
         self.launch_script = value;
     }
 
-    pub fn gdb_command_input(&self) -> &str {
+    pub fn debugger_type(&self) -> DebuggerType {
+        self.debugger_type
+    }
+
+    pub fn set_debugger_type(&mut self, debugger_type: DebuggerType) {
+        self.debugger_type = debugger_type;
+    }
+
+    pub fn command_input(&self) -> &str {
         &self.command_input
     }
 
-    pub fn set_gdb_command_input(&mut self, value: String) {
+    pub fn set_command_input(&mut self, value: String) {
         self.command_input = value;
     }
 
@@ -752,7 +769,7 @@ impl DebuggerState {
         }
     }
 
-    pub fn submit_gdb_command(&mut self) -> Result<(), String> {
+    pub fn submit_command(&mut self) -> Result<(), String> {
         let trimmed = self.command_input.trim();
         if trimmed.is_empty() {
             return Ok(());
@@ -761,10 +778,20 @@ impl DebuggerState {
             return Err("No active debugger session".to_string());
         }
         let command = trimmed.to_string();
-        self.push_console(DebuggerConsoleEntry::command(format!("(gdb) {}", trimmed)));
+        let prefix = match self.debugger_type {
+            DebuggerType::Gdb => "(gdb)",
+            DebuggerType::Vedit => "(vedit)",
+        };
+        self.push_console(DebuggerConsoleEntry::command(format!("{} {}", prefix, trimmed)));
         self.command_input.clear();
         if let Some(runtime) = &self.runtime {
-            runtime.send(GdbCommand::SendRaw(command));
+            match self.debugger_type {
+                DebuggerType::Gdb => runtime.send_gdb(GdbCommand::SendRaw(command)),
+                DebuggerType::Vedit => {
+                    // For now, just send continue for vedit debugger
+                    runtime.send_vedit(VeditCommand::Continue);
+                }
+            }
         }
         Ok(())
     }
@@ -796,9 +823,13 @@ impl DebuggerState {
 
         let mut plans = Vec::new();
         for target in selected_targets {
+            let debugger_name = match self.debugger_type {
+                DebuggerType::Gdb => "gdb",
+                DebuggerType::Vedit => "vedit",
+            };
             self.push_console(DebuggerConsoleEntry::info(format!(
-                "Preparing gdb launch for {}",
-                target.name
+                "Preparing {} launch for {}",
+                debugger_name, target.name
             )));
             plans.push(DebugLaunchPlan {
                 target: target.clone(),
@@ -819,7 +850,10 @@ impl DebuggerState {
     pub fn stop_session(&mut self) {
         if self.status != DebugSessionStatus::Idle {
             if let Some(runtime) = &self.runtime {
-                runtime.send(GdbCommand::Kill);
+                match runtime {
+                    DebuggerRuntime::Gdb { .. } => runtime.send_gdb(GdbCommand::Kill),
+                    DebuggerRuntime::Vedit { .. } => runtime.send_vedit(VeditCommand::Kill),
+                }
             }
             self.runtime = None;
             self.status = DebugSessionStatus::Idle;
@@ -829,8 +863,16 @@ impl DebuggerState {
         }
     }
 
-    pub fn attach_runtime(&mut self, session: GdbSession) {
-        self.runtime = Some(DebuggerRuntime::new(session));
+    pub fn attach_gdb_runtime(&mut self, session: GdbSession) {
+        self.runtime = Some(DebuggerRuntime::new_gdb(session));
+        self.status = DebugSessionStatus::Launching;
+        if self.active_target_name.is_none() {
+            self.active_target_name = self.pending_target_name.clone();
+        }
+    }
+
+    pub fn attach_vedit_runtime(&mut self, session: VeditSession) {
+        self.runtime = Some(DebuggerRuntime::new_vedit(session));
         self.status = DebugSessionStatus::Launching;
         if self.active_target_name.is_none() {
             self.active_target_name = self.pending_target_name.clone();
@@ -851,32 +893,20 @@ impl DebuggerState {
             };
 
             match event {
-                GdbEvent::Started => {
+                DebuggerUiEvent::SessionStarted { target } => {
                     self.status = DebugSessionStatus::Running;
-                    self.push_console(DebuggerConsoleEntry::info("gdb session started".to_string()));
+                    let debugger_name = match self.debugger_type {
+                        DebuggerType::Gdb => "gdb",
+                        DebuggerType::Vedit => "vedit",
+                    };
+                    self.push_console(DebuggerConsoleEntry::info(format!("{} session started", debugger_name)));
                     ui_events.push(DebuggerUiEvent::SessionStarted {
                         target: self.active_target_name.clone(),
                     });
                 }
-                GdbEvent::Stdout(line) => {
-                    self.push_console(DebuggerConsoleEntry::output(line));
-                }
-                GdbEvent::Stderr(line) => {
-                    self.push_console(DebuggerConsoleEntry::error(line));
-                }
-                GdbEvent::Exited(code) => {
-                    self.push_console(DebuggerConsoleEntry::info(format!(
-                        "gdb session exited with code {}",
-                        code
-                    )));
-                    self.status = DebugSessionStatus::Exited;
-                    self.runtime = None;
-                    self.active_target_name = None;
-                    self.pending_target_name = None;
-                }
-                GdbEvent::Error(err) => {
-                    self.push_console(DebuggerConsoleEntry::error(err.clone()));
-                    ui_events.push(DebuggerUiEvent::SessionError { message: err });
+                DebuggerUiEvent::SessionError { message } => {
+                    self.push_console(DebuggerConsoleEntry::error(message.clone()));
+                    ui_events.push(DebuggerUiEvent::SessionError { message });
                 }
             }
         }
@@ -930,25 +960,62 @@ fn normalize_executable_path(path: &Path) -> String {
 }
 
 #[derive(Clone, Debug)]
-struct DebuggerRuntime {
-    commands: Sender<GdbCommand>,
-    events: Receiver<GdbEvent>,
+enum DebuggerRuntime {
+    Gdb {
+        commands: Sender<GdbCommand>,
+        events: Receiver<GdbEvent>,
+    },
+    Vedit {
+        commands: Sender<VeditCommand>,
+        events: Receiver<VeditEvent>,
+    },
 }
 
 impl DebuggerRuntime {
-    fn new(session: GdbSession) -> Self {
-        Self {
+    fn new_gdb(session: GdbSession) -> Self {
+        Self::Gdb {
             commands: session.command_sender(),
             events: session.event_receiver(),
         }
     }
 
-    fn send(&self, command: GdbCommand) {
-        let _ = self.commands.send(command);
+    fn new_vedit(session: VeditSession) -> Self {
+        Self::Vedit {
+            commands: session.command_sender(),
+            events: session.event_receiver(),
+        }
     }
 
-    fn try_recv(&self) -> Option<GdbEvent> {
-        self.events.try_recv().ok()
+    fn send_gdb(&self, command: GdbCommand) {
+        if let Self::Gdb { commands, .. } = self {
+            let _ = commands.send(command);
+        }
+    }
+
+    fn send_vedit(&self, command: VeditCommand) {
+        if let Self::Vedit { commands, .. } = self {
+            let _ = commands.send(command);
+        }
+    }
+
+    fn try_recv(&self) -> Option<DebuggerUiEvent> {
+        match self {
+            Self::Gdb { events, .. } => events.try_recv().ok().map(|event| match event {
+                GdbEvent::Started => DebuggerUiEvent::SessionStarted { target: None },
+                GdbEvent::Stdout(line) => DebuggerUiEvent::SessionError { message: format!("stdout: {}", line) },
+                GdbEvent::Stderr(line) => DebuggerUiEvent::SessionError { message: format!("stderr: {}", line) },
+                GdbEvent::Exited(code) => DebuggerUiEvent::SessionError { message: format!("exited with code {}", code) },
+                GdbEvent::Error(err) => DebuggerUiEvent::SessionError { message: err },
+            }),
+            Self::Vedit { events, .. } => events.try_recv().ok().map(|event| match event {
+                VeditEvent::Started => DebuggerUiEvent::SessionStarted { target: None },
+                VeditEvent::Stopped { reason } => DebuggerUiEvent::SessionError { message: format!("stopped: {:?}", reason) },
+                VeditEvent::Exited(code) => DebuggerUiEvent::SessionError { message: format!("exited with code {}", code) },
+                VeditEvent::Error(err) => DebuggerUiEvent::SessionError { message: err },
+                VeditEvent::MemoryRead(_) => DebuggerUiEvent::SessionError { message: "memory read".to_string() },
+                VeditEvent::Disassembly(_) => DebuggerUiEvent::SessionError { message: "disassembly".to_string() },
+            }),
+        }
     }
 }
 

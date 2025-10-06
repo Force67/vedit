@@ -2,7 +2,7 @@ use crate::commands::{
     self, DebugSessionBreakpoint, DebugSessionRequest, SaveDocumentRequest, SaveKeymapRequest,
     WorkspaceData,
 };
-use crate::debugger::{DebugLaunchPlan, DebuggerUiEvent};
+use crate::debugger::{DebugLaunchPlan, DebuggerType, DebuggerUiEvent};
 use crate::keyboard;
 use crate::message::Message;
 use crate::state::EditorState;
@@ -287,7 +287,10 @@ impl Application for EditorApp {
                 self.state.set_debug_target_selected(id, selected);
             }
             Message::DebuggerTargetFilterChanged(value) => {
-                self.state.set_debug_target_filter(value);
+                self.state.debugger_mut().set_target_filter(value);
+            }
+            Message::DebuggerTypeChanged(debugger_type) => {
+                self.state.debugger_mut().set_debugger_type(debugger_type);
             }
             Message::DebuggerLaunchRequested => {
                 if self.state.debugger_has_runtime() {
@@ -299,7 +302,7 @@ impl Application for EditorApp {
                             self.state.clear_error();
                             self.state.close_debugger_menu();
                             let save_payload = self.state.begin_debug_launch(&plan.target);
-                            let request = session_request_from_plan(plan);
+                            let request = session_request_from_plan(plan, self.state.debugger().debugger_type());
                             let mut commands_list = vec![Command::perform(
                                 commands::start_debug_session(request),
                                 Message::DebuggerSessionStarted,
@@ -334,10 +337,10 @@ impl Application for EditorApp {
                 self.state.stop_debug_session();
             }
             Message::DebuggerGdbCommandInputChanged(value) => {
-                self.state.debugger_mut().set_gdb_command_input(value);
+                self.state.debugger_mut().set_command_input(value);
             }
             Message::DebuggerGdbCommandSubmitted => {
-                if let Err(err) = self.state.submit_gdb_command() {
+                if let Err(err) = self.state.submit_command() {
                     self.state.set_error(Some(err));
                 }
             }
@@ -560,7 +563,7 @@ impl Application for EditorApp {
     }
 }
 
-fn session_request_from_plan(plan: &DebugLaunchPlan) -> DebugSessionRequest {
+fn session_request_from_plan(plan: &DebugLaunchPlan, debugger_type: DebuggerType) -> DebugSessionRequest {
     DebugSessionRequest {
         executable: plan.target.executable.to_string_lossy().to_string(),
         working_directory: plan
@@ -579,6 +582,7 @@ fn session_request_from_plan(plan: &DebugLaunchPlan) -> DebugSessionRequest {
             })
             .collect(),
         launch_script: plan.launch_script.clone(),
+        debugger_type,
     }
 }
 

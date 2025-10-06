@@ -1465,6 +1465,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "iced-x86"
+version = "1.21.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7c447cff8c7f384a7d4f741cfcff32f75f3ad02b406432e8d6c878d56b1edf6b"
+dependencies = [
+ "lazy_static",
+]
+
+[[package]]
 name = "iced_core"
 version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2100,6 +2109,17 @@ dependencies = [
  "libc",
  "memoffset 0.6.5",
  "pin-utils",
+]
+
+[[package]]
+name = "nix"
+version = "0.27.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2eb04e9c688eff1c89d72b407f168cf79bb9e867a9d3323ed6c01519eb9cc053"
+dependencies = [
+ "bitflags 2.9.4",
+ "cfg-if",
+ "libc",
 ]
 
 [[package]]
@@ -3869,6 +3889,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "vedit-debugger"
+version = "0.1.0"
+dependencies = [
+ "crossbeam-channel",
+ "iced-x86",
+ "libc",
+ "nix 0.27.1",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "vedit-debugger-gdb"
 version = "0.1.0"
 dependencies = [
@@ -3902,6 +3933,7 @@ dependencies = [
  "vedit-application",
  "vedit-config",
  "vedit-core",
+ "vedit-debugger",
  "vedit-debugger-gdb",
  "vedit-make",
  "vedit-vs",

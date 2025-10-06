@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use vedit_config::{WorkspaceConfig, WorkspaceMetadata};
 use vedit_core::{Document, Editor, FileNode};
 use vedit_debugger_gdb::{Breakpoint as DebuggerBreakpoint, GdbSession, LaunchConfig as DebuggerLaunchConfig};
+use crate::debugger::DebuggerType;
 
 #[derive(Debug, Clone)]
 pub struct SaveDocumentRequest {
@@ -39,6 +40,7 @@ pub struct DebugSessionRequest {
     pub arguments: Vec<String>,
     pub breakpoints: Vec<DebugSessionBreakpoint>,
     pub launch_script: Option<String>,
+    pub debugger_type: DebuggerType,
 }
 
 pub async fn pick_keymap_location(current: Option<String>) -> Result<Option<String>, String> {
@@ -191,30 +193,55 @@ pub async fn save_workspace_metadata(
     Ok(root)
 }
 
-pub async fn start_debug_session(request: DebugSessionRequest) -> Result<GdbSession, String> {
+#[derive(Debug, Clone)]
+pub enum DebugSession {
+    Gdb(GdbSession),
+    Vedit(vedit_debugger::VeditSession),
+}
+
+pub async fn start_debug_session(request: DebugSessionRequest) -> Result<DebugSession, String> {
     let DebugSessionRequest {
         executable,
         working_directory,
         arguments,
         breakpoints,
         launch_script,
+        debugger_type,
     } = request;
 
-    let config = DebuggerLaunchConfig {
-        executable: PathBuf::from(executable),
-        working_directory: PathBuf::from(working_directory),
-        arguments,
-        breakpoints: breakpoints
-            .into_iter()
-            .map(|bp| DebuggerBreakpoint {
-                file: PathBuf::from(bp.file),
-                line: bp.line,
-                condition: bp.condition,
-            })
-            .collect(),
-        launch_script,
-        gdb_path: None,
-    };
+    match debugger_type {
+        DebuggerType::Gdb => {
+            let config = DebuggerLaunchConfig {
+                executable: PathBuf::from(executable),
+                working_directory: PathBuf::from(working_directory),
+                arguments,
+                breakpoints: breakpoints
+                    .into_iter()
+                    .map(|bp| DebuggerBreakpoint {
+                        file: PathBuf::from(bp.file),
+                        line: bp.line,
+                        condition: bp.condition,
+                    })
+                    .collect(),
+                launch_script,
+                gdb_path: None,
+            };
 
-    vedit_debugger_gdb::spawn_session(config).map_err(|err| err.to_string())
+            vedit_debugger_gdb::spawn_session(config)
+                .map(DebugSession::Gdb)
+                .map_err(|err| err.to_string())
+        }
+        DebuggerType::Vedit => {
+            let config = vedit_debugger::LaunchConfig {
+                executable: PathBuf::from(executable),
+                working_directory: PathBuf::from(working_directory),
+                arguments,
+                breakpoints: vec![], // For now, no breakpoints for vedit debugger
+            };
+
+            vedit_debugger::spawn_session(config)
+                .map(DebugSession::Vedit)
+                .map_err(|err| err.to_string())
+        }
+    }
 }

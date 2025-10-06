@@ -13,6 +13,7 @@ use std::time::Duration;
 use vedit_application::{AppState, CommandPaletteState, QuickCommand, QuickCommandId, SettingsState};
 use vedit_core::{Editor, FileNode, KeyEvent, Language, StickyNote, WorkspaceConfig};
 use vedit_debugger_gdb::GdbSession;
+use crate::commands::DebugSession;
 use vedit_config::WorkspaceMetadata;
 
 const ZOOM_STEP_ENV: &str = "VEDIT_ZOOM_STEP";
@@ -595,14 +596,17 @@ impl EditorState {
         self.drain_debugger_console_updates();
     }
 
-    pub fn submit_gdb_command(&mut self) -> Result<(), String> {
-        let result = self.debugger.submit_gdb_command();
+    pub fn submit_command(&mut self) -> Result<(), String> {
+        let result = self.debugger.submit_command();
         self.drain_debugger_console_updates();
         result
     }
 
-    pub fn attach_debugger_session(&mut self, session: GdbSession) {
-        self.debugger.attach_runtime(session);
+    pub fn attach_debugger_session(&mut self, session: DebugSession) {
+        match session {
+            DebugSession::Gdb(sess) => self.debugger.attach_gdb_runtime(sess),
+            DebugSession::Vedit(sess) => self.debugger.attach_vedit_runtime(sess),
+        }
     }
 
     pub fn debugger_has_runtime(&self) -> bool {
