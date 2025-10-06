@@ -18,7 +18,7 @@ vedit-core = { path = "../vedit-core" }
 vedit-config = { path = "../vedit-config" }
 vedit-make = { path = "../vedit-make" }
 vedit-vs = { path = "../vedit-vs" }
-vedit-debugger = { path = "../vedit-debugger" }
+vedit-debugger-gdb = { path = "../vedit-debugger-gdb" }
 tree-sitter = "0.25"
 tree-sitter-highlight = "0.25"
 tree-sitter-rust = "0.24"

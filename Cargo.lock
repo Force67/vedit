@@ -3869,7 +3869,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "vedit-debugger"
+name = "vedit-debugger-gdb"
 version = "0.1.0"
 dependencies = [
  "crossbeam-channel",
@@ -3902,7 +3902,7 @@ dependencies = [
  "vedit-application",
  "vedit-config",
  "vedit-core",
- "vedit-debugger",
+ "vedit-debugger-gdb",
  "vedit-make",
  "vedit-vs",
 ]

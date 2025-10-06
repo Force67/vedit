@@ -12,7 +12,7 @@ use std::env;
 use std::time::Duration;
 use vedit_application::{AppState, CommandPaletteState, QuickCommand, QuickCommandId, SettingsState};
 use vedit_core::{Editor, FileNode, KeyEvent, Language, StickyNote, WorkspaceConfig};
-use vedit_debugger::GdbSession;
+use vedit_debugger_gdb::GdbSession;
 use vedit_config::WorkspaceMetadata;
 
 const ZOOM_STEP_ENV: &str = "VEDIT_ZOOM_STEP";

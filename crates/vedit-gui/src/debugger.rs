@@ -7,7 +7,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use vedit_make::Makefile;
-use vedit_debugger::{DebuggerCommand as GdbCommand, DebuggerEvent as GdbEvent, GdbSession};
+use vedit_debugger_gdb::{DebuggerCommand as GdbCommand, DebuggerEvent as GdbEvent, GdbSession};
 use vedit_vs::{Solution, VcxProject};
 use vedit_config::{DebugTargetRecord, MAX_RECENT_DEBUG_TARGETS};
 

@@ -7,7 +7,7 @@ use std::sync::Arc;
 use vedit_core::{Document, FileNode};
 use vedit_application::{QuickCommandId, SettingsCategory};
 use crate::commands::WorkspaceData;
-use vedit_debugger::GdbSession;
+use vedit_debugger_gdb::GdbSession;
 
 #[derive(Debug, Clone)]
 pub enum Message {

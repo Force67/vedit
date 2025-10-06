@@ -3,7 +3,7 @@ use std::fs;
 use std::path::PathBuf;
 use vedit_config::{WorkspaceConfig, WorkspaceMetadata};
 use vedit_core::{Document, Editor, FileNode};
-use vedit_debugger::{Breakpoint as DebuggerBreakpoint, GdbSession, LaunchConfig as DebuggerLaunchConfig};
+use vedit_debugger_gdb::{Breakpoint as DebuggerBreakpoint, GdbSession, LaunchConfig as DebuggerLaunchConfig};
 
 #[derive(Debug, Clone)]
 pub struct SaveDocumentRequest {
@@ -216,5 +216,5 @@ pub async fn start_debug_session(request: DebugSessionRequest) -> Result<GdbSess
         gdb_path: None,
     };
 
-    vedit_debugger::spawn_session(config).map_err(|err| err.to_string())
+    vedit_debugger_gdb::spawn_session(config).map_err(|err| err.to_string())
 }
