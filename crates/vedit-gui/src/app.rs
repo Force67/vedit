@@ -782,6 +782,10 @@ impl EditorApp {
                     Command::none()
                 }
             }
+            QuickCommandId::IncreaseCodeFontZoom => {
+                self.state.increase_code_font_zoom();
+                Command::none()
+            }
         }
     }
 

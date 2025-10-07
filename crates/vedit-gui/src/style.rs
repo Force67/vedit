@@ -293,6 +293,14 @@ pub fn custom_rule() -> theme::Rule {
     theme::Rule::Custom(Box::new(CustomRule))
 }
 
+pub fn floating_panel_container() -> theme::Container {
+    theme::Container::Custom(Box::new(FloatingPanelContainer))
+}
+
+pub fn overlay_container() -> theme::Container {
+    theme::Container::Custom(Box::new(OverlayContainer))
+}
+
 #[derive(Debug, Clone, Copy, Default)]
 pub struct CustomContainer;
 
@@ -308,6 +316,40 @@ impl container::StyleSheet for CustomContainer {
                 width: 1.0,
                 color: BORDER,
             },
+            ..Default::default()
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct FloatingPanelContainer;
+
+impl container::StyleSheet for FloatingPanelContainer {
+    type Style = theme::Theme;
+
+    fn appearance(&self, _style: &Self::Style) -> container::Appearance {
+        container::Appearance {
+            background: Some(Background::Color(SURFACE)),
+            text_color: Some(TEXT),
+            border: Border {
+                radius: 12.0.into(),
+                width: 1.0,
+                color: BORDER,
+            },
+            ..Default::default()
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct OverlayContainer;
+
+impl container::StyleSheet for OverlayContainer {
+    type Style = theme::Theme;
+
+    fn appearance(&self, _style: &Self::Style) -> container::Appearance {
+        container::Appearance {
+            background: None,
             ..Default::default()
         }
     }

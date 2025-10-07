@@ -154,6 +154,7 @@ pub struct EditorState {
     buffer_content: Content,
     command_palette: CommandPaletteState,
     scale_factor: f64,
+    code_font_zoom: f64,
     syntax: SyntaxSystem,
     workspace_collapsed: HashSet<String>,
     workspace_collapsed_version: u64,
@@ -187,6 +188,7 @@ impl Default for EditorState {
             buffer_content: Content::new(),
             command_palette: CommandPaletteState::default(),
             scale_factor: initial_scale,
+            code_font_zoom: 1.0,
             syntax: SyntaxSystem::new(),
             workspace_collapsed: HashSet::new(),
             workspace_collapsed_version: 0,
@@ -679,8 +681,16 @@ impl EditorState {
         self.scale_factor
     }
 
+    pub fn code_font_zoom(&self) -> f64 {
+        self.code_font_zoom
+    }
+
     pub fn format_scale_factor(&self) -> String {
         format!("Zoom: {:.0}%", self.scale_factor * 100.0)
+    }
+
+    pub fn format_code_font_zoom(&self) -> String {
+        format!("Font: {:.0}%", self.code_font_zoom * 100.0)
     }
 
     pub fn increase_scale_factor(&mut self) -> bool {
@@ -691,10 +701,28 @@ impl EditorState {
         self.set_scale_factor(self.scale_factor - self.zoom_config.step)
     }
 
+    pub fn increase_code_font_zoom(&mut self) -> bool {
+        self.set_code_font_zoom(self.code_font_zoom + self.zoom_config.step)
+    }
+
+    pub fn decrease_code_font_zoom(&mut self) -> bool {
+        self.set_code_font_zoom(self.code_font_zoom - self.zoom_config.step)
+    }
+
     fn set_scale_factor(&mut self, value: f64) -> bool {
         let clamped = self.zoom_config.clamp(value);
         if (clamped - self.scale_factor).abs() > f64::EPSILON {
             self.scale_factor = clamped;
+            true
+        } else {
+            false
+        }
+    }
+
+    fn set_code_font_zoom(&mut self, value: f64) -> bool {
+        let clamped = self.zoom_config.clamp(value);
+        if (clamped - self.code_font_zoom).abs() > f64::EPSILON {
+            self.code_font_zoom = clamped;
             true
         } else {
             false

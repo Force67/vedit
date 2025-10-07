@@ -46,6 +46,7 @@ where
     indent_guides: Option<Color>,
     gutter_background: Option<Color>,
     show_minimap: bool,
+    font_size: Option<Pixels>,
 }
 
 impl<'a, Message> TextEditor<'a, Message, highlighter::PlainText> {
@@ -71,6 +72,7 @@ impl<'a, Message> TextEditor<'a, Message, highlighter::PlainText> {
             indent_guides: None,
             gutter_background: None,
             show_minimap: false,
+            font_size: None,
         }
     }
 
@@ -96,6 +98,7 @@ impl<'a, Message> TextEditor<'a, Message, highlighter::PlainText> {
             indent_guides: self.indent_guides,
             gutter_background: self.gutter_background,
             show_minimap: self.show_minimap,
+            font_size: self.font_size,
         }
     }
 }
@@ -157,6 +160,11 @@ where
 
     pub fn show_minimap(mut self, show: bool) -> Self {
         self.show_minimap = show;
+        self
+    }
+
+    pub fn font_size(mut self, size: impl Into<Pixels>) -> Self {
+        self.font_size = Some(size.into());
         self
     }
 }
@@ -233,6 +241,7 @@ where
             self.gutter_width,
             self.line_color,
             self.content,
+            self.font_size.map(|p| p.0),
         );
 
         // Minimap would be more complex, perhaps draw a small version on the right
@@ -346,10 +355,11 @@ fn draw_line_numbers(
     gutter_width: f32,
     color: Color,
     content: &Content,
+    font_size_override: Option<f32>,
 ) {
     let _editor_ref = borrow_editor(content);
     let buffer = _editor_ref.buffer();
-    let font_size = buffer.metrics().font_size;
+    let font_size = font_size_override.unwrap_or(buffer.metrics().font_size);
     let line_height = buffer.metrics().line_height.max(1.0);
     let visible_lines = buffer.visible_lines().max(0) as usize;
     let scroll = buffer.scroll().max(0) as usize;

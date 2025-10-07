@@ -8,7 +8,7 @@ use crate::syntax::{format_highlight, SyntaxHighlighter};
 use crate::widgets::debugger;
 use crate::widgets::text_editor::TextEditor as EditorWidget;
 use crate::style::{
-    active_document_button, document_button, notification_container, panel_container,
+    active_document_button, document_button, floating_panel_container, notification_container, overlay_container, panel_container,
     ribbon_container, root_container, status_container, top_bar_button, NotificationTone,
 };
 use crate::notifications::{Notification, NotificationKind};
@@ -18,8 +18,11 @@ use iced::widget::{
     button, column, container, horizontal_space, mouse_area, pick_list, row, scrollable, text, text_input, Column, Row,
     vertical_slider,
 };
+
+
+use iced::Pixels;
 use iced::widget::slider;
-use iced::{theme, Alignment, Color, Element, Font, Length, Padding};
+use iced::{theme, Alignment, Color, Element, Font, Length, Padding, Point};
 
 
 use vedit_application::{SettingsCategory, SETTINGS_CATEGORIES};
@@ -44,27 +47,26 @@ pub fn view(state: &EditorState) -> Element<'_, Message> {
         ));
     }
 
-    if state.settings().is_open() {
-        layout = layout.push(render_settings(state, scale, spacing_large, spacing_medium, spacing_small));
+    let mut main_element = if state.settings().is_open() {
+        layout.push(render_settings(state, scale, spacing_large, spacing_medium, spacing_small))
     } else {
-        if state.command_palette().is_open() {
-            layout = layout.push(render_command_palette(state));
-        }
-        layout = layout.push(render_editor_content(
-            state,
-            scale,
-            spacing_large,
-            spacing_medium,
-            spacing_small,
-        ));
-        layout = layout.push(render_status_bar(state, scale, spacing_small, spacing_large));
-        if state.has_notifications() {
-            layout = layout.push(render_notifications(state, scale, spacing_large, spacing_medium));
-        }
+        layout
+            .push(render_editor_content(
+                state,
+                scale,
+                spacing_large,
+                spacing_medium,
+                spacing_small,
+            ))
+            .push(render_status_bar(state, scale, spacing_small, spacing_large))
+    };
+
+    if state.has_notifications() {
+        main_element = main_element.push(render_notifications(state, scale, spacing_large, spacing_medium));
     }
 
-    container(
-        layout
+    let main_container = container(
+        main_element
             .spacing(spacing_large)
             .width(Length::Fill)
             .height(Length::Fill)
@@ -74,8 +76,13 @@ pub fn view(state: &EditorState) -> Element<'_, Message> {
     .height(Length::Fill)
     .center_x()
     .center_y()
-    .style(root_container())
-    .into()
+    .style(root_container());
+
+    if state.command_palette().is_open() {
+        render_command_palette(state)
+    } else {
+        main_container.into()
+    }
 }
 
 fn render_title_bar(
@@ -200,8 +207,10 @@ fn render_editor_content(
     .height(Length::Fill)
     .style(theme::Slider::Custom(Box::new(EditorScrollbarStyle)));
 
+    let font_size = Pixels((14.0 * state.code_font_zoom()) as f32);
     let buffer = EditorWidget::new(state.buffer_content())
         .font(Font::MONOSPACE)
+        .font_size(font_size)
         .highlight::<SyntaxHighlighter>(state.syntax_settings(), format_highlight)
         .line_number_color(Color::from_rgb8(133, 133, 133))
         .padding(editor_padding)
@@ -465,6 +474,7 @@ fn render_status_bar(
             ))
             .size((14.0 * scale).max(10.0)),
             text(state.format_scale_factor()).size((14.0 * scale).max(10.0)),
+            text(state.format_code_font_zoom()).size((14.0 * scale).max(10.0)),
             match (state.error(), state.workspace_notice()) {
                 (Some(err), _) => text(format!("Error: {}", err)).size((14.0 * scale).max(10.0)),
                 (None, Some(notice)) => text(notice)
@@ -1138,7 +1148,7 @@ fn render_command_palette(state: &EditorState) -> Element<'_, Message> {
     let spacing_large = (16.0 * scale).max(8.0);
     let spacing_medium = (12.0 * scale).max(6.0);
     let spacing_small = (8.0 * scale).max(4.0);
-    let drop_width = (360.0 * scale).clamp(260.0, 520.0);
+    let drop_width = (600.0 * scale).clamp(400.0, 800.0);
 
     let submit_message = state
         .selected_quick_command()
@@ -1164,27 +1174,40 @@ fn render_command_palette(state: &EditorState) -> Element<'_, Message> {
                 .style(panel_container()),
         );
     } else {
-        for (position, index) in filtered.iter().enumerate() {
-            if let Some(command) = commands.get(*index) {
-                let label = column![
-                    text(command.title).size((16.0 * scale).max(12.0)),
-                    text(command.description).size((12.0 * scale).max(9.0)),
-                ]
-                .spacing(spacing_small / 2.0)
-                .width(Length::Fill);
+        // Show a window of 6 items centered on the selection
+        let window_size = 6;
+        let half_window = window_size / 2;
+        let start = selection.saturating_sub(half_window);
+        let end = (start + window_size).min(filtered.len());
+        let adjusted_start = if end - start < window_size && start > 0 {
+            start.saturating_sub(window_size - (end - start))
+        } else {
+            start
+        };
 
-                let mut entry = button(label)
-                    .padding(spacing_small)
-                    .width(Length::Fill)
-                    .on_press(Message::CommandPaletteCommandInvoked(command.id));
+        for i in adjusted_start..end {
+            if let Some(index) = filtered.get(i) {
+                if let Some(command) = commands.get(*index) {
+                    let label = column![
+                        text(command.title).size((16.0 * scale).max(12.0)),
+                        text(command.description).size((12.0 * scale).max(9.0)),
+                    ]
+                    .spacing(spacing_small / 2.0)
+                    .width(Length::Fill);
 
-                if position == selection {
-                    entry = entry.style(theme::Button::Primary);
-                } else {
-                    entry = entry.style(theme::Button::Text);
+                    let mut entry = button(label)
+                        .padding(spacing_small)
+                        .width(Length::Fill)
+                        .on_press(Message::CommandPaletteCommandInvoked(command.id));
+
+                    if i == selection {
+                        entry = entry.style(theme::Button::Primary);
+                    } else {
+                        entry = entry.style(theme::Button::Text);
+                    }
+
+                    command_list = command_list.push(entry);
                 }
-
-                command_list = command_list.push(entry);
             }
         }
     }
@@ -1202,7 +1225,9 @@ fn render_command_palette(state: &EditorState) -> Element<'_, Message> {
     let palette_column = column![
         header,
         input,
-        scrollable(command_list).height(Length::Fixed(240.0 * scale)),
+        scrollable(command_list)
+            .height(Length::Fixed(240.0 * scale))
+            .style(crate::style::custom_scrollable()),
     ]
     .spacing(spacing_medium)
     .width(Length::Fill);
@@ -1210,11 +1235,14 @@ fn render_command_palette(state: &EditorState) -> Element<'_, Message> {
     let dropdown = container(palette_column)
         .padding(spacing_large)
         .width(Length::Fixed(drop_width))
-        .style(panel_container());
+        .style(floating_panel_container());
 
-    container(dropdown)
+    let overlay_background = container(dropdown)
         .width(Length::Fill)
-        .padding([0.0, spacing_large, 0.0, spacing_large])
-        .align_x(Horizontal::Left)
-        .into()
+        .height(Length::Fill)
+        .center_x()
+        .center_y()
+        .style(overlay_container());
+
+    overlay_background.into()
 }

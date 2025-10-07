@@ -7,6 +7,7 @@ pub enum QuickCommandId {
     NewScratchBuffer,
     ShowScaleFactor,
     AddStickyNote,
+    IncreaseCodeFontZoom,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -59,6 +60,12 @@ static QUICK_COMMANDS: &[QuickCommand] = &[
         title: "Add Sticky Note",
         description: "Attach a sticky note at the current cursor",
         action: Some("quick_command.add_sticky_note"),
+    },
+    QuickCommand {
+        id: QuickCommandId::IncreaseCodeFontZoom,
+        title: "Increase Code Font Zoom",
+        description: "Make the code window font larger",
+        action: Some("quick_command.increase_code_font_zoom"),
     },
 ];
 
