@@ -9,6 +9,7 @@ path = "src/lib.rs"
 [dependencies]
 iced = { version = "0.12", features = ["wgpu", "tokio", "lazy", "advanced"] }
 iced_graphics = "0.12"
+iced_aw = "0.9"
 cosmic-text = "0.10"
 rfd = "0.14"
 crossbeam-channel = "0.5"
