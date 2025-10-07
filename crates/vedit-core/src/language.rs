@@ -49,6 +49,7 @@ pub enum Language {
     Makefile,
     Dockerfile,
     CMake,
+    Nix,
 }
 
 impl Language {
@@ -101,6 +102,7 @@ impl Language {
             Self::Makefile => "Makefile",
             Self::Dockerfile => "Dockerfile",
             Self::CMake => "CMake",
+            Self::Nix => "Nix",
         }
     }
 }

@@ -266,6 +266,7 @@ fn detect_language_from_path(path: &str) -> Language {
             "bat" => Language::Batch,
             "vue" => Language::Vue,
             "svelte" => Language::Svelte,
+            "nix" => Language::Nix,
             _ => Language::PlainText,
         },
         None => Language::PlainText,

@@ -235,6 +235,28 @@ impl LanguageRegistry {
             registry.entries.insert(Language::Css, config);
         }
 
+        if let Some(config) = build_config(
+            tree_sitter_lua::LANGUAGE.into(),
+            "lua",
+            tree_sitter_lua::HIGHLIGHTS_QUERY,
+            None,
+            None,
+            theme_ref,
+        ) {
+            registry.entries.insert(Language::Lua, config);
+        }
+
+        if let Some(config) = build_config(
+            tree_sitter_nix::LANGUAGE.into(),
+            "nix",
+            tree_sitter_nix::HIGHLIGHTS_QUERY,
+            None,
+            None,
+            theme_ref,
+        ) {
+            registry.entries.insert(Language::Nix, config);
+        }
+
         registry
     }
 
