@@ -3,8 +3,11 @@ use crate::debugger::{DebugLaunchPlan, DebuggerConsoleEntry, DebuggerState, Debu
 use crate::notifications::{Notification, NotificationCenter, NotificationRequest};
 use crate::scaling;
 use crate::syntax::{DocumentKey, SyntaxSettings, SyntaxSystem};
+use iced::widget::text_editor::{
+    Action as TextEditorAction, Content,
+};
 use crate::widgets::text_editor::{
-    Action as TextEditorAction, Content, ScrollMetrics, buffer_scroll_metrics, scroll_to,
+    ScrollMetrics, buffer_scroll_metrics, scroll_to,
 };
 use iced::keyboard;
 use std::collections::HashSet;
@@ -15,6 +18,7 @@ use vedit_core::{Editor, FileNode, KeyEvent, Language, StickyNote, WorkspaceConf
 use vedit_debugger_gdb::GdbSession;
 use crate::commands::DebugSession;
 use vedit_config::WorkspaceMetadata;
+use crate::message::RightRailTab;
 
 const ZOOM_STEP_ENV: &str = "VEDIT_ZOOM_STEP";
 const ZOOM_MIN_ENV: &str = "VEDIT_ZOOM_MIN";
@@ -111,6 +115,7 @@ pub struct EditorState {
     active_debug_console: Option<u64>,
     debug_console_counter: u32,
     notifications: NotificationCenter,
+    selected_right_rail_tab: RightRailTab,
     pub current_window_size: iced::Size,
     pub is_maximized: bool,
     pub previous_size: Option<iced::Size>,
@@ -140,6 +145,7 @@ impl Default for EditorState {
             active_debug_console: None,
             debug_console_counter: 0,
             notifications: NotificationCenter::new(),
+            selected_right_rail_tab: RightRailTab::Workspace,
             current_window_size: iced::Size::new(800.0, 600.0),
             is_maximized: false,
             previous_size: None,
@@ -220,6 +226,14 @@ impl EditorState {
 
     pub fn process_console_events(&mut self) {
         self.console.process_events();
+    }
+
+    pub fn selected_right_rail_tab(&self) -> RightRailTab {
+        self.selected_right_rail_tab
+    }
+
+    pub fn set_selected_right_rail_tab(&mut self, tab: RightRailTab) {
+        self.selected_right_rail_tab = tab;
     }
 
     pub fn syntax_settings(&self) -> SyntaxSettings {
@@ -396,13 +410,14 @@ impl EditorState {
             self.set_error(Some(err));
         }
         self.workspace_collapsed.clear();
-        if let Some(nodes) = self.app.editor().workspace_tree() {
-            let mut directories = Vec::new();
-            collect_directory_paths(nodes, &mut directories);
-            for path in directories {
-                self.workspace_collapsed.insert(path);
-            }
-        }
+        // Don't collapse directories by default - let users expand them manually
+        // if let Some(nodes) = self.app.editor().workspace_tree() {
+        //     let mut directories = Vec::new();
+        //     collect_directory_paths(nodes, &mut directories);
+        //     for path in directories {
+        //         self.workspace_collapsed.insert(path);
+        //     }
+        // }
         self.workspace_collapsed_version = self.workspace_collapsed_version.wrapping_add(1);
         if let Err(err) = self.refresh_debug_targets() {
             self.set_error(Some(err));

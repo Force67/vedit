@@ -497,7 +497,7 @@ mod tests {
         let mut buffer = TextBuffer::from_text("😀👍");
         assert_eq!(buffer.char_count(), 2);
 
-        let smile = "😀".len_utf8();
+        let smile = "😀".len();
         buffer.delete(0..smile);
         assert_eq!(buffer.to_string(), "👍");
 

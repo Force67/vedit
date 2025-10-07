@@ -1,0 +1,15 @@
+{
+  "bg": "#0E0F12",
+  "surface": "#15171B",
+  "surface2": "#1B1E24",
+  "overlay": "#0B0C10",
+  "border": "#2A2E36",
+  "text": "#E6EAF2",
+  "muted": "#9AA6B2",
+  "primary": "#7AA2F7",
+  "primaryHover": "#8FB0FA",
+  "success": "#80D39B",
+  "warning": "#E6B450",
+  "error": "#E46876",
+  "focusRing": "rgba(122,162,247,0.55)"
+}

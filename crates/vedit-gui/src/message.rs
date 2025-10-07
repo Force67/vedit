@@ -1,6 +1,6 @@
 use iced::keyboard;
 use iced::mouse;
-use crate::widgets::text_editor::Action as TextEditorAction;
+use iced::widget::text_editor::Action as TextEditorAction;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
@@ -9,6 +9,15 @@ use vedit_application::{QuickCommandId, SettingsCategory};
 use crate::commands::WorkspaceData;
 use crate::commands::DebugSession;
 use crate::debugger::DebuggerType;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RightRailTab {
+    Workspace,
+    Outline,
+    Search,
+    Problems,
+    Notes,
+}
 
 #[derive(Debug, Clone)]
 pub enum Message {
@@ -81,6 +90,7 @@ pub enum Message {
     WindowResizeStart(iced::Point),
     WindowResizeMove(iced::Point),
     WindowResizeEnd,
+    RightRailTabSelected(RightRailTab),
 }
 
 #[derive(Clone)]

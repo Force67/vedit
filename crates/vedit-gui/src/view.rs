@@ -1,5 +1,5 @@
 use crate::console::{ConsoleKind, ConsoleLineKind, ConsoleStatus};
-use crate::message::{Message, WorkspaceSnapshot};
+use crate::message::{Message, RightRailTab, WorkspaceSnapshot};
 use crate::state::EditorState;
 use crate::syntax::{format_highlight, SyntaxHighlighter};
 use crate::widgets::debugger;
@@ -12,11 +12,11 @@ use crate::notifications::{Notification, NotificationKind};
 use iced::alignment::{Horizontal, Vertical};
 use iced::widget::lazy;
 use iced::widget::{
-    button, column, container, horizontal_space, mouse_area, row, scrollable, text, text_input, Column, Rule,
+    button, column, container, horizontal_space, mouse_area, pick_list, row, scrollable, text, text_input, Column, Row, Rule,
     vertical_slider,
 };
 use iced::widget::slider;
-use iced::{theme, Alignment, Color, Element, Font, Length, Padding};
+use iced::{theme, Alignment, Color, Element, Font, Length, Padding, Renderer};
 use std::collections::HashSet;
 use std::path::Path;
 use vedit_core::{FileNode, NodeKind};
@@ -247,13 +247,87 @@ fn render_editor_content(
         sidebar_width,
     );
 
-    let workspace_panel = render_workspace_panel(
-        state,
-        scale,
-        spacing_large,
-        spacing_small,
-        sidebar_width,
-    );
+    let tab_bar: iced::widget::Row<'_, Message, iced::Theme, iced::Renderer> = Row::with_children(vec![
+        {
+            let mut btn = button(text("Workspace").style(iced::theme::Text::Color(crate::style::TEXT))).style(crate::style::custom_button()).on_press(Message::RightRailTabSelected(RightRailTab::Workspace));
+            if state.selected_right_rail_tab() == RightRailTab::Workspace {
+                btn = btn.style(crate::style::active_document_button());
+            }
+            btn.into()
+        },
+        {
+            let mut btn = button(text("Outline").style(iced::theme::Text::Color(crate::style::MUTED))).style(crate::style::custom_button()).on_press(Message::RightRailTabSelected(RightRailTab::Outline));
+            if state.selected_right_rail_tab() == RightRailTab::Outline {
+                btn = btn.style(crate::style::active_document_button());
+            }
+            btn.into()
+        },
+        {
+            let mut btn = button(text("Search").style(iced::theme::Text::Color(crate::style::MUTED))).style(crate::style::custom_button()).on_press(Message::RightRailTabSelected(RightRailTab::Search));
+            if state.selected_right_rail_tab() == RightRailTab::Search {
+                btn = btn.style(crate::style::active_document_button());
+            }
+            btn.into()
+        },
+        {
+            let mut btn = button(text("Problems").style(iced::theme::Text::Color(crate::style::MUTED))).style(crate::style::custom_button()).on_press(Message::RightRailTabSelected(RightRailTab::Problems));
+            if state.selected_right_rail_tab() == RightRailTab::Problems {
+                btn = btn.style(crate::style::active_document_button());
+            }
+            btn.into()
+        },
+        {
+            let mut btn = button(text("Notes").style(iced::theme::Text::Color(crate::style::MUTED))).style(crate::style::custom_button()).on_press(Message::RightRailTabSelected(RightRailTab::Notes));
+            if state.selected_right_rail_tab() == RightRailTab::Notes {
+                btn = btn.style(crate::style::active_document_button());
+            }
+            btn.into()
+        },
+    ])
+    .spacing(0);
+
+    let workspace_content: Element<'_, Message> = match state.selected_right_rail_tab() {
+        RightRailTab::Workspace => {
+            if let Some((version, tree)) = state.editor().workspace_snapshot() {
+                let collapsed_set: HashSet<String> = state.workspace_collapsed_paths().iter().cloned().collect();
+                scrollable(render_workspace_nodes(
+                    tree.as_slice(),
+                    0,
+                    scale,
+                    &collapsed_set,
+                ))
+                .height(Length::Fill)
+                .style(crate::style::custom_scrollable())
+                .into()
+            } else {
+                scrollable(
+                    column![text("Open a folder to browse project files").size((14.0 * scale).max(10.0))]
+                        .spacing(4)
+                        .padding(8)
+                )
+                .style(crate::style::custom_scrollable())
+                .into()
+            }
+        }
+        _ => {
+            scrollable(
+                column![text("Not implemented yet").style(iced::theme::Text::Color(crate::style::TEXT))]
+                    .spacing(4)
+                    .padding(8)
+            )
+            .style(crate::style::custom_scrollable())
+            .into()
+        }
+    };
+
+    let workspace_panel: Element<'_, Message> = container(
+        column![tab_bar, workspace_content]
+            .spacing(0)
+    )
+    .style(panel_container())
+    .width(Length::Fixed(sidebar_width))
+    .height(Length::Fill)
+    .into();
 
     let content_row = row![open_panel, editor_panel, workspace_panel]
         .spacing(spacing_large)
@@ -266,13 +340,38 @@ fn render_editor_content(
         .height(Length::Fill);
 
     if state.console().is_visible() {
-        layout = layout.push(render_console_panel(
-            state,
-            scale,
-            spacing_large,
-            spacing_medium,
-            spacing_small,
-        ));
+        let header: iced::widget::Row<'_, Message, iced::Theme, iced::Renderer> = row![
+            pick_list(
+                vec!["Terminal".to_string(), "Debug".to_string(), "Output".to_string()],
+                Some("Terminal".to_string()),
+                |_| Message::DocumentSelected(0), // dummy
+            ),
+            button(text("▼").style(iced::theme::Text::Color(crate::style::TEXT)))
+                .style(crate::style::custom_button())
+                .on_press(Message::ConsoleVisibilityToggled),
+        ]
+        .spacing(8)
+        .align_items(Alignment::Center);
+
+        let log_view = scrollable(
+            column![
+                text("Application started").style(iced::theme::Text::Color(crate::style::TEXT)),
+                text("Warning: deprecated function").style(iced::theme::Text::Color(crate::style::WARNING)),
+                text("Error: file not found").style(iced::theme::Text::Color(crate::style::ERROR)),
+            ]
+            .spacing(4)
+            .padding(8)
+        )
+        .style(crate::style::custom_scrollable());
+
+        let content = column![header, log_view].spacing(8);
+
+        layout = layout.push(
+            container(content)
+                .style(status_container())
+                .width(Length::Fill)
+                .height(Length::Fixed(200.0))
+        );
     }
 
     layout.into()
@@ -606,9 +705,7 @@ fn render_open_files_panel(
     spacing_medium: f32,
     sidebar_width: f32,
 ) -> Element<'_, Message> {
-    let list_spacing = ((6.0 * scale).max(3.0)).round() as u16;
-
-    let mut open_list = Column::new().spacing(list_spacing);
+    let mut open_list = Column::new().spacing(4);
     for (index, document) in state.editor().open_documents().iter().enumerate() {
         let is_active = index == state.editor().active_index();
         let mut title = document.display_name().to_string();
@@ -616,72 +713,48 @@ fn render_open_files_panel(
             title.push('*');
         }
 
-        let mut label = column![text(&title).size((14.0 * scale).max(10.0))]
-        .spacing((4.0 * scale).max(2.0));
+        let file_text = text(&title).style(iced::theme::Text::Color(crate::style::TEXT));
 
-        if let Some(path) = document.path.as_deref() {
-            if !path.is_empty() {
-                label = label.push(
-                    text(path)
-                        .size((12.0 * scale).max(9.0))
-                        .style(Color::from_rgb8(150, 150, 150)),
-                );
-            }
-        }
+        let close_button = button(text("×").style(iced::theme::Text::Color(crate::style::MUTED)))
+            .style(crate::style::custom_button())
+            .on_press(Message::DocumentSelected(0)); // dummy
 
-        let mut entry = button(label)
-            .padding((6.0 * scale).max(3.0))
-            .width(Length::Fill)
-            .style(document_button())
+        let item = row![file_text, close_button]
+            .spacing(4)
+            .align_items(Alignment::Center);
+
+        let button = button(item)
+            .style(crate::style::document_button())
             .on_press(Message::DocumentSelected(index));
 
-        if is_active {
-            entry = entry.style(active_document_button());
-        }
-
-        open_list = open_list.push(entry);
+        open_list = open_list.push(button);
     }
 
-    let open_scroll = scrollable(open_list).height(Length::Fill);
+    let open_scroll = scrollable(open_list).style(crate::style::custom_scrollable());
 
-    let mut content = column![
-        text("Open Files").size((16.0 * scale).max(12.0)),
+    let header = button(text("Recent Files").style(iced::theme::Text::Color(crate::style::TEXT)))
+        .style(crate::style::custom_button())
+        .on_press(Message::DocumentSelected(0)); // dummy
+
+    let mut recent_list = Column::new().spacing(4);
+    for path in state.workspace_recent_files() {
+        let item = button(text(&path).style(iced::theme::Text::Color(crate::style::MUTED)))
+            .style(crate::style::document_button())
+            .on_press(Message::WorkspaceFileActivated(path.clone()));
+
+        recent_list = recent_list.push(item);
+    }
+
+    let recent_scroll = scrollable(recent_list).style(crate::style::custom_scrollable());
+
+    let content = column![
+        text("Open Files").style(iced::theme::Text::Color(crate::style::TEXT)),
         open_scroll,
+        header,
+        recent_scroll,
     ]
     .spacing(spacing_medium)
     .height(Length::Fill);
-
-    let recent_files = state.workspace_recent_files();
-    if !recent_files.is_empty() {
-        let mut recent_column = Column::new().spacing(list_spacing);
-        for path in recent_files {
-            let display = Path::new(&path)
-                .file_name()
-                .and_then(|name| name.to_str())
-                .map(|name| name.to_string())
-                .unwrap_or(path.clone());
-
-            let label = column![
-                text(display).size((14.0 * scale).max(10.0)),
-                text(path.clone())
-                    .size((12.0 * scale).max(9.0))
-                    .style(Color::from_rgb8(150, 150, 150)),
-            ]
-            .spacing((4.0 * scale).max(2.0));
-
-            recent_column = recent_column.push(
-                button(label)
-                    .style(theme::Button::Text)
-                    .width(Length::Fill)
-                    .on_press(Message::WorkspaceFileActivated(path.clone())),
-            );
-        }
-
-        content = content
-            .push(Rule::horizontal(1))
-            .push(text("Recent Files").size((14.0 * scale).max(10.0)))
-            .push(recent_column);
-    }
 
     container(content)
         .padding(spacing_large)

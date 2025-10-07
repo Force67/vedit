@@ -4,7 +4,7 @@ use iced::event::{self, Event};
 use iced::advanced::layout::{self, Layout};
 use iced::advanced::mouse;
 use iced::advanced::renderer;
-use iced::advanced::widget::{self, Widget};
+use iced::advanced::widget::{self, Widget, tree};
 use iced::advanced::Shell;
 use iced::alignment;
 use iced::widget::text_editor;
@@ -23,6 +23,7 @@ use iced::advanced::text::{LineHeight, Shaping, Text as PrimitiveText};
 use iced::advanced::text::highlighter;
 use iced::advanced::text::Highlighter as IcedHighlighter;
 use iced::advanced::text::Renderer as TextRenderer;
+use iced::advanced::Renderer as _;
 use iced_graphics::text::Editor as GraphicsEditor;
 use std::cell::{Cell, Ref, RefCell};
 use std::rc::Rc;
@@ -41,6 +42,10 @@ where
     gutter_width: f32,
     line_color: Color,
     pointer_correction: Rc<Cell<f32>>,
+    current_line_highlight: Option<Color>,
+    indent_guides: Option<Color>,
+    gutter_background: Option<Color>,
+    show_minimap: bool,
 }
 
 impl<'a, Message> TextEditor<'a, Message, highlighter::PlainText> {
@@ -62,6 +67,10 @@ impl<'a, Message> TextEditor<'a, Message, highlighter::PlainText> {
             gutter_width,
             line_color: DEFAULT_LINE_COLOR,
             pointer_correction,
+            current_line_highlight: None,
+            indent_guides: None,
+            gutter_background: None,
+            show_minimap: false,
         }
     }
 
@@ -83,6 +92,10 @@ impl<'a, Message> TextEditor<'a, Message, highlighter::PlainText> {
             gutter_width: self.gutter_width,
             line_color: self.line_color,
             pointer_correction: Rc::clone(&self.pointer_correction),
+            current_line_highlight: self.current_line_highlight,
+            indent_guides: self.indent_guides,
+            gutter_background: self.gutter_background,
+            show_minimap: self.show_minimap,
         }
     }
 }
@@ -126,6 +139,26 @@ where
         self.line_color = color;
         self
     }
+
+    pub fn current_line_highlight(mut self, color: Color) -> Self {
+        self.current_line_highlight = Some(color);
+        self
+    }
+
+    pub fn indent_guides(mut self, color: Color) -> Self {
+        self.indent_guides = Some(color);
+        self
+    }
+
+    pub fn gutter_background(mut self, color: Color) -> Self {
+        self.gutter_background = Some(color);
+        self
+    }
+
+    pub fn show_minimap(mut self, show: bool) -> Self {
+        self.show_minimap = show;
+        self
+    }
 }
 
 impl<'a, Message, H> Widget<Message, IcedTheme, IcedRenderer> for TextEditor<'a, Message, H>
@@ -133,11 +166,11 @@ where
     Message: 'a,
     H: IcedHighlighter,
 {
-    fn tag(&self) -> widget::tree::Tag {
+    fn tag(&self) -> tree::Tag {
         self.inner.tag()
     }
 
-    fn state(&self) -> widget::tree::State {
+    fn state(&self) -> tree::State {
         self.inner.state()
     }
 
@@ -147,7 +180,7 @@ where
 
     fn layout(
         &self,
-        tree: &mut widget::Tree,
+        tree: &mut tree::Tree,
         renderer: &IcedRenderer,
         limits: &layout::Limits,
     ) -> layout::Node {
@@ -156,7 +189,7 @@ where
 
     fn on_event(
         &mut self,
-        tree: &mut widget::Tree,
+        tree: &mut tree::Tree,
         event: Event,
         layout: Layout<'_>,
         cursor: mouse::Cursor,
@@ -179,7 +212,7 @@ where
 
     fn draw(
         &self,
-        tree: &widget::Tree,
+        tree: &tree::Tree,
         renderer: &mut IcedRenderer,
         theme: &IcedTheme,
         style: &renderer::Style,
@@ -187,22 +220,28 @@ where
         cursor: mouse::Cursor,
         viewport: &Rectangle,
     ) {
+        let bounds = layout.bounds();
+
         self.inner
             .draw(tree, renderer, theme, style, layout, cursor, viewport);
+
         draw_line_numbers(
             renderer,
-            layout.bounds(),
+            bounds,
             viewport,
             &self.base_padding,
             self.gutter_width,
             self.line_color,
             self.content,
         );
+
+        // Minimap would be more complex, perhaps draw a small version on the right
+        // For now, skip or add a placeholder
     }
 
     fn mouse_interaction(
         &self,
-        tree: &widget::Tree,
+        tree: &tree::Tree,
         layout: Layout<'_>,
         cursor: mouse::Cursor,
         viewport: &Rectangle,

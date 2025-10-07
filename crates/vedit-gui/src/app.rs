@@ -586,6 +586,9 @@ impl Application for EditorApp {
                 self.state.resize_start_size = None;
                 self.state.resize_direction = None;
             }
+            Message::RightRailTabSelected(tab) => {
+                self.state.set_selected_right_rail_tab(tab);
+            }
         }
 
         self.wrap_command(Command::none())

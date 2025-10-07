@@ -236,6 +236,76 @@ impl Default for Keymap {
                 key: Key::Character('S'),
             },
         );
+        bindings.insert(
+            "command_palette.toggle".to_string(),
+            KeyCombination {
+                ctrl: cfg!(not(target_os = "macos")),
+                shift: false,
+                alt: false,
+                command: cfg!(target_os = "macos"),
+                key: Key::Character('P'),
+            },
+        );
+        bindings.insert(
+            "sidebar.toggle".to_string(),
+            KeyCombination {
+                ctrl: cfg!(not(target_os = "macos")),
+                shift: false,
+                alt: false,
+                command: cfg!(target_os = "macos"),
+                key: Key::Character('B'),
+            },
+        );
+        bindings.insert(
+            "terminal.toggle".to_string(),
+            KeyCombination {
+                ctrl: cfg!(not(target_os = "macos")),
+                shift: false,
+                alt: false,
+                command: cfg!(target_os = "macos"),
+                key: Key::Character('J'),
+            },
+        );
+        bindings.insert(
+            "command_palette.focus".to_string(),
+            KeyCombination {
+                ctrl: cfg!(not(target_os = "macos")),
+                shift: false,
+                alt: false,
+                command: cfg!(target_os = "macos"),
+                key: Key::Character('`'),
+            },
+        );
+        bindings.insert(
+            "close_tab".to_string(),
+            KeyCombination {
+                ctrl: cfg!(not(target_os = "macos")),
+                shift: false,
+                alt: false,
+                command: cfg!(target_os = "macos"),
+                key: Key::Character('W'),
+            },
+        );
+        bindings.insert(
+            "move_line_up".to_string(),
+            KeyCombination {
+                ctrl: false,
+                shift: false,
+                alt: true,
+                command: false,
+                key: Key::ArrowUp,
+            },
+        );
+        bindings.insert(
+            "move_line_down".to_string(),
+            KeyCombination {
+                ctrl: false,
+                shift: false,
+                alt: true,
+                command: false,
+                key: Key::ArrowDown,
+            },
+        );
         Self { bindings }
     }
 }
