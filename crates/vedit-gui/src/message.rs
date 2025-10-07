@@ -13,6 +13,7 @@ use crate::debugger::DebuggerType;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RightRailTab {
     Workspace,
+    Solutions,
     Outline,
     Search,
     Problems,
@@ -26,6 +27,7 @@ pub enum Message {
     DocumentSelected(usize),
     WorkspaceOpenRequested,
     SolutionOpenRequested,
+    SolutionSelected(String),
     WorkspaceLoaded(Result<Option<WorkspaceData>, String>),
     SolutionLoaded(Result<Option<WorkspaceData>, String>),
     WorkspaceFileActivated(String),
@@ -90,6 +92,7 @@ pub enum Message {
     WindowResizeStart(iced::Point),
     WindowResizeMove(iced::Point),
     WindowResizeEnd,
+    FileExplorer(crate::widgets::file_explorer::Message),
     RightRailTabSelected(RightRailTab),
 }
 

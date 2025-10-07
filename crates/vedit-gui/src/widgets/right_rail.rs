@@ -1,21 +1,27 @@
 use iced::widget::{button, column, container, row, scrollable, text, Column, Row};
 use iced::{Element, Length};
+use std::path::PathBuf;
+
+use crate::widgets::file_explorer;
 
 use crate::style;
 
 #[derive(Debug, Clone)]
 pub enum Message {
     TabSelected(usize),
+    FileExplorer(file_explorer::Message),
 }
 
 pub struct RightRail {
     pub active_tab: usize,
+    pub workspace_root: PathBuf,
 }
 
 impl RightRail {
-    pub fn new() -> Self {
+    pub fn new(workspace_root: PathBuf) -> Self {
         Self {
             active_tab: 0,
+            workspace_root,
         }
     }
 
@@ -49,17 +55,8 @@ impl RightRail {
     }
 
     fn workspace_tab(&self) -> Element<Message> {
-        scrollable(
-            column![
-                text("Workspace Tree").style(iced::theme::Text::Color(style::TEXT)),
-                text("file1.rs").style(iced::theme::Text::Color(style::MUTED)),
-                text("file2.rs").style(iced::theme::Text::Color(style::MUTED)),
-            ]
-            .spacing(4)
-            .padding(8)
-        )
-        .style(style::custom_scrollable())
-        .into()
+        // This is now handled in view.rs
+        text("Workspace").into()
     }
 
     fn outline_tab(&self) -> Element<Message> {

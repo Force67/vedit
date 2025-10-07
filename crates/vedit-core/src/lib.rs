@@ -15,7 +15,10 @@ pub use document::Document;
 pub use text_buffer::TextBuffer;
 pub use editor::Editor;
 pub use keybinds::{KeyCombination, KeyEvent, Keymap, KeymapError, Key, QUICK_COMMAND_MENU_ACTION, SAVE_ACTION};
-pub use workspace::{FileNode, NodeKind};
+pub use workspace::{
+    DirEntryMeta, FileMeta, FileNode, FilterState, FsWorkspaceProvider, GitStatus, LegacyNodeKind, Node, NodeId,
+    NodeKind, WorkspaceProvider, WorkspaceTree,
+};
 pub use language::Language;
 pub use vedit_config::{WorkspaceConfig, DebugTargetRecord};
 pub use sticky::StickyNote;

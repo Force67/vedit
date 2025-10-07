@@ -377,6 +377,73 @@ impl button::StyleSheet for CustomButton {
 }
 
 #[derive(Debug, Clone, Copy, Default)]
+pub struct SelectedButton;
+
+impl button::StyleSheet for SelectedButton {
+    type Style = theme::Theme;
+
+    fn active(&self, _style: &Self::Style) -> button::Appearance {
+        button::Appearance {
+            shadow_offset: Vector::default(),
+            background: Some(Background::Color(PRIMARY)),
+            text_color: TEXT,
+            border: Border {
+                radius: 4.0.into(),
+                width: 1.0,
+                color: PRIMARY,
+            },
+            shadow: Default::default(),
+        }
+    }
+
+    fn hovered(&self, _style: &Self::Style) -> button::Appearance {
+        button::Appearance {
+            shadow_offset: Vector::default(),
+            background: Some(Background::Color(PRIMARY_HOVER)),
+            text_color: TEXT,
+            border: Border {
+                radius: 4.0.into(),
+                width: 1.0,
+                color: PRIMARY_HOVER,
+            },
+            shadow: Default::default(),
+        }
+    }
+
+    fn pressed(&self, _style: &Self::Style) -> button::Appearance {
+        button::Appearance {
+            shadow_offset: Vector::default(),
+            background: Some(Background::Color(SURFACE2)),
+            text_color: TEXT,
+            border: Border {
+                radius: 4.0.into(),
+                width: 1.0,
+                color: PRIMARY,
+            },
+            shadow: Default::default(),
+        }
+    }
+
+    fn disabled(&self, _style: &Self::Style) -> button::Appearance {
+        button::Appearance {
+            shadow_offset: Vector::default(),
+            background: Some(Background::Color(SURFACE)),
+            text_color: MUTED,
+            border: Border {
+                radius: 4.0.into(),
+                width: 1.0,
+                color: BORDER,
+            },
+            shadow: Default::default(),
+        }
+    }
+}
+
+pub fn selected_button() -> theme::Button {
+    theme::Button::Custom(Box::new(SelectedButton))
+}
+
+#[derive(Debug, Clone, Copy, Default)]
 pub struct CustomScrollable;
 
 impl scrollable::StyleSheet for CustomScrollable {

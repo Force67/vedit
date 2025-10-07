@@ -1,13 +1,214 @@
 use std::cmp::Ordering;
+use std::collections::{BTreeSet, HashSet};
 use std::fs;
 use std::io;
 use std::path::{Component, Path, PathBuf};
+use std::time::SystemTime;
+use slab::Slab;
 use vedit_make::{Makefile, MakefileError};
 use vedit_vs::{Solution, SolutionProject, VcxProject, VisualStudioError};
 
 const SKIPPED_DIRECTORIES: &[&str] = &[".git", "target", "node_modules", ".idea", ".vscode"];
 
-/// Node of a workspace file tree.
+pub type NodeId = usize;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NodeKind {
+    File,
+    Folder,
+    Symlink(Box<NodeKind>),
+}
+
+#[derive(Debug, Clone)]
+pub struct Node {
+    pub id: NodeId,
+    pub name: String,
+    pub rel_path: String,
+    pub kind: NodeKind,
+    pub size: Option<u64>,
+    pub modified: Option<SystemTime>,
+    pub children: Option<Vec<NodeId>>,
+    pub git: Option<GitStatus>,
+    pub is_hidden: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GitStatus {
+    Added,
+    Modified,
+    Deleted,
+    Unmerged,
+    Untracked,
+    Ignored,
+}
+
+#[derive(Debug, Clone)]
+pub struct FilterState {
+    pub query: String,
+    pub match_case: bool,
+    pub files_only: bool,
+    pub folders_only: bool,
+    pub show_hidden: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct WorkspaceTree {
+    pub root: NodeId,
+    pub nodes: Slab<Node>,
+    pub expanded: HashSet<NodeId>,
+    pub selection: BTreeSet<NodeId>,
+    pub cursor: Option<NodeId>,
+    pub filter: FilterState,
+}
+
+pub trait WorkspaceProvider {
+    fn read_dir(&self, rel: &str) -> io::Result<Vec<DirEntryMeta>>;
+    fn read_meta(&self, rel: &str) -> io::Result<FileMeta>;
+    fn is_dir(&self, rel: &str) -> bool;
+    fn rename(&mut self, from: &str, to: &str) -> io::Result<()>;
+    fn create_file(&mut self, rel: &str) -> io::Result<()>;
+    fn create_dir(&mut self, rel: &str) -> io::Result<()>;
+    fn remove(&mut self, rel: &str) -> io::Result<()>;
+}
+
+pub struct FsWorkspaceProvider {
+    root: PathBuf,
+}
+
+impl FsWorkspaceProvider {
+    pub fn new(root: PathBuf) -> Self {
+        Self { root }
+    }
+}
+
+impl FsWorkspaceProvider {
+    pub fn load_children(&self, tree: &mut WorkspaceTree, id: NodeId) -> io::Result<()> {
+        let rel_path = if let Some(node) = tree.nodes.get(id) {
+            if node.children.is_none() {
+                node.rel_path.clone()
+            } else {
+                return Ok(());
+            }
+        } else {
+            return Ok(());
+        };
+
+        let entries = self.read_dir(&rel_path)?;
+        let mut children = Vec::new();
+        for entry in entries {
+            let child_id = tree.nodes.insert(Node {
+                id: 0, // will be set
+                name: entry.name,
+                rel_path: entry.rel_path,
+                kind: entry.kind,
+                size: entry.size,
+                modified: entry.modified,
+                children: None,
+                git: None,
+                is_hidden: entry.is_hidden,
+            });
+            tree.nodes[child_id].id = child_id;
+            children.push(child_id);
+        }
+
+        if let Some(node) = tree.nodes.get_mut(id) {
+            node.children = Some(children);
+        }
+        Ok(())
+    }
+}
+
+impl WorkspaceProvider for FsWorkspaceProvider {
+    fn read_dir(&self, rel: &str) -> io::Result<Vec<DirEntryMeta>> {
+        let path = self.root.join(rel);
+        let mut entries = Vec::new();
+        for entry in fs::read_dir(&path)? {
+            let entry = entry?;
+            let name = entry.file_name().to_string_lossy().to_string();
+            let rel_path = Path::new(rel).join(&name).to_string_lossy().to_string();
+            let metadata = entry.metadata()?;
+            let kind = if metadata.is_dir() {
+                NodeKind::Folder
+            } else if metadata.is_file() {
+                NodeKind::File
+            } else {
+                // Handle symlinks, but for now treat as file
+                NodeKind::File
+            };
+            let size = if metadata.is_file() { Some(metadata.len()) } else { None };
+            let modified = metadata.modified().ok();
+            let is_hidden = name.starts_with('.');
+            entries.push(DirEntryMeta {
+                name,
+                rel_path,
+                kind,
+                size,
+                modified,
+                is_hidden,
+            });
+        }
+        Ok(entries)
+    }
+
+    fn read_meta(&self, rel: &str) -> io::Result<FileMeta> {
+        let path = self.root.join(rel);
+        let metadata = fs::metadata(&path)?;
+        Ok(FileMeta {
+            size: if metadata.is_file() { Some(metadata.len()) } else { None },
+            modified: metadata.modified().ok(),
+            is_hidden: path.file_name().and_then(|n| n.to_str()).map(|n| n.starts_with('.')).unwrap_or(false),
+        })
+    }
+
+    fn is_dir(&self, rel: &str) -> bool {
+        self.root.join(rel).is_dir()
+    }
+
+    fn rename(&mut self, from: &str, to: &str) -> io::Result<()> {
+        let from_path = self.root.join(from);
+        let to_path = self.root.join(to);
+        fs::rename(from_path, to_path)
+    }
+
+    fn create_file(&mut self, rel: &str) -> io::Result<()> {
+        let path = self.root.join(rel);
+        fs::File::create(path)?;
+        Ok(())
+    }
+
+    fn create_dir(&mut self, rel: &str) -> io::Result<()> {
+        let path = self.root.join(rel);
+        fs::create_dir_all(path)
+    }
+
+    fn remove(&mut self, rel: &str) -> io::Result<()> {
+        let path = self.root.join(rel);
+        if path.is_dir() {
+            fs::remove_dir_all(path)
+        } else {
+            fs::remove_file(path)
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct DirEntryMeta {
+    pub name: String,
+    pub rel_path: String,
+    pub kind: NodeKind,
+    pub size: Option<u64>,
+    pub modified: Option<SystemTime>,
+    pub is_hidden: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct FileMeta {
+    pub size: Option<u64>,
+    pub modified: Option<SystemTime>,
+    pub is_hidden: bool,
+}
+
+/// Legacy Node of a workspace file tree. TODO: remove after migration
 #[derive(Debug, Clone)]
 pub struct FileNode {
     pub name: String,
@@ -16,11 +217,11 @@ pub struct FileNode {
     pub children: Vec<FileNode>,
     pub has_children: bool,
     pub is_fully_scanned: bool,
-    pub kind: NodeKind,
+    pub kind: LegacyNodeKind,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum NodeKind {
+pub enum LegacyNodeKind {
     Directory,
     File,
     Solution,
@@ -162,7 +363,7 @@ fn directory_stub(path: &Path, has_children: bool) -> FileNode {
         children: Vec::new(),
         has_children,
         is_fully_scanned: false,
-        kind: NodeKind::Directory,
+        kind: LegacyNodeKind::Directory,
     }
 }
 
@@ -178,7 +379,7 @@ fn file_node(path: &Path) -> FileNode {
         children: Vec::new(),
         has_children: false,
         is_fully_scanned: true,
-        kind: NodeKind::File,
+        kind: LegacyNodeKind::File,
     }
 }
 
@@ -273,7 +474,7 @@ fn try_build_solution_node(path: &Path) -> Result<FileNode, VisualStudioError> {
         children,
         has_children,
         is_fully_scanned: true,
-        kind: NodeKind::Solution,
+        kind: LegacyNodeKind::Solution,
     })
 }
 
@@ -293,7 +494,7 @@ fn project_to_node(project: SolutionProject) -> FileNode {
             children,
             has_children,
             is_fully_scanned: true,
-            kind: NodeKind::Project,
+            kind: LegacyNodeKind::Project,
         }
     } else {
         if project.load_error.is_some() {
@@ -306,7 +507,7 @@ fn project_to_node(project: SolutionProject) -> FileNode {
             children: Vec::new(),
             has_children: false,
             is_fully_scanned: true,
-            kind: NodeKind::ProjectStub,
+            kind: LegacyNodeKind::ProjectStub,
         }
     }
 }
@@ -326,7 +527,7 @@ fn try_build_vcxproj_node(path: &Path) -> Result<FileNode, VisualStudioError> {
         children,
         has_children,
         is_fully_scanned: true,
-        kind: NodeKind::Project,
+        kind: LegacyNodeKind::Project,
     })
 }
 
@@ -343,7 +544,7 @@ fn try_build_makefile_node(path: &Path) -> Result<FileNode, MakefileError> {
         children,
         has_children,
         is_fully_scanned: true,
-        kind: NodeKind::Project,
+        kind: LegacyNodeKind::Project,
     })
 }
 
@@ -406,7 +607,7 @@ fn insert_item(
             children: Vec::new(),
             has_children: false,
             is_fully_scanned: true,
-            kind: NodeKind::File,
+            kind: LegacyNodeKind::File,
         });
         return;
     }
@@ -431,7 +632,7 @@ fn insert_item(
                 children: Vec::new(),
                 has_children: false,
                 is_fully_scanned: true,
-                kind: NodeKind::Directory,
+        kind: LegacyNodeKind::Directory,
             });
             nodes.last_mut().unwrap()
         }
@@ -465,10 +666,29 @@ fn is_makefile_name(name: &str) -> bool {
 }
 
 fn sort_nodes(nodes: &mut Vec<FileNode>) {
-    nodes.sort_by(|a, b| match (a.is_directory, b.is_directory) {
-        (true, false) => Ordering::Less,
-        (false, true) => Ordering::Greater,
-        _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+    nodes.sort_by(|a, b| {
+        // First sort by node kind priority
+        let kind_order = |kind: &LegacyNodeKind| match kind {
+            LegacyNodeKind::Directory => 0,
+            LegacyNodeKind::Solution => 1,
+            LegacyNodeKind::Project => 2,
+            LegacyNodeKind::ProjectStub => 3,
+            LegacyNodeKind::File => 4,
+        };
+
+        let a_kind_order = kind_order(&a.kind);
+        let b_kind_order = kind_order(&b.kind);
+
+        if a_kind_order != b_kind_order {
+            return a_kind_order.cmp(&b_kind_order);
+        }
+
+        // Within same kind, sort directories before files
+        match (a.is_directory, b.is_directory) {
+            (true, false) => Ordering::Less,
+            (false, true) => Ordering::Greater,
+            _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+        }
     });
     for node in nodes.iter_mut() {
         if node.is_directory {

@@ -97,6 +97,12 @@ impl Application for EditorApp {
                     Message::SolutionLoaded,
                 ));
             }
+            Message::SolutionSelected(path) => {
+                return self.wrap_command(Command::perform(
+                    commands::load_solution_from_path(path),
+                    Message::SolutionLoaded,
+                ));
+            }
             Message::WorkspaceLoaded(result) => match result {
                 Ok(Some(WorkspaceData {
                     root,
@@ -106,6 +112,7 @@ impl Application for EditorApp {
                 })) => {
                     self.state
                         .install_workspace(root.clone(), tree, config, metadata);
+                    self.state.set_file_explorer(Some(crate::widgets::file_explorer::FileExplorer::new(std::path::PathBuf::from(root))));
                     self.state.clear_error();
                 }
                 Ok(None) => {
@@ -471,6 +478,41 @@ impl Application for EditorApp {
                             _ => {}
                         }
                     }
+
+                    // Handle file explorer keyboard shortcuts when workspace tab is active
+                    if self.state.selected_right_rail_tab() == crate::message::RightRailTab::Workspace {
+                        if let Some(explorer) = self.state.file_explorer_mut() {
+                            match core_event.key {
+                                Key::ArrowDown => {
+                                    let _ = explorer.update(crate::widgets::file_explorer::Message::FocusNext);
+                                    return self.wrap_command(Command::none());
+                                }
+                                Key::ArrowUp => {
+                                    let _ = explorer.update(crate::widgets::file_explorer::Message::FocusPrev);
+                                    return self.wrap_command(Command::none());
+                                }
+                                Key::Enter => {
+                                    if let Some(cursor) = explorer.cursor() {
+                                        explorer.update(crate::widgets::file_explorer::Message::Open(cursor, crate::widgets::file_explorer::OpenKind::InEditor));
+                                    }
+                                    return self.wrap_command(Command::none());
+                                }
+                                Key::Function(2) => {
+                                    if let Some(cursor) = explorer.cursor() {
+                                        explorer.update(crate::widgets::file_explorer::Message::StartRename(cursor));
+                                    }
+                                    return self.wrap_command(Command::none());
+                                }
+                                Key::Delete => {
+                                    if let Some(cursor) = explorer.cursor() {
+                                        explorer.update(crate::widgets::file_explorer::Message::Delete(cursor));
+                                    }
+                                    return self.wrap_command(Command::none());
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
                 }
             }
             Message::MouseWheelScrolled(delta) => {
@@ -585,6 +627,11 @@ impl Application for EditorApp {
                 self.state.resize_start_pos = None;
                 self.state.resize_start_size = None;
                 self.state.resize_direction = None;
+            }
+            Message::FileExplorer(msg) => {
+                if let Some(explorer) = self.state.file_explorer_mut() {
+                    explorer.update(msg);
+                }
             }
             Message::RightRailTabSelected(tab) => {
                 self.state.set_selected_right_rail_tab(tab);

@@ -29,6 +29,7 @@ fn map_key(key: IcedKey) -> Option<Key> {
             key::Named::Space => Some(Key::Space),
             key::Named::Tab => Some(Key::Tab),
             key::Named::Backspace => Some(Key::Backspace),
+            key::Named::Delete => Some(Key::Delete),
             key::Named::F1 => Some(Key::Function(1)),
             key::Named::F2 => Some(Key::Function(2)),
             key::Named::F3 => Some(Key::Function(3)),

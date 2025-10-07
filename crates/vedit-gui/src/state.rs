@@ -9,16 +9,31 @@ use iced::widget::text_editor::{
 use crate::widgets::text_editor::{
     ScrollMetrics, buffer_scroll_metrics, scroll_to,
 };
+use crate::widgets::file_explorer::FileExplorer;
 use iced::keyboard;
 use std::collections::HashSet;
 use std::env;
+use std::path::Path;
 use std::time::Duration;
 use vedit_application::{AppState, CommandPaletteState, QuickCommand, QuickCommandId, SettingsState};
-use vedit_core::{Editor, FileNode, KeyEvent, Language, StickyNote, WorkspaceConfig};
-use vedit_debugger_gdb::GdbSession;
+use vedit_core::{Editor, FileNode, KeyEvent, Language, LegacyNodeKind, StickyNote, WorkspaceConfig};
+
 use crate::commands::DebugSession;
 use vedit_config::WorkspaceMetadata;
 use crate::message::RightRailTab;
+
+#[derive(Debug, Clone)]
+pub struct SolutionItem {
+    pub name: String,
+    pub path: String,
+    pub kind: SolutionKind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum SolutionKind {
+    VisualStudio,
+    Makefile,
+}
 
 const ZOOM_STEP_ENV: &str = "VEDIT_ZOOM_STEP";
 const ZOOM_MIN_ENV: &str = "VEDIT_ZOOM_MIN";
@@ -108,6 +123,7 @@ pub struct EditorState {
     syntax: SyntaxSystem,
     workspace_collapsed: HashSet<String>,
     workspace_collapsed_version: u64,
+    file_explorer: Option<FileExplorer>,
     zoom_config: ZoomConfig,
     modifiers: keyboard::Modifiers,
     debugger: DebuggerState,
@@ -138,6 +154,7 @@ impl Default for EditorState {
             syntax: SyntaxSystem::new(),
             workspace_collapsed: HashSet::new(),
             workspace_collapsed_version: 0,
+            file_explorer: None,
             zoom_config,
             modifiers: keyboard::Modifiers::default(),
             debugger: DebuggerState::default(),
@@ -234,6 +251,18 @@ impl EditorState {
 
     pub fn set_selected_right_rail_tab(&mut self, tab: RightRailTab) {
         self.selected_right_rail_tab = tab;
+    }
+
+    pub fn file_explorer(&self) -> Option<&FileExplorer> {
+        self.file_explorer.as_ref()
+    }
+
+    pub fn file_explorer_mut(&mut self) -> Option<&mut FileExplorer> {
+        self.file_explorer.as_mut()
+    }
+
+    pub fn set_file_explorer(&mut self, explorer: Option<FileExplorer>) {
+        self.file_explorer = explorer;
     }
 
     pub fn syntax_settings(&self) -> SyntaxSettings {
@@ -818,6 +847,70 @@ impl EditorState {
 
         if mark_dirty {
             editor.mark_workspace_metadata_dirty();
+        }
+    }
+
+    pub fn scan_workspace_solutions(&self) -> Vec<SolutionItem> {
+        let mut solutions = Vec::new();
+
+        if let Some(tree) = self.app.editor().workspace_tree() {
+            Self::collect_solutions_from_tree(tree, &mut solutions);
+        }
+
+        solutions.sort_by(|a, b| a.name.cmp(&b.name));
+        solutions
+    }
+
+    fn collect_solutions_from_tree(nodes: &[FileNode], solutions: &mut Vec<SolutionItem>) {
+        for node in nodes {
+            // Check for special solution/project nodes created by workspace building
+            match node.kind {
+                LegacyNodeKind::Solution => {
+                    solutions.push(SolutionItem {
+                        name: node.name.clone(),
+                        path: node.path.clone(),
+                        kind: SolutionKind::VisualStudio,
+                    });
+                }
+                LegacyNodeKind::Project => {
+                    // Check if this is a Makefile project by looking at the path
+                    if node.path.to_lowercase().contains("makefile") ||
+                       node.name.to_lowercase().contains("makefile") {
+                        solutions.push(SolutionItem {
+                            name: node.name.clone(),
+                            path: node.path.clone(),
+                            kind: SolutionKind::Makefile,
+                        });
+                    }
+                }
+                _ => {
+                    // Also check for regular files in case they're not processed as special nodes
+                    if !node.is_directory {
+                        if let Some(ext) = Path::new(&node.path)
+                            .extension()
+                            .and_then(|ext| ext.to_str())
+                        {
+                            if ext.eq_ignore_ascii_case("sln") {
+                                solutions.push(SolutionItem {
+                                    name: node.name.clone(),
+                                    path: node.path.clone(),
+                                    kind: SolutionKind::VisualStudio,
+                                });
+                            }
+                        } else if node.name.eq_ignore_ascii_case("makefile") {
+                            solutions.push(SolutionItem {
+                                name: node.name.clone(),
+                                path: node.path.clone(),
+                                kind: SolutionKind::Makefile,
+                            });
+                        }
+                    }
+                }
+            }
+
+            if node.is_directory && node.has_children {
+                Self::collect_solutions_from_tree(&node.children, solutions);
+            }
         }
     }
 }

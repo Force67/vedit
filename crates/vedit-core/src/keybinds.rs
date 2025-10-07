@@ -23,6 +23,7 @@ pub enum Key {
     ArrowLeft,
     ArrowRight,
     Backspace,
+    Delete,
 }
 
 impl Key {
@@ -38,6 +39,7 @@ impl Key {
             "LEFT" | "ARROWLEFT" => Ok(Self::ArrowLeft),
             "RIGHT" | "ARROWRIGHT" => Ok(Self::ArrowRight),
             "BACKSPACE" | "BKSP" => Ok(Self::Backspace),
+            "DELETE" | "DEL" => Ok(Self::Delete),
             other if other.starts_with('F') && other.len() <= 3 => {
                 let number = other[1..]
                     .parse::<u8>()
@@ -68,6 +70,7 @@ impl fmt::Display for Key {
             Key::ArrowLeft => write!(f, "ArrowLeft"),
             Key::ArrowRight => write!(f, "ArrowRight"),
             Key::Backspace => write!(f, "Backspace"),
+            Key::Delete => write!(f, "Delete"),
         }
     }
 }

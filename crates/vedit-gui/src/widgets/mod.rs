@@ -1,6 +1,7 @@
 pub mod bottom_terminal;
 pub mod command_palette;
 pub mod debugger;
+pub mod file_explorer;
 pub mod left_rail;
 pub mod right_rail;
 pub mod text_editor;

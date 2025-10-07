@@ -1,5 +1,5 @@
 use crate::console::{ConsoleKind, ConsoleLineKind, ConsoleStatus};
-use crate::message::{Message, RightRailTab, WorkspaceSnapshot};
+use crate::message::{Message, RightRailTab};
 use crate::state::EditorState;
 use crate::syntax::{format_highlight, SyntaxHighlighter};
 use crate::widgets::debugger;
@@ -10,16 +10,15 @@ use crate::style::{
 };
 use crate::notifications::{Notification, NotificationKind};
 use iced::alignment::{Horizontal, Vertical};
-use iced::widget::lazy;
+
 use iced::widget::{
-    button, column, container, horizontal_space, mouse_area, pick_list, row, scrollable, text, text_input, Column, Row, Rule,
+    button, column, container, horizontal_space, mouse_area, pick_list, row, scrollable, text, text_input, Column, Row,
     vertical_slider,
 };
 use iced::widget::slider;
-use iced::{theme, Alignment, Color, Element, Font, Length, Padding, Renderer};
-use std::collections::HashSet;
-use std::path::Path;
-use vedit_core::{FileNode, NodeKind};
+use iced::{theme, Alignment, Color, Element, Font, Length, Padding};
+
+
 use vedit_application::{SettingsCategory, SETTINGS_CATEGORIES};
 
 pub fn view(state: &EditorState) -> Element<'_, Message> {
@@ -256,6 +255,13 @@ fn render_editor_content(
             btn.into()
         },
         {
+            let mut btn = button(text("Solutions").style(iced::theme::Text::Color(crate::style::MUTED))).style(crate::style::custom_button()).on_press(Message::RightRailTabSelected(RightRailTab::Solutions));
+            if state.selected_right_rail_tab() == RightRailTab::Solutions {
+                btn = btn.style(crate::style::active_document_button());
+            }
+            btn.into()
+        },
+        {
             let mut btn = button(text("Outline").style(iced::theme::Text::Color(crate::style::MUTED))).style(crate::style::custom_button()).on_press(Message::RightRailTabSelected(RightRailTab::Outline));
             if state.selected_right_rail_tab() == RightRailTab::Outline {
                 btn = btn.style(crate::style::active_document_button());
@@ -288,20 +294,50 @@ fn render_editor_content(
 
     let workspace_content: Element<'_, Message> = match state.selected_right_rail_tab() {
         RightRailTab::Workspace => {
-            if let Some((version, tree)) = state.editor().workspace_snapshot() {
-                let collapsed_set: HashSet<String> = state.workspace_collapsed_paths().iter().cloned().collect();
-                scrollable(render_workspace_nodes(
-                    tree.as_slice(),
-                    0,
-                    scale,
-                    &collapsed_set,
-                ))
-                .height(Length::Fill)
-                .style(crate::style::custom_scrollable())
-                .into()
+            if let Some(explorer) = state.file_explorer() {
+                explorer.view().map(Message::FileExplorer)
             } else {
                 scrollable(
                     column![text("Open a folder to browse project files").size((14.0 * scale).max(10.0))]
+                        .spacing(4)
+                        .padding(Padding::from([8.0, 16.0]))
+                )
+                .height(Length::Fill)
+                .style(crate::style::custom_scrollable())
+                .into()
+            }
+        }
+        RightRailTab::Solutions => {
+            if let Some(_root) = state.editor().workspace_root() {
+                let solutions = state.scan_workspace_solutions();
+                let mut column_content = column![text("Solutions").style(iced::theme::Text::Color(crate::style::TEXT))]
+                    .spacing(4)
+                    .padding(8);
+
+                if solutions.is_empty() {
+                    column_content = column_content.push(
+                        text("No solutions or Makefiles found").style(iced::theme::Text::Color(crate::style::MUTED))
+                    );
+                } else {
+                    for solution in solutions {
+                        let icon = match solution.kind {
+                            crate::state::SolutionKind::VisualStudio => "🟦",
+                            crate::state::SolutionKind::Makefile => "⚙",
+                        };
+                        let label = format!("{} {}", icon, solution.name);
+                        let button = button(text(label).style(iced::theme::Text::Color(crate::style::TEXT)))
+                            .style(crate::style::document_button())
+                            .on_press(Message::SolutionSelected(solution.path.clone()));
+                        column_content = column_content.push(button);
+                    }
+                }
+
+                scrollable(column_content)
+                    .style(crate::style::custom_scrollable())
+                    .into()
+            } else {
+                scrollable(
+                    column![text("Open a folder to view solutions").style(iced::theme::Text::Color(crate::style::TEXT))]
                         .spacing(4)
                         .padding(8)
                 )
@@ -764,127 +800,9 @@ fn render_open_files_panel(
         .into()
 }
 
-fn render_workspace_panel(
-    state: &EditorState,
-    scale: f32,
-    spacing_large: f32,
-    spacing_small: f32,
-    sidebar_width: f32,
-) -> Element<'_, Message> {
-    let workspace_title = if let Some(root) = state.editor().workspace_root() {
-        format!("Workspace: {}", root)
-    } else {
-        "Workspace".to_string()
-    };
 
-    let workspace_contents: Element<'_, Message> = if let Some((version, tree)) =
-        state.editor().workspace_snapshot()
-    {
-        let snapshot = WorkspaceSnapshot::new(version, tree);
-        let scale_key = (scale * 100.0).round() as u32;
-        let collapsed_paths = state.workspace_collapsed_paths();
-        let collapsed_version = state.workspace_collapsed_version();
-        lazy(
-            (snapshot, scale_key, collapsed_version, collapsed_paths),
-            |(snapshot, scale_key, _version, collapsed_paths)| -> Element<'static, Message> {
-                let scale = *scale_key as f32 / 100.0;
-                let collapsed_set: HashSet<String> = collapsed_paths.iter().cloned().collect();
-                scrollable(render_workspace_nodes(
-                    snapshot.tree.as_slice(),
-                    0,
-                    scale,
-                    &collapsed_set,
-                ))
-                .height(Length::Fill)
-                .into()
-            },
-        )
-        .into()
-    } else {
-        column![text("Open a folder to browse project files").size((14.0 * scale).max(10.0))]
-            .width(Length::Fill)
-            .height(Length::Shrink)
-            .into()
-    };
 
-    let mut sticky_list = column![]
-        .spacing(spacing_small)
-        .width(Length::Fill);
-    let sticky_notes = state.active_sticky_notes();
-    if sticky_notes.is_empty() {
-        sticky_list = sticky_list.push(
-            text("No sticky notes for this file").size((12.0 * scale).max(9.0)),
-        );
-    } else {
-        for note in sticky_notes {
-            let note_id = note.id;
-            let header = text(format!("Line {}, Column {}", note.line, note.column))
-                .size((12.0 * scale).max(9.0));
-            let input = text_input("Add a note…", &note.content)
-                .on_input(move |value| Message::StickyNoteContentChanged(note_id, value))
-                .padding(spacing_small / 2.0)
-                .size((14.0 * scale).max(10.0))
-                .width(Length::Fill);
-            let remove = button(text("Remove").size((12.0 * scale).max(9.0)))
-                .style(theme::Button::Text)
-                .on_press(Message::StickyNoteDeleted(note_id));
-            let entry = column![
-                header,
-                input,
-                row![horizontal_space().width(Length::Fill), remove]
-                    .align_items(Alignment::Center),
-            ]
-            .spacing(spacing_small / 2.0)
-            .width(Length::Fill);
-            sticky_list = sticky_list.push(
-                container(entry)
-                    .padding(spacing_small)
-                    .width(Length::Fill)
-                    .style(panel_container()),
-            );
-        }
-    }
 
-    let add_button = button(text("Add Sticky Note").size((14.0 * scale).max(10.0)))
-        .style(theme::Button::Primary)
-        .on_press(Message::StickyNoteCreateRequested);
-
-    let sticky_section = column![
-        text("Sticky Notes").size((16.0 * scale).max(12.0)),
-        sticky_list,
-        add_button,
-    ]
-    .spacing(spacing_small)
-    .width(Length::Fill);
-
-    container(
-        column![
-            text(workspace_title).size((16.0 * scale).max(12.0)),
-            workspace_contents,
-            Rule::horizontal(1),
-            sticky_section,
-        ]
-        .spacing(spacing_small)
-        .height(Length::Fill),
-    )
-    .padding(spacing_large)
-    .width(Length::Fixed(sidebar_width))
-    .height(Length::Fill)
-    .style(panel_container())
-    .into()
-}
-
-fn render_workspace_nodes(
-    nodes: &[FileNode],
-    indent: u16,
-    scale: f32,
-    collapsed: &HashSet<String>,
-) -> Column<'static, Message> {
-    let spacing = ((4.0 * scale).max(2.0)).round() as u16;
-    nodes.iter().fold(Column::new().spacing(spacing), |column, node| {
-        column.push(render_workspace_node(node, indent, scale, collapsed))
-    })
-}
 
 fn render_console_panel(
     state: &EditorState,
@@ -1127,66 +1045,3 @@ fn render_command_palette(state: &EditorState) -> Element<'_, Message> {
         .into()
 }
 
-fn render_workspace_node(
-    node: &FileNode,
-    indent: u16,
-    scale: f32,
-    collapsed: &HashSet<String>,
-) -> Element<'static, Message> {
-    let label_size = (14.0 * scale).max(10.0);
-    let is_collapsed = node.is_directory && collapsed.contains(&node.path);
-    let can_expand = node.is_directory && (node.has_children || !node.is_fully_scanned);
-    let tag = match node.kind {
-        NodeKind::Solution => "[SLN] ",
-        NodeKind::Project | NodeKind::ProjectStub => "[PRJ] ",
-        _ => "",
-    };
-    let base_label = if node.is_directory {
-        format!("{}{}{}", tag, node.name, if matches!(node.kind, NodeKind::Solution | NodeKind::Project) { "" } else { "/" })
-    } else {
-        format!("{}{}", tag, node.name)
-    };
-    let entry: Element<'static, Message> = if node.is_directory {
-        let indicator = if can_expand {
-            if is_collapsed { "▸" } else { "▾" }
-        } else if matches!(node.kind, NodeKind::Solution | NodeKind::Project | NodeKind::ProjectStub) {
-            "◇"
-        } else {
-            "•"
-        };
-        let row_content = row![
-            text(indicator).size(label_size),
-            text(base_label).size(label_size),
-        ]
-        .spacing((6.0 * scale).max(3.0))
-        .align_items(Alignment::Center);
-
-        button(row_content)
-            .style(theme::Button::Text)
-            .width(Length::Fill)
-            .on_press(Message::WorkspaceDirectoryToggled(node.path.clone()))
-            .into()
-    } else {
-        button(text(base_label).size(label_size))
-            .style(theme::Button::Text)
-            .width(Length::Fill)
-            .on_press(Message::WorkspaceFileActivated(node.path.clone()))
-            .into()
-    };
-
-    let indent_padding = ((indent as f32 * 12.0 * scale).round() as u16).min(u16::MAX);
-
-    let mut column = Column::new();
-    column = column.push(container(entry).padding(Padding::from([0, 0, 0, indent_padding])));
-
-    if node.is_directory && !is_collapsed && !node.children.is_empty() {
-        column = column.push(render_workspace_nodes(
-            &node.children,
-            indent + 1,
-            scale,
-            collapsed,
-        ));
-    }
-
-    column.into()
-}

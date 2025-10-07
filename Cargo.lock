@@ -3882,6 +3882,7 @@ name = "vedit-core"
 version = "0.1.0"
 dependencies = [
  "serde",
+ "slab",
  "toml",
  "vedit-config",
  "vedit-make",
@@ -3917,6 +3918,7 @@ dependencies = [
  "iced_graphics",
  "portable-pty",
  "rfd",
+ "slab",
  "tree-sitter",
  "tree-sitter-c",
  "tree-sitter-cpp",
