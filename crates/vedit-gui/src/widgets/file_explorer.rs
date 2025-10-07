@@ -376,7 +376,6 @@ impl FileExplorer {
     fn row_view(&self, id: NodeId) -> Element<Message> {
         if let Some(node) = self.tree.nodes.get(id) {
             let is_selected = self.tree.selection.contains(&id);
-            let is_focused = self.tree.cursor == Some(id);
             let depth = self.get_node_depth(id);
 
             let icon = match node.kind {
@@ -395,13 +394,9 @@ impl FileExplorer {
                 ""
             };
 
-            let mut name = text(&node.name);
-            if is_selected {
-                name = name.style(iced::theme::Text::Color(style::PRIMARY));
-            } else {
-                name = name.style(iced::theme::Text::Color(style::TEXT));
-            }
-            let name_element = name;
+            let name_button = button(text(&node.name).style(if is_selected { iced::theme::Text::Color(style::PRIMARY) } else { iced::theme::Text::Color(style::TEXT) }))
+                .style(style::custom_button())
+                .on_press(Message::RowClick(id));
 
             // Create indentation based on depth
             let indent_width = depth * 16; // 16 pixels per level
@@ -424,18 +419,12 @@ impl FileExplorer {
                 indent,
                 chevron_element,
                 text(icon).size(14),
-                name_element,
+                name_button,
             ]
             .spacing(4)
             .align_items(Alignment::Center);
 
-            let mut button = button(row)
-                .style(if is_selected { style::selected_button() } else { style::custom_button() })
-                .width(Length::Fill);
-
-            button = button.on_press(Message::RowClick(id));
-
-            button.into()
+            row.into()
         } else {
             text("Invalid node").into()
         }

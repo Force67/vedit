@@ -3,36 +3,70 @@ use crate::debugger::{DebugLaunchPlan, DebuggerConsoleEntry, DebuggerState, Debu
 use crate::notifications::{Notification, NotificationCenter, NotificationRequest};
 use crate::scaling;
 use crate::syntax::{DocumentKey, SyntaxSettings, SyntaxSystem};
-use iced::widget::text_editor::{
-    Action as TextEditorAction, Content,
-};
-use crate::widgets::text_editor::{
-    ScrollMetrics, buffer_scroll_metrics, scroll_to,
-};
 use crate::widgets::file_explorer::FileExplorer;
+use crate::widgets::text_editor::{buffer_scroll_metrics, scroll_to, ScrollMetrics};
 use iced::keyboard;
+use iced::widget::text_editor::{Action as TextEditorAction, Content};
+use std::cmp::Ordering;
 use std::collections::HashSet;
 use std::env;
-use std::path::Path;
+use std::ffi::OsStr;
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 use vedit_application::{AppState, CommandPaletteState, QuickCommand, QuickCommandId, SettingsState};
-use vedit_core::{Editor, FileNode, KeyEvent, Language, LegacyNodeKind, StickyNote, WorkspaceConfig};
+use vedit_core::{Editor, FileNode, KeyEvent, Language, StickyNote, WorkspaceConfig};
+use vedit_make::Makefile;
+use vedit_vs::{Solution as VsSolution, VcxProject};
 
 use crate::commands::DebugSession;
-use vedit_config::WorkspaceMetadata;
 use crate::message::RightRailTab;
+use vedit_config::WorkspaceMetadata;
+
+const IGNORED_DIRECTORIES: [&str; 4] = ["target", ".git", ".hg", ".svn"];
 
 #[derive(Debug, Clone)]
-pub struct SolutionItem {
+pub struct SolutionTreeNode {
     pub name: String,
-    pub path: String,
-    pub kind: SolutionKind,
+    pub path: Option<String>,
+    pub is_directory: bool,
+    pub children: Vec<SolutionTreeNode>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum SolutionKind {
-    VisualStudio,
-    Makefile,
+#[derive(Debug, Clone)]
+pub struct VisualStudioProjectEntry {
+    pub name: String,
+    pub path: String,
+    pub files: Vec<SolutionTreeNode>,
+    pub load_error: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct VisualStudioSolutionEntry {
+    pub name: String,
+    pub path: String,
+    pub projects: Vec<VisualStudioProjectEntry>,
+    pub warnings: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct MakefileEntry {
+    pub name: String,
+    pub path: String,
+    pub files: Vec<SolutionTreeNode>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SolutionErrorEntry {
+    pub path: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone)]
+pub enum SolutionBrowserEntry {
+    VisualStudio(VisualStudioSolutionEntry),
+    Makefile(MakefileEntry),
+    Error(SolutionErrorEntry),
 }
 
 const ZOOM_STEP_ENV: &str = "VEDIT_ZOOM_STEP";
@@ -124,6 +158,7 @@ pub struct EditorState {
     workspace_collapsed: HashSet<String>,
     workspace_collapsed_version: u64,
     file_explorer: Option<FileExplorer>,
+    solution_browser: Vec<SolutionBrowserEntry>,
     pub recent_files: Vec<String>,
     zoom_config: ZoomConfig,
     modifiers: keyboard::Modifiers,
@@ -156,6 +191,7 @@ impl Default for EditorState {
             workspace_collapsed: HashSet::new(),
             workspace_collapsed_version: 0,
             file_explorer: None,
+            solution_browser: Vec::new(),
             recent_files: vec![],
             zoom_config,
             modifiers: keyboard::Modifiers::default(),
@@ -265,6 +301,95 @@ impl EditorState {
 
     pub fn set_file_explorer(&mut self, explorer: Option<FileExplorer>) {
         self.file_explorer = explorer;
+    }
+
+    pub fn refresh_file_explorer(&mut self) {
+        let Some(root) = self.app.editor().workspace_root() else {
+            self.file_explorer = None;
+            return;
+        };
+
+        let mut explorer_root = PathBuf::from(root);
+
+        if explorer_root.is_file() {
+            if let Some(parent) = explorer_root.parent() {
+                explorer_root = parent.to_path_buf();
+            }
+        }
+
+        self.file_explorer = Some(FileExplorer::new(explorer_root));
+    }
+
+    pub fn workspace_solutions(&self) -> &[SolutionBrowserEntry] {
+        &self.solution_browser
+    }
+
+    pub fn refresh_solution_browser(&mut self) -> Result<(), String> {
+        self.solution_browser.clear();
+
+        let Some(root) = self.app.editor().workspace_root() else {
+            return Ok(());
+        };
+
+        let root_path = PathBuf::from(root);
+        let mut solution_paths = Vec::new();
+        let mut makefile_paths = Vec::new();
+        let mut warnings = Vec::new();
+
+        scan_workspace_artifacts(&root_path, &mut solution_paths, &mut makefile_paths, &mut warnings);
+
+        solution_paths.sort();
+        solution_paths.dedup();
+        makefile_paths.sort();
+        makefile_paths.dedup();
+
+        let mut entries = Vec::new();
+
+        for warning in warnings {
+            entries.push(SolutionBrowserEntry::Error(SolutionErrorEntry {
+                path: root_path.to_string_lossy().to_string(),
+                message: warning,
+            }));
+        }
+
+        for path in solution_paths {
+            match VsSolution::from_path(&path) {
+                Ok(solution) => {
+                    entries.push(SolutionBrowserEntry::VisualStudio(convert_solution(solution)));
+                }
+                Err(err) => {
+                    entries.push(SolutionBrowserEntry::Error(SolutionErrorEntry {
+                        path: path.to_string_lossy().to_string(),
+                        message: err.to_string(),
+                    }));
+                }
+            }
+        }
+
+        for path in makefile_paths {
+            match Makefile::from_path(&path) {
+                Ok(makefile) => {
+                    entries.push(SolutionBrowserEntry::Makefile(convert_makefile(makefile)));
+                }
+                Err(err) => {
+                    entries.push(SolutionBrowserEntry::Error(SolutionErrorEntry {
+                        path: path.to_string_lossy().to_string(),
+                        message: err.to_string(),
+                    }));
+                }
+            }
+        }
+
+        entries.sort_by(|a, b| {
+            let (order_a, name_a) = solution_entry_sort_key(a);
+            let (order_b, name_b) = solution_entry_sort_key(b);
+            order_a
+                .cmp(&order_b)
+                .then_with(|| name_a.cmp(&name_b))
+        });
+
+        self.solution_browser = entries;
+        Ok(())
     }
 
     pub fn syntax_settings(&self) -> SyntaxSettings {
@@ -451,6 +576,9 @@ impl EditorState {
         // }
         self.workspace_collapsed_version = self.workspace_collapsed_version.wrapping_add(1);
         if let Err(err) = self.refresh_debug_targets() {
+            self.set_error(Some(err));
+        }
+        if let Err(err) = self.refresh_solution_browser() {
             self.set_error(Some(err));
         }
         self.sync_buffer_from_editor();
@@ -852,67 +980,247 @@ impl EditorState {
         }
     }
 
-    pub fn scan_workspace_solutions(&self) -> Vec<SolutionItem> {
-        let mut solutions = Vec::new();
+}
 
-        if let Some(tree) = self.app.editor().workspace_tree() {
-            Self::collect_solutions_from_tree(tree, &mut solutions);
+fn solution_entry_sort_key(entry: &SolutionBrowserEntry) -> (u8, String) {
+    match entry {
+        SolutionBrowserEntry::VisualStudio(solution) => (0, solution.name.clone()),
+        SolutionBrowserEntry::Makefile(makefile) => (1, makefile.name.clone()),
+        SolutionBrowserEntry::Error(error) => (2, error.path.clone()),
+    }
+}
+
+fn scan_workspace_artifacts(
+    root: &Path,
+    solutions: &mut Vec<PathBuf>,
+    makefiles: &mut Vec<PathBuf>,
+    warnings: &mut Vec<String>,
+) {
+    let read_dir = match fs::read_dir(root) {
+        Ok(read_dir) => read_dir,
+        Err(err) => {
+            warnings.push(format!("Unable to read {}: {}", root.display(), err));
+            return;
+        }
+    };
+
+    for entry in read_dir {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(err) => {
+                warnings.push(format!("Failed to read directory entry: {}", err));
+                continue;
+            }
+        };
+
+        let path = entry.path();
+        let file_type = match entry.file_type() {
+            Ok(file_type) => file_type,
+            Err(err) => {
+                warnings.push(format!(
+                    "Failed to resolve file type for {}: {}",
+                    path.display(),
+                    err
+                ));
+                continue;
+            }
+        };
+
+        if file_type.is_dir() {
+            if should_ignore_directory(&path) {
+                continue;
+            }
+            scan_workspace_artifacts(&path, solutions, makefiles, warnings);
+            continue;
         }
 
-        solutions.sort_by(|a, b| a.name.cmp(&b.name));
-        solutions
+        if !file_type.is_file() {
+            continue;
+        }
+
+        if is_solution_file(&path) {
+            solutions.push(path.clone());
+            continue;
+        }
+
+        if is_makefile(&path) {
+            makefiles.push(path);
+        }
+    }
+}
+
+fn should_ignore_directory(path: &Path) -> bool {
+    let Some(name) = path.file_name().and_then(OsStr::to_str) else {
+        return false;
+    };
+
+    IGNORED_DIRECTORIES
+        .iter()
+        .any(|ignored| name.eq_ignore_ascii_case(ignored))
+}
+
+fn is_solution_file(path: &Path) -> bool {
+    path.extension()
+        .and_then(OsStr::to_str)
+        .map(|ext| ext.eq_ignore_ascii_case("sln"))
+        == Some(true)
+}
+
+fn is_makefile(path: &Path) -> bool {
+    if let Some(ext) = path.extension().and_then(OsStr::to_str) {
+        if ext.eq_ignore_ascii_case("mk") {
+            return true;
+        }
     }
 
-    fn collect_solutions_from_tree(nodes: &[FileNode], solutions: &mut Vec<SolutionItem>) {
-        for node in nodes {
-            // Check for special solution/project nodes created by workspace building
-            match node.kind {
-                LegacyNodeKind::Solution => {
-                    solutions.push(SolutionItem {
-                        name: node.name.clone(),
-                        path: node.path.clone(),
-                        kind: SolutionKind::VisualStudio,
-                    });
-                }
-                LegacyNodeKind::Project => {
-                    // Check if this is a Makefile project by looking at the path
-                    if node.path.to_lowercase().contains("makefile") ||
-                       node.name.to_lowercase().contains("makefile") {
-                        solutions.push(SolutionItem {
-                            name: node.name.clone(),
-                            path: node.path.clone(),
-                            kind: SolutionKind::Makefile,
-                        });
-                    }
-                }
-                _ => {
-                    // Also check for regular files in case they're not processed as special nodes
-                    if !node.is_directory {
-                        if let Some(ext) = Path::new(&node.path)
-                            .extension()
-                            .and_then(|ext| ext.to_str())
-                        {
-                            if ext.eq_ignore_ascii_case("sln") {
-                                solutions.push(SolutionItem {
-                                    name: node.name.clone(),
-                                    path: node.path.clone(),
-                                    kind: SolutionKind::VisualStudio,
-                                });
-                            }
-                        } else if node.name.eq_ignore_ascii_case("makefile") {
-                            solutions.push(SolutionItem {
-                                name: node.name.clone(),
-                                path: node.path.clone(),
-                                kind: SolutionKind::Makefile,
-                            });
-                        }
-                    }
-                }
-            }
+    path.file_name()
+        .and_then(OsStr::to_str)
+        .map(|name| name.eq_ignore_ascii_case("makefile"))
+        == Some(true)
+}
 
-            if node.is_directory && node.has_children {
-                Self::collect_solutions_from_tree(&node.children, solutions);
+fn convert_solution(solution: VsSolution) -> VisualStudioSolutionEntry {
+    let mut warnings = Vec::new();
+    let mut projects = Vec::new();
+
+    for project in solution.projects {
+        let path = project
+            .absolute_path
+            .to_string_lossy()
+            .to_string();
+        let load_error = project.load_error.clone();
+
+        if let Some(ref err) = load_error {
+            warnings.push(format!("{}: {}", project.name, err));
+        }
+
+        let files = project
+            .project
+            .map(|vcx| build_vcx_tree(&vcx))
+            .unwrap_or_default();
+
+        projects.push(VisualStudioProjectEntry {
+            name: project.name,
+            path,
+            files,
+            load_error,
+        });
+    }
+
+    projects.sort_by(|a, b| a.name.cmp(&b.name));
+
+    VisualStudioSolutionEntry {
+        name: solution.name,
+        path: solution.path.to_string_lossy().to_string(),
+        projects,
+        warnings,
+    }
+}
+
+fn convert_makefile(makefile: Makefile) -> MakefileEntry {
+    let mut files = build_tree_from_paths(
+        makefile
+            .files
+            .iter()
+            .map(|item| (item.include.clone(), item.full_path.to_string_lossy().to_string())),
+    );
+    sort_solution_nodes(&mut files);
+
+    MakefileEntry {
+        name: makefile.name,
+        path: makefile.path.to_string_lossy().to_string(),
+        files,
+    }
+}
+
+fn build_vcx_tree(project: &VcxProject) -> Vec<SolutionTreeNode> {
+    let mut nodes = build_tree_from_paths(
+        project
+            .files
+            .iter()
+            .map(|item| (item.include.clone(), item.full_path.to_string_lossy().to_string())),
+    );
+    sort_solution_nodes(&mut nodes);
+    nodes
+}
+
+fn build_tree_from_paths<I>(paths: I) -> Vec<SolutionTreeNode>
+where
+    I: Iterator<Item = (PathBuf, String)>,
+{
+    let mut roots = Vec::new();
+
+    for (path, full_path) in paths {
+        let mut components: Vec<String> = path
+            .components()
+            .filter_map(|component| match component {
+                std::path::Component::Normal(part) => part.to_str().map(|value| value.to_string()),
+                _ => None,
+            })
+            .collect();
+
+        if components.is_empty() {
+            if let Some(name) = Path::new(&full_path)
+                .file_name()
+                .and_then(|part| part.to_str())
+            {
+                components.push(name.to_string());
             }
         }
+
+        if components.is_empty() {
+            continue;
+        }
+
+        insert_tree_node(&mut roots, &components, Some(full_path));
+    }
+
+    roots
+}
+
+fn insert_tree_node(nodes: &mut Vec<SolutionTreeNode>, components: &[String], path: Option<String>) {
+    if components.is_empty() {
+        return;
+    }
+
+    let name = &components[0];
+    let is_last = components.len() == 1;
+
+    let mut node = nodes
+        .iter_mut()
+        .find(|candidate| candidate.name == *name);
+
+    if node.is_none() {
+        nodes.push(SolutionTreeNode {
+            name: name.clone(),
+            path: if is_last { path.clone() } else { None },
+            is_directory: !is_last,
+            children: Vec::new(),
+        });
+        node = nodes.iter_mut().find(|candidate| candidate.name == *name);
+    }
+
+    if let Some(node) = node {
+        if is_last {
+            if path.is_some() {
+                node.path = path.clone();
+            }
+            node.is_directory = node.is_directory || path.is_none();
+        } else {
+            node.is_directory = true;
+            insert_tree_node(&mut node.children, &components[1..], path);
+        }
+    }
+}
+
+fn sort_solution_nodes(nodes: &mut [SolutionTreeNode]) {
+    nodes.sort_by(|a, b| match (a.is_directory, b.is_directory) {
+        (true, false) => Ordering::Less,
+        (false, true) => Ordering::Greater,
+        _ => a.name.cmp(&b.name),
+    });
+
+    for node in nodes.iter_mut() {
+        sort_solution_nodes(&mut node.children);
     }
 }

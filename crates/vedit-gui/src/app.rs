@@ -112,7 +112,7 @@ impl Application for EditorApp {
                 })) => {
                     self.state
                         .install_workspace(root.clone(), tree, config, metadata);
-                    self.state.set_file_explorer(Some(crate::widgets::file_explorer::FileExplorer::new(std::path::PathBuf::from(root))));
+                    self.state.refresh_file_explorer();
                     self.state.clear_error();
                 }
                 Ok(None) => {
@@ -131,6 +131,7 @@ impl Application for EditorApp {
                 })) => {
                     self.state
                         .install_workspace(root.clone(), tree, config, metadata);
+                    self.state.refresh_file_explorer();
                     self.state.clear_error();
                 }
                 Ok(None) => {}
@@ -635,18 +636,17 @@ impl Application for EditorApp {
                 self.state.resize_direction = None;
             }
             Message::FileExplorer(msg) => {
-                match msg {
-                    crate::widgets::file_explorer::Message::OpenFile(path) => {
-                        return self.wrap_command(Command::perform(
-                            commands::load_document_from_path(path),
-                            |result| Message::FileLoaded(result.map(Some)),
-                        ));
-                    }
-                    _ => {
-                        if let Some(explorer) = self.state.file_explorer_mut() {
-                            let _ = explorer.update(msg);
-                        }
-                    }
+                if let crate::widgets::file_explorer::Message::OpenFile(path) = &msg {
+                    return self.wrap_command(Command::perform(
+                        commands::load_document_from_path(path.clone()),
+                        |result| Message::FileLoaded(result.map(Some)),
+                    ));
+                }
+
+                if let Some(explorer) = self.state.file_explorer_mut() {
+                    let command = explorer.update(msg);
+                    return self
+                        .wrap_command(command.map(Message::FileExplorer));
                 }
             }
             Message::RightRailTabSelected(tab) => {

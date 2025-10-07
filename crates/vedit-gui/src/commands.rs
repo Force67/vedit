@@ -100,17 +100,17 @@ pub async fn pick_workspace() -> Result<Option<WorkspaceData>, String> {
 
 pub async fn pick_solution() -> Result<Option<WorkspaceData>, String> {
     if let Some(path) = FileDialog::new().pick_file() {
-        let root_string = path.to_string_lossy().to_string();
         let tree = Editor::build_solution_tree(&path)
             .map_err(|err| format!("Failed to load solution: {}", err))?;
 
-        let config_root = path
+        let root_dir = path
             .parent()
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from("."));
-        let mut config = WorkspaceConfig::load_or_default(&config_root)
+        let root_string = root_dir.to_string_lossy().to_string();
+        let mut config = WorkspaceConfig::load_or_default(&root_dir)
             .map_err(|err| format!("Failed to load workspace config: {}", err))?;
-        let metadata = WorkspaceMetadata::load_or_default(&config_root)
+        let metadata = WorkspaceMetadata::load_or_default(&root_dir)
             .map_err(|err| format!("Failed to load workspace metadata: {}", err))?;
         if config.name.is_none() {
             if let Some(name) = path.file_stem().and_then(|stem| stem.to_str()) {
@@ -248,17 +248,17 @@ pub async fn start_debug_session(request: DebugSessionRequest) -> Result<DebugSe
 
 pub async fn load_solution_from_path(path: String) -> Result<Option<WorkspaceData>, String> {
     let path_buf = PathBuf::from(&path);
-    let root_string = path_buf.to_string_lossy().to_string();
     let tree = Editor::build_solution_tree(&path_buf)
         .map_err(|err| format!("Failed to load solution: {}", err))?;
 
-    let config_root = path_buf
+    let root_dir = path_buf
         .parent()
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("."));
-    let mut config = WorkspaceConfig::load_or_default(&config_root)
+    let root_string = root_dir.to_string_lossy().to_string();
+    let mut config = WorkspaceConfig::load_or_default(&root_dir)
         .map_err(|err| format!("Failed to load workspace config: {}", err))?;
-    let metadata = WorkspaceMetadata::load_or_default(&config_root)
+    let metadata = WorkspaceMetadata::load_or_default(&root_dir)
         .map_err(|err| format!("Failed to load workspace metadata: {}", err))?;
     if config.name.is_none() {
         if let Some(name) = path_buf.file_stem().and_then(|stem| stem.to_str()) {
