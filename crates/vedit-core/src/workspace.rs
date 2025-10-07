@@ -147,6 +147,17 @@ impl WorkspaceProvider for FsWorkspaceProvider {
                 is_hidden,
             });
         }
+        entries.sort_by(|a, b| {
+            let a_is_dir = matches!(a.kind, NodeKind::Folder);
+            let b_is_dir = matches!(b.kind, NodeKind::Folder);
+            if a_is_dir && !b_is_dir {
+                std::cmp::Ordering::Less
+            } else if !a_is_dir && b_is_dir {
+                std::cmp::Ordering::Greater
+            } else {
+                a.name.cmp(&b.name)
+            }
+        });
         Ok(entries)
     }
 

@@ -139,6 +139,12 @@ impl Application for EditorApp {
                 }
             },
             Message::WorkspaceFileActivated(path) => {
+                // Add to recent files
+                self.state.recent_files.retain(|p| p != &path);
+                self.state.recent_files.insert(0, path.clone());
+                if self.state.recent_files.len() > 10 {
+                    self.state.recent_files.truncate(10);
+                }
                 return self.wrap_command(Command::perform(
                     commands::load_document_from_path(path),
                     |result| Message::FileLoaded(result.map(Some)),
@@ -629,8 +635,18 @@ impl Application for EditorApp {
                 self.state.resize_direction = None;
             }
             Message::FileExplorer(msg) => {
-                if let Some(explorer) = self.state.file_explorer_mut() {
-                    explorer.update(msg);
+                match msg {
+                    crate::widgets::file_explorer::Message::OpenFile(path) => {
+                        return self.wrap_command(Command::perform(
+                            commands::load_document_from_path(path),
+                            |result| Message::FileLoaded(result.map(Some)),
+                        ));
+                    }
+                    _ => {
+                        if let Some(explorer) = self.state.file_explorer_mut() {
+                            let _ = explorer.update(msg);
+                        }
+                    }
                 }
             }
             Message::RightRailTabSelected(tab) => {

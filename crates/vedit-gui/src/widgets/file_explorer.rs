@@ -10,6 +10,7 @@ pub enum Message {
     TreeToggle(NodeId),
     TreeSelect(NodeId, SelectKind),
     Open(NodeId, OpenKind),
+    OpenFile(String),
     InlineAction(NodeId, InlineAction),
     StartRename(NodeId),
     CommitRename(NodeId, String),
@@ -84,6 +85,7 @@ pub struct GitMap {
 pub struct FileExplorer {
     tree: WorkspaceTree,
     provider: FsWorkspaceProvider,
+    root_path: std::path::PathBuf,
     vrows: Vec<NodeId>,
     row_height: u16,
     scroll_offset: f32,
@@ -131,6 +133,7 @@ impl FileExplorer {
         Self {
             tree,
             provider,
+            root_path: root_path.clone(),
             vrows,
             row_height: 28,
             scroll_offset: 0.0,
@@ -239,6 +242,13 @@ impl FileExplorer {
                 Command::none()
             }
             Message::RowClick(id) => {
+                if let Some(node) = self.tree.nodes.get(id) {
+                    if matches!(node.kind, NodeKind::File) {
+                        let full_path = self.root_path.join(&node.rel_path).to_string_lossy().to_string();
+                        return Command::perform(async { Message::OpenFile(full_path) }, |msg| msg);
+                    }
+                }
+                // For folders or other, handle selection and double click
                 let now = std::time::Instant::now();
                 if let Some((last_id, last_time)) = self.last_click {
                     if last_id == id && now.duration_since(last_time) < std::time::Duration::from_millis(500) {
@@ -248,6 +258,7 @@ impl FileExplorer {
                                 if self.tree.expanded.contains(&id) {
                                     self.tree.expanded.remove(&id);
                                 } else {
+                                    self.provider.load_children(&mut self.tree, id).unwrap_or(());
                                     self.tree.expanded.insert(id);
                                 }
                                 self.update_visible_rows();
@@ -310,11 +321,7 @@ impl FileExplorer {
             .push(header)
             .push(tree_view);
 
-        container(content)
-            .style(style::panel_container())
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .into()
+        content.into()
     }
 
     fn header(&self) -> Element<Message> {
