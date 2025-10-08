@@ -1,9 +1,10 @@
 use iced::widget::{button, column, container, horizontal_space, row, scrollable, text, text_input, Column, Row, Scrollable};
 use iced::{Command, Element, Length, Padding, Alignment};
-use slab::Slab;
+use iced_font_awesome::fa_icon_solid;
+use crate::style;
 use vedit_core::{FilterState, FsWorkspaceProvider, GitStatus, Node, NodeId, NodeKind, WorkspaceProvider, WorkspaceTree};
 
-use crate::style;
+
 
 #[derive(Debug, Clone)]
 pub enum Message {
@@ -379,19 +380,19 @@ impl FileExplorer {
             let depth = self.get_node_depth(id);
 
             let icon = match node.kind {
-                NodeKind::Folder => "📁",
-                NodeKind::File => "📄",
-                NodeKind::Symlink(_) => "🔗",
+                NodeKind::Folder => fa_icon_solid("folder").color(iced::Color::WHITE).size(14.0),
+                NodeKind::File => fa_icon_solid("file").color(iced::Color::WHITE).size(14.0),
+                NodeKind::Symlink(_) => fa_icon_solid("link").color(iced::Color::WHITE).size(14.0),
             };
 
             let chevron = if matches!(node.kind, NodeKind::Folder) {
                 if self.tree.expanded.contains(&id) {
-                    "▼"
+                    fa_icon_solid("chevron-down").color(iced::Color::WHITE).size(12.0)
                 } else {
-                    "▶"
+                    fa_icon_solid("chevron-right").color(iced::Color::WHITE).size(12.0)
                 }
             } else {
-                ""
+                fa_icon_solid("chevron-right").color(iced::Color::TRANSPARENT).size(12.0)
             };
 
             let name_button = button(text(&node.name).style(if is_selected { iced::theme::Text::Color(style::PRIMARY) } else { iced::theme::Text::Color(style::TEXT) }))
@@ -406,8 +407,8 @@ impl FileExplorer {
                 horizontal_space().width(Length::Fixed(0.0))
             };
 
-            let chevron_element: Element<Message> = if !chevron.is_empty() {
-                button(text(chevron).size(12))
+            let chevron_element: Element<Message> = if matches!(node.kind, NodeKind::Folder) {
+                button(chevron.size(12.0))
                     .style(style::custom_button())
                     .on_press(Message::TreeToggle(id))
                     .into()
@@ -418,7 +419,7 @@ impl FileExplorer {
             let row = row![
                 indent,
                 chevron_element,
-                text(icon).size(14),
+                icon.size(14.0),
                 name_button,
             ]
             .spacing(4)

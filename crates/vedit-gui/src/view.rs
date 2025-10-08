@@ -19,6 +19,7 @@ use iced::widget::{
     vertical_slider,
 };
 use iced_aw::Modal;
+use iced_font_awesome::fa_icon_solid;
 
 use iced::Pixels;
 use iced::widget::slider;
@@ -102,7 +103,7 @@ fn render_command_palette_contents(state: &EditorState) -> Element<'_, Message> 
     let header = row![
         text("Command Prompt").size((18.0 * scale).max(14.0)),
         horizontal_space().width(Length::Fill),
-        button(text("×").size((16.0 * scale).max(12.0)))
+        button(fa_icon_solid("xmark").size((16.0 * scale).max(12.0)).color(iced::Color::WHITE))
             .style(theme::Button::Text)
             .on_press(Message::CommandPaletteClosed),
     ]
@@ -228,38 +229,56 @@ fn render_title_bar(
             .style(top_bar_button())
             .on_press(Message::SolutionOpenRequested),
         {
-            let label = if state.command_palette().is_open() {
-                "Command Prompt ▲"
+            let icon = if state.command_palette().is_open() {
+                fa_icon_solid("angle-up").color(iced::Color::WHITE)
             } else {
-                "Command Prompt ▼"
+                fa_icon_solid("angle-down").color(iced::Color::WHITE)
             };
 
-            button(text(label).size((14.0 * scale).max(10.0)))
+            button(row![
+                text("Command Prompt").size((14.0 * scale).max(10.0)),
+                icon.size((14.0 * scale).max(10.0))
+            ].spacing(4.0))
                 .style(top_bar_button())
                 .on_press(Message::CommandPromptToggled)
         },
         {
-            let label = if state.console().is_visible() {
-                "Terminal ▲"
+            let icon = if state.console().is_visible() {
+                fa_icon_solid("angle-up").color(iced::Color::WHITE)
             } else {
-                "Terminal ▼"
+                fa_icon_solid("angle-down").color(iced::Color::WHITE)
             };
 
-            button(text(label).size((14.0 * scale).max(10.0)))
+            button(row![
+                text("Terminal").size((14.0 * scale).max(10.0)),
+                icon.size((14.0 * scale).max(10.0))
+            ].spacing(4.0))
                 .style(top_bar_button())
                 .on_press(Message::ConsoleVisibilityToggled)
         },
-        button(text("▶ Run").size((14.0 * scale).max(10.0)))
+        button(row![
+            fa_icon_solid("play").size((14.0 * scale).max(10.0)).color(iced::Color::WHITE),
+            text("Run").size((14.0 * scale).max(10.0))
+        ].spacing(4.0))
             .style(top_bar_button())
             .on_press(Message::DebuggerLaunchRequested),
-        button(text("■ Stop").size((14.0 * scale).max(10.0)))
+        button(row![
+            fa_icon_solid("stop").size((14.0 * scale).max(10.0)).color(iced::Color::WHITE),
+            text("Stop").size((14.0 * scale).max(10.0))
+        ].spacing(4.0))
             .style(top_bar_button())
             .on_press(Message::DebuggerStopRequested),
         {
             let summary = state.debugger().selection_summary();
-            let arrow = if state.debugger_menu_open() { '▲' } else { '▼' };
-            let label = format!("{} {}", summary, arrow);
-            button(text(label).size((14.0 * scale).max(10.0)))
+            let icon = if state.debugger_menu_open() {
+                fa_icon_solid("angle-up").color(iced::Color::WHITE)
+            } else {
+                fa_icon_solid("angle-down").color(iced::Color::WHITE)
+            };
+            button(row![
+                text(summary).size((14.0 * scale).max(10.0)),
+                icon.size((14.0 * scale).max(10.0))
+            ].spacing(4.0))
                 .style(top_bar_button())
                 .on_press(Message::DebuggerMenuToggled)
         },
@@ -274,18 +293,18 @@ fn render_title_bar(
         Message::SettingsOpened
     };
 
-    let settings_button = button(text("⚙").size((16.0 * scale).max(12.0)))
+    let settings_button = button(fa_icon_solid("gear").size((16.0 * scale).max(12.0)).color(iced::Color::WHITE))
         .style(top_bar_button())
         .on_press(message);
 
     let window_buttons = row![
-        button(text("—").size((14.0 * scale).max(10.0)))
+        button(fa_icon_solid("window-minimize").size((14.0 * scale).max(10.0)).color(iced::Color::WHITE))
             .style(top_bar_button())
             .on_press(Message::WindowMinimize),
-        button(text("□").size((14.0 * scale).max(10.0)))
+        button(fa_icon_solid("window-maximize").size((14.0 * scale).max(10.0)).color(iced::Color::WHITE))
             .style(top_bar_button())
             .on_press(Message::WindowMaximize),
-        button(text("×").size((14.0 * scale).max(10.0)))
+        button(fa_icon_solid("xmark").size((14.0 * scale).max(10.0)).color(iced::Color::WHITE))
             .style(top_bar_button())
             .on_press(Message::WindowClose),
     ]
@@ -1337,7 +1356,7 @@ fn render_command_palette(state: &EditorState) -> Element<'_, Message> {
     let header = row![
         text("Command Prompt").size((18.0 * scale).max(14.0)),
         horizontal_space().width(Length::Fill),
-        button(text("×").size((16.0 * scale).max(12.0)))
+        button(fa_icon_solid("xmark").size((16.0 * scale).max(12.0)).color(iced::Color::WHITE))
             .style(theme::Button::Text)
             .on_press(Message::CommandPaletteClosed),
     ]

@@ -1565,6 +1565,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "iced_font_awesome"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7abbaf97694ff5ce6f15559202656e170cbec8a333d4e4d711c2181f82dc1c12"
+dependencies = [
+ "iced",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "iced_futures"
 version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4115,6 +4126,7 @@ dependencies = [
  "crossbeam-channel",
  "iced",
  "iced_aw",
+ "iced_font_awesome",
  "iced_graphics",
  "portable-pty",
  "rfd",

@@ -1,5 +1,6 @@
 use iced::widget::{button, column, container, pick_list, row, scrollable, text, Column, Row};
 use iced::{Alignment, Element, Length};
+use iced_font_awesome::fa_icon_solid;
 
 use crate::style;
 
@@ -48,7 +49,10 @@ impl BottomTerminal {
 
     pub fn view(&self) -> Element<Message> {
         if self.collapsed {
-            let header = button(text("▶ Terminal").style(iced::theme::Text::Color(style::TEXT)))
+            let header = button(row![
+                fa_icon_solid("angle-right").color(iced::Color::WHITE),
+                text("Terminal").style(iced::theme::Text::Color(style::TEXT))
+            ].spacing(4.0))
                 .style(style::custom_button())
                 .on_press(Message::ToggleCollapse);
 
@@ -68,7 +72,7 @@ impl BottomTerminal {
                     )
                 )
                 .push(
-                    button(text("▼").style(iced::theme::Text::Color(style::TEXT)))
+                    button(fa_icon_solid("angle-down").color(iced::Color::WHITE))
                         .style(style::custom_button())
                         .on_press(Message::ToggleCollapse)
                 )

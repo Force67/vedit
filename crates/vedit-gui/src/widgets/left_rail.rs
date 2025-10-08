@@ -1,5 +1,6 @@
 use iced::widget::{button, column, container, row, scrollable, text, Column, Row};
 use iced::{Alignment, Element, Length, Padding};
+use iced_font_awesome::fa_icon_solid;
 
 use crate::style;
 
@@ -29,14 +30,14 @@ impl OpenFilesList {
         for file in &self.files {
             let is_dirty = self.dirty_files.contains(file);
             let dirty_dot = if is_dirty {
-                text("●").style(iced::theme::Text::Color(crate::style::MUTED))
+                fa_icon_solid("circle").color(iced::Color::WHITE)
             } else {
-                text("")
+                fa_icon_solid("circle").color(iced::Color::TRANSPARENT)
             };
 
             let file_text = text(file).style(iced::theme::Text::Color(crate::style::TEXT));
 
-            let close_button = button(text("×").style(iced::theme::Text::Color(crate::style::MUTED)))
+            let close_button = button(fa_icon_solid("xmark").color(iced::Color::WHITE))
                 .style(crate::style::custom_button())
                 .on_press(Message::CloseFile(file.clone()));
 
@@ -69,7 +70,15 @@ impl RecentFiles {
     }
 
     pub fn view(&self) -> Element<Message> {
-        let header = button(text(if self.collapsed { "▶ Recent Files" } else { "▼ Recent Files" }).style(iced::theme::Text::Color(crate::style::TEXT)))
+        let icon = if self.collapsed {
+            fa_icon_solid("angle-right").color(iced::Color::WHITE)
+        } else {
+            fa_icon_solid("angle-down").color(iced::Color::WHITE)
+        };
+        let header = button(row![
+            icon,
+            text("Recent Files").style(iced::theme::Text::Color(crate::style::TEXT))
+        ].spacing(4.0))
             .style(crate::style::custom_button())
             .on_press(Message::ToggleRecentFiles);
 
