@@ -658,6 +658,11 @@ fn ancestor_for_depth(
     total_segments: usize,
     depth: usize,
 ) -> Option<PathBuf> {
+    // If depth is beyond or equal to total segments, return None
+    if depth >= total_segments {
+        return None;
+    }
+
     let mut current = full_path.to_path_buf();
     let mut remove = total_segments.saturating_sub(depth + 1);
     while remove > 0 {
@@ -708,5 +713,715 @@ fn sort_nodes(nodes: &mut Vec<FileNode>) {
                 node.has_children = !node.children.is_empty();
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+    use tempfile::TempDir;
+
+    #[test]
+    fn node_creation_and_properties() {
+        let node = Node {
+            id: 1,
+            name: "test.txt".to_string(),
+            rel_path: "test.txt".to_string(),
+            kind: NodeKind::File,
+            size: Some(1024),
+            modified: None,
+            children: None,
+            git: Some(GitStatus::Modified),
+            is_hidden: false,
+        };
+
+        assert_eq!(node.id, 1);
+        assert_eq!(node.name, "test.txt");
+        assert_eq!(node.rel_path, "test.txt");
+        assert!(matches!(node.kind, NodeKind::File));
+        assert_eq!(node.size, Some(1024));
+        assert!(matches!(node.git, Some(GitStatus::Modified)));
+        assert!(!node.is_hidden);
+    }
+
+    #[test]
+    fn node_kinds() {
+        let file_node = Node {
+            id: 1,
+            name: "file.txt".to_string(),
+            rel_path: "file.txt".to_string(),
+            kind: NodeKind::File,
+            size: None,
+            modified: None,
+            children: None,
+            git: None,
+            is_hidden: false,
+        };
+
+        let folder_node = Node {
+            id: 2,
+            name: "folder".to_string(),
+            rel_path: "folder".to_string(),
+            kind: NodeKind::Folder,
+            size: None,
+            modified: None,
+            children: None,
+            git: None,
+            is_hidden: false,
+        };
+
+        assert!(matches!(file_node.kind, NodeKind::File));
+        assert!(matches!(folder_node.kind, NodeKind::Folder));
+    }
+
+    #[test]
+    fn git_status_variants() {
+        let statuses = vec![
+            GitStatus::Added,
+            GitStatus::Modified,
+            GitStatus::Deleted,
+            GitStatus::Unmerged,
+            GitStatus::Untracked,
+            GitStatus::Ignored,
+        ];
+
+        for status in statuses {
+            let node = Node {
+                id: 1,
+                name: "test.txt".to_string(),
+                rel_path: "test.txt".to_string(),
+                kind: NodeKind::File,
+                size: None,
+                modified: None,
+                children: None,
+                git: Some(status.clone()),
+                is_hidden: false,
+            };
+            assert!(matches!(node.git, Some(s) if s == status));
+        }
+    }
+
+    #[test]
+    fn filter_state_creation() {
+        let filter = FilterState {
+            query: "test".to_string(),
+            match_case: true,
+            files_only: false,
+            folders_only: false,
+            show_hidden: true,
+        };
+
+        assert_eq!(filter.query, "test");
+        assert!(filter.match_case);
+        assert!(!filter.files_only);
+        assert!(!filter.folders_only);
+        assert!(filter.show_hidden);
+    }
+
+    #[test]
+    fn workspace_tree_creation() {
+        let mut nodes = slab::Slab::new();
+        let root_id = nodes.insert(Node {
+            id: 0,
+            name: "root".to_string(),
+            rel_path: "".to_string(),
+            kind: NodeKind::Folder,
+            size: None,
+            modified: None,
+            children: Some(vec![]),
+            git: None,
+            is_hidden: false,
+        });
+
+        let tree = WorkspaceTree {
+            root: root_id,
+            nodes,
+            expanded: std::collections::HashSet::new(),
+            selection: std::collections::BTreeSet::new(),
+            cursor: Some(root_id),
+            filter: FilterState {
+                query: "".to_string(),
+                match_case: false,
+                files_only: false,
+                folders_only: false,
+                show_hidden: false,
+            },
+        };
+
+        assert_eq!(tree.root, root_id);
+        assert_eq!(tree.cursor, Some(root_id));
+        assert!(tree.expanded.is_empty());
+        assert!(tree.selection.is_empty());
+    }
+
+    #[test]
+    fn fs_workspace_provider_creation() {
+        let path = PathBuf::from("/tmp");
+        let provider = FsWorkspaceProvider::new(path.clone());
+        // Since we can't easily test file operations without actual files,
+        // we just test that the provider is created correctly
+        // The path is stored internally but we can't access it directly
+        // This test mainly ensures the constructor works
+        assert_eq!(provider.root, path);
+    }
+
+    #[test]
+    fn file_node_creation() {
+        let node = FileNode {
+            name: "test.txt".to_string(),
+            path: "/tmp/test.txt".to_string(),
+            is_directory: false,
+            children: vec![],
+            has_children: false,
+            is_fully_scanned: true,
+            kind: LegacyNodeKind::File,
+        };
+
+        assert_eq!(node.name, "test.txt");
+        assert_eq!(node.path, "/tmp/test.txt");
+        assert!(!node.is_directory);
+        assert!(!node.has_children);
+        assert!(node.is_fully_scanned);
+        assert!(matches!(node.kind, LegacyNodeKind::File));
+    }
+
+    #[test]
+    fn directory_node_creation() {
+        let node = FileNode {
+            name: "test_dir".to_string(),
+            path: "/tmp/test_dir".to_string(),
+            is_directory: true,
+            children: vec![],
+            has_children: false,
+            is_fully_scanned: false,
+            kind: LegacyNodeKind::Directory,
+        };
+
+        assert_eq!(node.name, "test_dir");
+        assert!(node.is_directory);
+        assert!(!node.is_fully_scanned);
+        assert!(matches!(node.kind, LegacyNodeKind::Directory));
+    }
+
+    #[test]
+    fn legacy_node_kinds() {
+        let kinds = vec![
+            LegacyNodeKind::Directory,
+            LegacyNodeKind::File,
+            LegacyNodeKind::Solution,
+            LegacyNodeKind::Project,
+            LegacyNodeKind::ProjectStub,
+        ];
+
+        for kind in kinds {
+            let node = FileNode {
+                name: "test".to_string(),
+                path: "/tmp/test".to_string(),
+                is_directory: matches!(kind, LegacyNodeKind::Directory),
+                children: vec![],
+                has_children: false,
+                is_fully_scanned: true,
+                kind: kind.clone(),
+            };
+            assert!(matches!(node.kind, _kind));
+        }
+    }
+
+    #[test]
+    fn find_node_mut_recursive() {
+        let mut nodes = vec![
+            FileNode {
+                name: "dir1".to_string(),
+                path: "/tmp/dir1".to_string(),
+                is_directory: true,
+                children: vec![
+                    FileNode {
+                        name: "file1.txt".to_string(),
+                        path: "/tmp/dir1/file1.txt".to_string(),
+                        is_directory: false,
+                        children: vec![],
+                        has_children: false,
+                        is_fully_scanned: true,
+                        kind: LegacyNodeKind::File,
+                    },
+                ],
+                has_children: true,
+                is_fully_scanned: true,
+                kind: LegacyNodeKind::Directory,
+            },
+            FileNode {
+                name: "file2.txt".to_string(),
+                path: "/tmp/file2.txt".to_string(),
+                is_directory: false,
+                children: vec![],
+                has_children: false,
+                is_fully_scanned: true,
+                kind: LegacyNodeKind::File,
+            },
+        ];
+
+        // Find nested file
+        let found = find_node_mut(&mut nodes, "/tmp/dir1/file1.txt");
+        assert!(found.is_some());
+        let node = found.unwrap();
+        assert_eq!(node.name, "file1.txt");
+
+        // Find top-level file
+        let found = find_node_mut(&mut nodes, "/tmp/file2.txt");
+        assert!(found.is_some());
+        let node = found.unwrap();
+        assert_eq!(node.name, "file2.txt");
+
+        // Find non-existent file
+        let found = find_node_mut(&mut nodes, "/tmp/nonexistent.txt");
+        assert!(found.is_none());
+    }
+
+    #[test]
+    fn load_directory_children_noop() {
+        let mut node = FileNode {
+            name: "test.txt".to_string(),
+            path: "/tmp/test.txt".to_string(),
+            is_directory: false,
+            children: vec![],
+            has_children: false,
+            is_fully_scanned: true,
+            kind: LegacyNodeKind::File,
+        };
+
+        let ignored = vec![];
+        let result = load_directory_children(&mut node, &ignored).unwrap();
+        assert!(!result); // Should return false for non-directory
+
+        // Node should be unchanged
+        assert!(!node.is_directory);
+        assert!(node.is_fully_scanned);
+    }
+
+    #[test]
+    fn directory_stub_creation() {
+        let path = PathBuf::from("/tmp/test_dir");
+        let stub = directory_stub(&path, true);
+
+        assert_eq!(stub.name, "test_dir");
+        assert_eq!(stub.path, "/tmp/test_dir");
+        assert!(stub.is_directory);
+        assert!(stub.has_children);
+        assert!(!stub.is_fully_scanned);
+        assert!(matches!(stub.kind, LegacyNodeKind::Directory));
+    }
+
+    #[test]
+    fn file_node_creation_from_path() {
+        let path = PathBuf::from("/tmp/test.txt");
+        let node = file_node(&path);
+
+        assert_eq!(node.name, "test.txt");
+        assert_eq!(node.path, "/tmp/test.txt");
+        assert!(!node.is_directory);
+        assert!(!node.has_children);
+        assert!(node.is_fully_scanned);
+        assert!(matches!(node.kind, LegacyNodeKind::File));
+    }
+
+    #[test]
+    fn should_skip_logic() {
+        let ignored = vec!["target".to_string(), "build".to_string()];
+
+        // Should skip known directories
+        assert!(should_skip(".git", &[]));
+        assert!(should_skip("target", &[]));
+        assert!(should_skip("node_modules", &[]));
+
+        // Should skip custom ignored
+        assert!(should_skip("target", &ignored));
+        assert!(should_skip("build", &ignored));
+
+        // Should not skip normal directories
+        assert!(!should_skip("src", &[]));
+        assert!(!should_skip("docs", &ignored));
+
+        // Case insensitive
+        assert!(should_skip(".GIT", &[]));
+        assert!(should_skip("Target", &ignored));
+    }
+
+    #[test]
+    fn is_makefile_name_detection() {
+        // Should detect makefiles
+        assert!(is_makefile_name("makefile"));
+        assert!(is_makefile_name("Makefile"));
+        assert!(is_makefile_name("GNUMakefile"));
+        assert!(is_makefile_name("test.makefile"));
+
+        // Should not detect other files
+        assert!(!is_makefile_name("Makefile.txt"));
+        assert!(!is_makefile_name("makefile.sh"));
+        assert!(!is_makefile_name("readme"));
+    }
+
+    #[test]
+    fn normalize_path_functionality() {
+        // Test basic normalization
+        assert_eq!(
+            normalize_path(&PathBuf::from("a/b/../c")),
+            PathBuf::from("a/c")
+        );
+
+        // Test current directory removal
+        assert_eq!(
+            normalize_path(&PathBuf::from("a/./b")),
+            PathBuf::from("a/b")
+        );
+
+        // Test parent directory handling
+        assert_eq!(
+            normalize_path(&PathBuf::from("a/b/../../c")),
+            PathBuf::from("c")
+        );
+
+        // Test absolute path preservation
+        let abs_path = PathBuf::from("/a/b/../c");
+        assert_eq!(normalize_path(&abs_path), PathBuf::from("/a/c"));
+    }
+
+    #[test]
+    fn ancestor_for_depth_calculation() {
+        let path = PathBuf::from("/a/b/c/d/e");
+
+        // Test various depths
+        assert_eq!(
+            ancestor_for_depth(&path, 5, 0),
+            Some(PathBuf::from("/a"))
+        );
+
+        assert_eq!(
+            ancestor_for_depth(&path, 5, 2),
+            Some(PathBuf::from("/a/b/c"))
+        );
+
+        assert_eq!(
+            ancestor_for_depth(&path, 5, 4),
+            Some(PathBuf::from("/a/b/c/d/e"))
+        );
+
+        // Depth 5 should return None since depth >= total_segments
+        assert_eq!(
+            ancestor_for_depth(&path, 5, 5),
+            None
+        );
+    }
+
+    #[test]
+    fn sort_nodes_by_priority() {
+        let mut nodes = vec![
+            FileNode {
+                name: "file.txt".to_string(),
+                path: "/tmp/file.txt".to_string(),
+                is_directory: false,
+                children: vec![],
+                has_children: false,
+                is_fully_scanned: true,
+                kind: LegacyNodeKind::File,
+            },
+            FileNode {
+                name: "project.sln".to_string(),
+                path: "/tmp/project.sln".to_string(),
+                is_directory: true,
+                children: vec![],
+                has_children: false,
+                is_fully_scanned: true,
+                kind: LegacyNodeKind::Solution,
+            },
+            FileNode {
+                name: "src".to_string(),
+                path: "/tmp/src".to_string(),
+                is_directory: true,
+                children: vec![],
+                has_children: false,
+                is_fully_scanned: true,
+                kind: LegacyNodeKind::Directory,
+            },
+        ];
+
+        sort_nodes(&mut nodes);
+
+        // Should be sorted: Directory, Solution, File
+        assert!(matches!(nodes[0].kind, LegacyNodeKind::Directory));
+        assert!(matches!(nodes[1].kind, LegacyNodeKind::Solution));
+        assert!(matches!(nodes[2].kind, LegacyNodeKind::File));
+
+        assert_eq!(nodes[0].name, "src");
+        assert_eq!(nodes[1].name, "project.sln");
+        assert_eq!(nodes[2].name, "file.txt");
+    }
+
+    #[test]
+    fn sort_nodes_case_insensitive() {
+        let mut nodes = vec![
+            FileNode {
+                name: "Zfile.txt".to_string(),
+                path: "/tmp/Zfile.txt".to_string(),
+                is_directory: false,
+                children: vec![],
+                has_children: false,
+                is_fully_scanned: true,
+                kind: LegacyNodeKind::File,
+            },
+            FileNode {
+                name: "afile.txt".to_string(),
+                path: "/tmp/afile.txt".to_string(),
+                is_directory: false,
+                children: vec![],
+                has_children: false,
+                is_fully_scanned: true,
+                kind: LegacyNodeKind::File,
+            },
+            FileNode {
+                name: "Mfile.txt".to_string(),
+                path: "/tmp/Mfile.txt".to_string(),
+                is_directory: false,
+                children: vec![],
+                has_children: false,
+                is_fully_scanned: true,
+                kind: LegacyNodeKind::File,
+            },
+        ];
+
+        sort_nodes(&mut nodes);
+
+        // Should be sorted case-insensitively
+        assert_eq!(nodes[0].name, "afile.txt");
+        assert_eq!(nodes[1].name, "Mfile.txt");
+        assert_eq!(nodes[2].name, "Zfile.txt");
+    }
+
+    #[test]
+    fn dir_entry_meta_creation() {
+        let entry = DirEntryMeta {
+            name: "test.txt".to_string(),
+            rel_path: "test.txt".to_string(),
+            kind: NodeKind::File,
+            size: Some(2048),
+            modified: Some(std::time::SystemTime::UNIX_EPOCH),
+            is_hidden: false,
+        };
+
+        assert_eq!(entry.name, "test.txt");
+        assert_eq!(entry.rel_path, "test.txt");
+        assert!(matches!(entry.kind, NodeKind::File));
+        assert_eq!(entry.size, Some(2048));
+        assert!(entry.modified.is_some());
+        assert!(!entry.is_hidden);
+    }
+
+    #[test]
+    fn file_meta_creation() {
+        let meta = FileMeta {
+            size: Some(4096),
+            modified: Some(std::time::SystemTime::UNIX_EPOCH),
+            is_hidden: true,
+        };
+
+        assert_eq!(meta.size, Some(4096));
+        assert!(meta.modified.is_some());
+        assert!(meta.is_hidden);
+    }
+
+    #[test]
+    fn insert_item_logic() {
+        let mut nodes = vec![];
+
+        // Insert root level item
+        let segments = vec!["file.txt".to_string()];
+        let path = PathBuf::from("/tmp/file.txt");
+        insert_item(&mut nodes, &segments, &path, segments.len(), 0);
+
+        assert_eq!(nodes.len(), 1);
+        assert_eq!(nodes[0].name, "file.txt");
+        assert!(!nodes[0].is_directory);
+
+        // Insert nested item
+        let segments = vec!["src".to_string(), "main.rs".to_string()];
+        let path = PathBuf::from("/tmp/src/main.rs");
+        insert_item(&mut nodes, &segments, &path, segments.len(), 0);
+
+        assert_eq!(nodes.len(), 2);
+        let src_node = nodes.iter().find(|n| n.name == "src").unwrap();
+        assert!(src_node.is_directory);
+        assert_eq!(src_node.children.len(), 1);
+        assert_eq!(src_node.children[0].name, "main.rs");
+    }
+
+    #[test]
+    fn workspace_state_modification() {
+        let mut nodes = slab::Slab::new();
+        let root_id = nodes.insert(Node {
+            id: 0,
+            name: "root".to_string(),
+            rel_path: "".to_string(),
+            kind: NodeKind::Folder,
+            size: None,
+            modified: None,
+            children: Some(vec![]),
+            git: None,
+            is_hidden: false,
+        });
+
+        let mut tree = WorkspaceTree {
+            root: root_id,
+            nodes,
+            expanded: std::collections::HashSet::new(),
+            selection: std::collections::BTreeSet::new(),
+            cursor: Some(root_id),
+            filter: FilterState {
+                query: "".to_string(),
+                match_case: false,
+                files_only: false,
+                folders_only: false,
+                show_hidden: false,
+            },
+        };
+
+        // Test expansion state
+        tree.expanded.insert(root_id);
+        assert!(tree.expanded.contains(&root_id));
+
+        // Test selection
+        tree.selection.insert(root_id);
+        assert!(tree.selection.contains(&root_id));
+
+        // Test cursor
+        tree.cursor = None;
+        assert!(tree.cursor.is_none());
+    }
+
+    #[test]
+    fn node_symlink_kind() {
+        let symlink_node = Node {
+            id: 1,
+            name: "link".to_string(),
+            rel_path: "link".to_string(),
+            kind: NodeKind::Symlink(Box::new(NodeKind::File)),
+            size: None,
+            modified: None,
+            children: None,
+            git: None,
+            is_hidden: false,
+        };
+
+        assert!(matches!(symlink_node.kind, NodeKind::Symlink(target) if matches!(*target, NodeKind::File)));
+    }
+
+    #[test]
+    fn filter_state_edge_cases() {
+        let filter = FilterState {
+            query: "".to_string(),
+            match_case: false,
+            files_only: false,
+            folders_only: false,
+            show_hidden: false,
+        };
+
+        // Empty query should be valid
+        assert!(filter.query.is_empty());
+
+        // Mutually exclusive options should both be false for valid state
+        assert!(!filter.files_only || !filter.folders_only);
+    }
+
+    #[test]
+    fn git_status_equality() {
+        assert_eq!(GitStatus::Modified, GitStatus::Modified);
+        assert_ne!(GitStatus::Modified, GitStatus::Added);
+
+        let status1 = GitStatus::Modified;
+        let status2 = GitStatus::Modified;
+        assert_eq!(status1, status2);
+    }
+
+    #[test]
+    fn nodekind_equality() {
+        assert_eq!(NodeKind::File, NodeKind::File);
+        assert_ne!(NodeKind::File, NodeKind::Folder);
+
+        let symlink_target = Box::new(NodeKind::File);
+        let symlink1 = NodeKind::Symlink(symlink_target.clone());
+        let symlink2 = NodeKind::Symlink(symlink_target);
+        assert_eq!(symlink1, symlink2);
+    }
+
+    #[test]
+    fn debug_implementations() {
+        let node = Node {
+            id: 1,
+            name: "test".to_string(),
+            rel_path: "test".to_string(),
+            kind: NodeKind::File,
+            size: None,
+            modified: None,
+            children: None,
+            git: None,
+            is_hidden: false,
+        };
+
+        let debug_str = format!("{:?}", node);
+        assert!(debug_str.contains("Node"));
+        assert!(debug_str.contains("test"));
+
+        let tree = WorkspaceTree {
+            root: 1,
+            nodes: slab::Slab::new(),
+            expanded: std::collections::HashSet::new(),
+            selection: std::collections::BTreeSet::new(),
+            cursor: Some(1),
+            filter: FilterState {
+                query: "".to_string(),
+                match_case: false,
+                files_only: false,
+                folders_only: false,
+                show_hidden: false,
+            },
+        };
+
+        let debug_str = format!("{:?}", tree);
+        assert!(debug_str.contains("WorkspaceTree"));
+    }
+
+    #[test]
+    fn clone_implementations() {
+        let node = Node {
+            id: 1,
+            name: "test".to_string(),
+            rel_path: "test".to_string(),
+            kind: NodeKind::File,
+            size: Some(1024),
+            modified: Some(std::time::SystemTime::UNIX_EPOCH),
+            children: Some(vec![]),
+            git: Some(GitStatus::Modified),
+            is_hidden: false,
+        };
+
+        let cloned = node.clone();
+        assert_eq!(node.id, cloned.id);
+        assert_eq!(node.name, cloned.name);
+        assert_eq!(node.kind, cloned.kind);
+        assert_eq!(node.git, cloned.git);
+
+        let file_node = FileNode {
+            name: "test.txt".to_string(),
+            path: "/tmp/test.txt".to_string(),
+            is_directory: false,
+            children: vec![],
+            has_children: false,
+            is_fully_scanned: true,
+            kind: LegacyNodeKind::File,
+        };
+
+        let cloned = file_node.clone();
+        assert_eq!(file_node.name, cloned.name);
+        assert_eq!(file_node.path, cloned.path);
+        assert_eq!(file_node.kind, cloned.kind);
     }
 }

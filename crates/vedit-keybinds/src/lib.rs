@@ -417,3 +417,437 @@ impl From<toml::de::Error> for KeymapError {
         Self::Toml(value)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn key_parsing_basic() {
+        assert_eq!(Key::parse("a").unwrap(), Key::Character('A'));
+        assert_eq!(Key::parse("A").unwrap(), Key::Character('A'));
+        assert_eq!(Key::parse("1").unwrap(), Key::Character('1'));
+    }
+
+    #[test]
+    fn key_parsing_special_keys() {
+        assert_eq!(Key::parse("esc").unwrap(), Key::Escape);
+        assert_eq!(Key::parse("escape").unwrap(), Key::Escape);
+        assert_eq!(Key::parse("enter").unwrap(), Key::Enter);
+        assert_eq!(Key::parse("return").unwrap(), Key::Enter);
+        assert_eq!(Key::parse("tab").unwrap(), Key::Tab);
+        assert_eq!(Key::parse("space").unwrap(), Key::Space);
+        assert_eq!(Key::parse("spacebar").unwrap(), Key::Space);
+    }
+
+    #[test]
+    fn key_parsing_arrows() {
+        assert_eq!(Key::parse("up").unwrap(), Key::ArrowUp);
+        assert_eq!(Key::parse("arrowup").unwrap(), Key::ArrowUp);
+        assert_eq!(Key::parse("down").unwrap(), Key::ArrowDown);
+        assert_eq!(Key::parse("arrowdown").unwrap(), Key::ArrowDown);
+        assert_eq!(Key::parse("left").unwrap(), Key::ArrowLeft);
+        assert_eq!(Key::parse("arrowleft").unwrap(), Key::ArrowLeft);
+        assert_eq!(Key::parse("right").unwrap(), Key::ArrowRight);
+        assert_eq!(Key::parse("arrowright").unwrap(), Key::ArrowRight);
+    }
+
+    #[test]
+    fn key_parsing_function_keys() {
+        assert_eq!(Key::parse("f1").unwrap(), Key::Function(1));
+        assert_eq!(Key::parse("F12").unwrap(), Key::Function(12));
+        assert_eq!(Key::parse("f24").unwrap(), Key::Function(24));
+    }
+
+    #[test]
+    fn key_parsing_invalid_function_keys() {
+        assert!(Key::parse("f0").is_err());
+        assert!(Key::parse("f25").is_err());
+        assert!(Key::parse("f123").is_err());
+    }
+
+    #[test]
+    fn key_parsing_other_special() {
+        assert_eq!(Key::parse("backspace").unwrap(), Key::Backspace);
+        assert_eq!(Key::parse("bksp").unwrap(), Key::Backspace);
+        assert_eq!(Key::parse("delete").unwrap(), Key::Delete);
+        assert_eq!(Key::parse("del").unwrap(), Key::Delete);
+    }
+
+    #[test]
+    fn key_parsing_errors() {
+        assert!(matches!(
+            Key::parse("").unwrap_err(),
+            ParseKeyCombinationError::UnknownKey(_)
+        ));
+        assert!(matches!(
+            Key::parse("invalid").unwrap_err(),
+            ParseKeyCombinationError::UnknownKey(_)
+        ));
+        assert!(matches!(
+            Key::parse("f25").unwrap_err(),
+            ParseKeyCombinationError::UnknownKey(_)
+        ));
+    }
+
+    #[test]
+    fn key_display() {
+        assert_eq!(format!("{}", Key::Character('a')), "A");
+        assert_eq!(format!("{}", Key::Function(5)), "F5");
+        assert_eq!(format!("{}", Key::Escape), "Esc");
+        assert_eq!(format!("{}", Key::Enter), "Enter");
+        assert_eq!(format!("{}", Key::Tab), "Tab");
+        assert_eq!(format!("{}", Key::Space), "Space");
+        assert_eq!(format!("{}", Key::ArrowUp), "ArrowUp");
+        assert_eq!(format!("{}", Key::Backspace), "Backspace");
+        assert_eq!(format!("{}", Key::Delete), "Delete");
+    }
+
+    #[test]
+    fn key_combination_parsing_simple() {
+        let combo = KeyCombination::parse("ctrl+s").unwrap();
+        assert!(combo.ctrl);
+        assert!(!combo.shift);
+        assert!(!combo.alt);
+        assert!(!combo.command);
+        assert_eq!(combo.key, Key::Character('S'));
+
+        let combo = KeyCombination::parse("shift+f5").unwrap();
+        assert!(!combo.ctrl);
+        assert!(combo.shift);
+        assert!(!combo.alt);
+        assert!(!combo.command);
+        assert_eq!(combo.key, Key::Function(5));
+    }
+
+    #[test]
+    fn key_combination_parsing_multiple_modifiers() {
+        let combo = KeyCombination::parse("ctrl+shift+p").unwrap();
+        assert!(combo.ctrl);
+        assert!(combo.shift);
+        assert!(!combo.alt);
+        assert!(!combo.command);
+        assert_eq!(combo.key, Key::Character('P'));
+
+        let combo = KeyCombination::parse("ctrl+alt+delete").unwrap();
+        assert!(combo.ctrl);
+        assert!(!combo.shift);
+        assert!(combo.alt);
+        assert!(!combo.command);
+        assert_eq!(combo.key, Key::Delete);
+    }
+
+    #[test]
+    fn key_combination_parsing_all_modifiers() {
+        let combo = KeyCombination::parse("ctrl+shift+alt+cmd+z").unwrap();
+        assert!(combo.ctrl);
+        assert!(combo.shift);
+        assert!(combo.alt);
+        assert!(combo.command);
+        assert_eq!(combo.key, Key::Character('Z'));
+    }
+
+    #[test]
+    fn key_combination_parsing_alternative_names() {
+        // Alternative modifier names
+        let combo1 = KeyCombination::parse("ctrl+p").unwrap();
+        let combo2 = KeyCombination::parse("control+p").unwrap();
+        assert_eq!(combo1.ctrl, combo2.ctrl);
+
+        let combo1 = KeyCombination::parse("alt+x").unwrap();
+        let combo2 = KeyCombination::parse("option+x").unwrap();
+        assert_eq!(combo1.alt, combo2.alt);
+
+        let combo1 = KeyCombination::parse("cmd+c").unwrap();
+        let combo2 = KeyCombination::parse("command+c").unwrap();
+        let combo3 = KeyCombination::parse("super+c").unwrap();
+        let combo4 = KeyCombination::parse("meta+c").unwrap();
+        assert_eq!(combo1.command, combo2.command);
+        assert_eq!(combo2.command, combo3.command);
+        assert_eq!(combo3.command, combo4.command);
+    }
+
+    #[test]
+    fn key_combination_parsing_whitespace() {
+        let combo1 = KeyCombination::parse("ctrl+s").unwrap();
+        let combo2 = KeyCombination::parse(" ctrl + s ").unwrap();
+        let combo3 = KeyCombination::parse("ctrl+ s").unwrap();
+        let combo4 = KeyCombination::parse("ctrl +s").unwrap();
+
+        assert_eq!(combo1.ctrl, combo2.ctrl);
+        assert_eq!(combo1.ctrl, combo3.ctrl);
+        assert_eq!(combo1.ctrl, combo4.ctrl);
+    }
+
+    #[test]
+    fn key_combination_parsing_errors() {
+        // No key specified
+        assert!(matches!(
+            KeyCombination::parse("ctrl+shift+").unwrap_err(),
+            ParseKeyCombinationError::MissingKey(_)
+        ));
+
+        // Multiple keys
+        assert!(matches!(
+            KeyCombination::parse("ctrl+s+t").unwrap_err(),
+            ParseKeyCombinationError::MultipleKeys(_)
+        ));
+
+        // Invalid key
+        assert!(matches!(
+            KeyCombination::parse("ctrl+invalid").unwrap_err(),
+            ParseKeyCombinationError::UnknownKey(_)
+        ));
+    }
+
+    #[test]
+    fn key_combination_display() {
+        let combo = KeyCombination::parse("ctrl+s").unwrap();
+        assert_eq!(format!("{}", combo), "Ctrl+S");
+
+        let combo = KeyCombination::parse("ctrl+shift+p").unwrap();
+        assert_eq!(format!("{}", combo), "Ctrl+Shift+P");
+
+        let combo = KeyCombination::parse("cmd+alt+delete").unwrap();
+        assert_eq!(format!("{}", combo), "Alt+Cmd+Delete");
+
+        let combo = KeyCombination::parse("shift+f5").unwrap();
+        assert_eq!(format!("{}", combo), "Shift+F5");
+    }
+
+    #[test]
+    fn key_combination_matches() {
+        let combo = KeyCombination::parse("ctrl+s").unwrap();
+
+        let matching_event = KeyEvent::new(
+            Key::Character('S'),
+            true,  // ctrl
+            false, // shift
+            false, // alt
+            false, // command
+        );
+        assert!(combo.matches(&matching_event));
+
+        let non_matching_event = KeyEvent::new(
+            Key::Character('S'),
+            false, // ctrl
+            true,  // shift
+            false, // alt
+            false, // command
+        );
+        assert!(!combo.matches(&non_matching_event));
+    }
+
+    #[test]
+    fn keymap_default_bindings() {
+        let keymap = Keymap::default();
+
+        // Check that default bindings exist
+        assert!(keymap.binding(QUICK_COMMAND_MENU_ACTION).is_some());
+        assert!(keymap.binding(SAVE_ACTION).is_some());
+        assert!(keymap.binding("command_palette.toggle").is_some());
+        assert!(keymap.binding("sidebar.toggle").is_some());
+        assert!(keymap.binding("terminal.toggle").is_some());
+        assert!(keymap.binding("close_tab").is_some());
+    }
+
+    #[test]
+    fn keymap_platform_specific_defaults() {
+        let keymap = Keymap::default();
+
+        #[cfg(target_os = "macos")]
+        {
+            // On macOS, save should be Command+S
+            let save_binding = keymap.binding(SAVE_ACTION).unwrap();
+            assert!(save_binding.command);
+            assert!(!save_binding.ctrl);
+        }
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            // On other platforms, save should be Ctrl+S
+            let save_binding = keymap.binding(SAVE_ACTION).unwrap();
+            assert!(save_binding.ctrl);
+            assert!(!save_binding.command);
+        }
+    }
+
+    #[test]
+    fn keymap_set_binding() {
+        let mut keymap = Keymap::default();
+
+        // Add a new binding
+        let combo = KeyCombination::parse("ctrl+shift+x").unwrap();
+        keymap.set_binding("test.action", Some(combo.clone()));
+
+        let retrieved = keymap.binding("test.action").unwrap();
+        assert!(retrieved.matches(&KeyEvent::new(
+            Key::Character('X'),
+            true,  // ctrl
+            true,  // shift
+            false, // alt
+            false, // command
+        )));
+
+        // Remove a binding
+        keymap.set_binding("test.action", None);
+        assert!(keymap.binding("test.action").is_none());
+    }
+
+    #[test]
+    fn keymap_merge() {
+        let mut keymap1 = Keymap::default();
+        let mut keymap2 = Keymap::default();
+
+        // Add different bindings to each
+        keymap1.set_binding("action1", Some(KeyCombination::parse("ctrl+a").unwrap()));
+        keymap2.set_binding("action2", Some(KeyCombination::parse("ctrl+b").unwrap()));
+
+        // Merge keymap2 into keymap1
+        keymap1.merge(keymap2);
+
+        // Both bindings should exist in keymap1
+        assert!(keymap1.binding("action1").is_some());
+        assert!(keymap1.binding("action2").is_some());
+    }
+
+    #[test]
+    fn keymap_toml_serialization() {
+        let mut keymap = Keymap::default();
+        keymap.set_binding("test.action", Some(KeyCombination::parse("ctrl+x").unwrap()));
+
+        let toml_str = keymap.to_toml_string().unwrap();
+        assert!(toml_str.contains("test.action"));
+        assert!(toml_str.contains("Ctrl+X"));
+
+        // Parse it back
+        let parsed_keymap = Keymap::from_toml_str(&toml_str).unwrap();
+        let binding = parsed_keymap.binding("test.action").unwrap();
+        assert!(binding.ctrl);
+        assert!(!binding.shift);
+        assert!(!binding.alt);
+        assert!(!binding.command);
+        assert_eq!(binding.key, Key::Character('X'));
+    }
+
+    #[test]
+    fn keymap_toml_parsing_errors() {
+        let invalid_toml = "invalid toml content [";
+        let result = Keymap::from_toml_str(invalid_toml);
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), KeymapError::Toml(_)));
+
+        let invalid_binding = r#"
+bindings = { "test.action" = "invalid+key+combination" }
+"#;
+        let result = Keymap::from_toml_str(invalid_binding);
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), KeymapError::Parse { .. }));
+    }
+
+    #[test]
+    fn keymap_file_operations() {
+        use std::fs;
+        use std::env::temp_dir;
+
+        let mut keymap = Keymap::default();
+        keymap.set_binding("file.test", Some(KeyCombination::parse("ctrl+t").unwrap()));
+
+        // Create temporary file
+        let temp_dir = temp_dir();
+        let file_path = temp_dir.join("test_keymap.toml");
+
+        // Save to file
+        let toml_content = keymap.to_toml_string().unwrap();
+        fs::write(&file_path, toml_content).unwrap();
+
+        // Load from file
+        let loaded_keymap = Keymap::load_from_file(&file_path).unwrap();
+        let binding = loaded_keymap.binding("file.test").unwrap();
+        assert_eq!(binding.key, Key::Character('T'));
+        assert!(binding.ctrl);
+
+        // Cleanup
+        fs::remove_file(&file_path).unwrap();
+    }
+
+    #[test]
+    fn keymap_error_display() {
+        let missing_key_error = ParseKeyCombinationError::MissingKey("ctrl+".to_string());
+        let error_str = format!("{}", missing_key_error);
+        assert!(error_str.contains("No key specified"));
+
+        let unknown_key_error = ParseKeyCombinationError::UnknownKey("invalid".to_string());
+        let error_str = format!("{}", unknown_key_error);
+        assert!(error_str.contains("Unknown key 'invalid'"));
+
+        let multiple_keys_error = ParseKeyCombinationError::MultipleKeys("ctrl+a+b".to_string());
+        let error_str = format!("{}", multiple_keys_error);
+        assert!(error_str.contains("Multiple keys specified"));
+    }
+
+    #[test]
+    fn keymap_error_chaining() {
+        let parse_error = ParseKeyCombinationError::UnknownKey("test".to_string());
+        let keymap_error = KeymapError::Parse {
+            action: "test.action".to_string(),
+            source: parse_error,
+        };
+
+        let display_str = format!("{}", keymap_error);
+        assert!(display_str.contains("test.action"));
+        assert!(display_str.contains("Unknown key"));
+
+        // Test error source
+        use std::error::Error;
+        assert!(keymap_error.source().is_some());
+    }
+
+    #[test]
+    fn complex_combination_parsing() {
+        // Test complex but valid combinations
+        let combos = vec![
+            ("ctrl+shift+alt+cmd+f1", true, true, true, true, Key::Function(1)),
+            ("control+option+super+delete", true, false, true, true, Key::Delete),
+            ("ctrl+meta+backspace", true, false, false, true, Key::Backspace),
+        ];
+
+        for (combo_str, ctrl, shift, alt, cmd, key) in combos {
+            let combo = KeyCombination::parse(combo_str).unwrap();
+            assert_eq!(combo.ctrl, ctrl, "Failed for {}", combo_str);
+            assert_eq!(combo.shift, shift, "Failed for {}", combo_str);
+            assert_eq!(combo.alt, alt, "Failed for {}", combo_str);
+            assert_eq!(combo.command, cmd, "Failed for {}", combo_str);
+            assert_eq!(combo.key, key, "Failed for {}", combo_str);
+        }
+    }
+
+    #[test]
+    fn edge_case_key_combinations() {
+        // Test keys with modifiers that might have case sensitivity issues
+        let combo1 = KeyCombination::parse("CTRL+S").unwrap();
+        let combo2 = KeyCombination::parse("ctrl+s").unwrap();
+        assert_eq!(combo1.ctrl, combo2.ctrl);
+
+        // Test function key case sensitivity
+        let combo1 = KeyCombination::parse("F5").unwrap();
+        let combo2 = KeyCombination::parse("f5").unwrap();
+        assert_eq!(combo1.key, combo2.key);
+    }
+
+    #[test]
+    fn constants_are_valid() {
+        // Test that our constants parse correctly
+        let quick_combo = KeyCombination::parse("ctrl+shift+p").unwrap();
+        let keymap = Keymap::default();
+        let quick_binding = keymap.binding(QUICK_COMMAND_MENU_ACTION).unwrap();
+        assert_eq!(quick_combo.ctrl, quick_binding.ctrl);
+        assert_eq!(quick_combo.shift, quick_binding.shift);
+        assert_eq!(quick_combo.key, quick_binding.key);
+
+        let save_combo = KeyCombination::parse("ctrl+s").unwrap();
+        let save_binding = keymap.binding(SAVE_ACTION).unwrap();
+        // Note: save_combo uses ctrl, but save_binding might use cmd on macOS
+        assert_eq!(save_combo.key, save_binding.key);
+    }
+}
