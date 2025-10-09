@@ -13,3 +13,7 @@ slab = "0.4"
 vedit-config = { path = "../vedit-config" }
 vedit-vs = { path = "../vedit-vs" }
 vedit-make = { path = "../vedit-make" }
+vedit-text = { path = "../vedit-text" }
+vedit-workspace = { path = "../vedit-workspace" }
+vedit-syntax = { path = "../vedit-syntax" }
+vedit-keybinds = { path = "../vedit-keybinds" }

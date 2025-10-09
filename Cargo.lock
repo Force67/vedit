@@ -4095,8 +4095,12 @@ dependencies = [
  "slab",
  "toml",
  "vedit-config",
+ "vedit-keybinds",
  "vedit-make",
+ "vedit-syntax",
+ "vedit-text",
  "vedit-vs",
+ "vedit-workspace",
 ]
 
 [[package]]
@@ -4156,6 +4160,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "vedit-keybinds"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "toml",
+]
+
+[[package]]
 name = "vedit-make"
 version = "0.1.0"
 dependencies = [
@@ -4164,12 +4176,48 @@ dependencies = [
 ]
 
 [[package]]
+name = "vedit-syntax"
+version = "0.1.0"
+dependencies = [
+ "tree-sitter",
+ "tree-sitter-c",
+ "tree-sitter-cpp",
+ "tree-sitter-css",
+ "tree-sitter-go",
+ "tree-sitter-highlight",
+ "tree-sitter-html",
+ "tree-sitter-javascript",
+ "tree-sitter-json",
+ "tree-sitter-lua",
+ "tree-sitter-nix",
+ "tree-sitter-python",
+ "tree-sitter-rust",
+ "tree-sitter-typescript",
+ "tree-sitter-yaml",
+]
+
+[[package]]
+name = "vedit-text"
+version = "0.1.0"
+
+[[package]]
 name = "vedit-vs"
 version = "0.1.0"
 dependencies = [
  "roxmltree",
  "tempfile",
  "thiserror 1.0.69",
+]
+
+[[package]]
+name = "vedit-workspace"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "slab",
+ "toml",
+ "vedit-make",
+ "vedit-vs",
 ]
 
 [[package]]

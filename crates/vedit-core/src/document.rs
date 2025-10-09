@@ -1,6 +1,6 @@
-use crate::language::Language;
+use vedit_syntax::Language;
 use crate::sticky::StickyNote;
-use crate::text_buffer::TextBuffer;
+use vedit_text::TextBuffer;
 use std::cmp;
 use std::collections::hash_map::DefaultHasher;
 use std::fs;

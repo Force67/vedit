@@ -1,7 +1,7 @@
 use crate::document::Document;
 use crate::sticky::StickyNote;
-use crate::text_buffer::TextBuffer;
-use crate::workspace::{self, FileNode};
+use vedit_text::TextBuffer;
+use vedit_workspace::{self, FileNode, build_tree, build_tree_with_ignored, build_solution_tree, find_node_mut, load_directory_children};
 use std::io;
 use std::sync::Arc;
 use vedit_config::{WorkspaceConfig, WorkspaceMetadata};
@@ -381,14 +381,14 @@ impl Editor {
                 .ignored_directories()
                 .map(|entry| entry.to_string())
                 .collect();
-            workspace::build_tree_with_ignored(root, &ignored)
+  build_tree_with_ignored(root, &ignored)
         } else {
-            workspace::build_tree(root)
+  build_tree(root)
         }
     }
 
     pub fn build_solution_tree(path: impl AsRef<std::path::Path>) -> io::Result<Vec<FileNode>> {
-        workspace::build_solution_tree(path)
+  build_solution_tree(path)
             .map_err(|err| io::Error::new(io::ErrorKind::Other, err.to_string()))
     }
 
@@ -409,8 +409,8 @@ impl Editor {
             .unwrap_or_default();
 
         let tree = Arc::make_mut(&mut self.workspace_tree);
-        if let Some(node) = workspace::find_node_mut(tree.as_mut_slice(), path) {
-            if workspace::load_directory_children(node, &ignored)? {
+        if let Some(node) = find_node_mut(tree.as_mut_slice(), path) {
+            if load_directory_children(node, &ignored)? {
                 self.workspace_generation = self.workspace_generation.wrapping_add(1);
                 let directories = node
                     .children

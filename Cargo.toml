@@ -2,6 +2,10 @@
 members = [
     "crates/vedit-config",
     "crates/vedit-core",
+    "crates/vedit-text",
+    "crates/vedit-workspace",
+    "crates/vedit-syntax",
+    "crates/vedit-keybinds",
     "crates/vedit-gui",
     "crates/vedit-application",
     "crates/vedit-vs",

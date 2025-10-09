@@ -1,9 +1,5 @@
 pub mod document;
 pub mod editor;
-pub mod keybinds;
-pub mod workspace;
-pub mod language;
-pub mod text_buffer;
 pub mod sticky;
 
 /// Returns the startup banner presented when launching the editor.
@@ -12,13 +8,15 @@ pub fn startup_banner() -> String {
 }
 
 pub use document::Document;
-pub use text_buffer::TextBuffer;
 pub use editor::Editor;
-pub use keybinds::{KeyCombination, KeyEvent, Keymap, KeymapError, Key, QUICK_COMMAND_MENU_ACTION, SAVE_ACTION};
-pub use workspace::{
+pub use sticky::StickyNote;
+
+// Re-export from new focused crates
+pub use vedit_text::TextBuffer;
+pub use vedit_workspace::{
     DirEntryMeta, FileMeta, FileNode, FilterState, FsWorkspaceProvider, GitStatus, LegacyNodeKind, Node, NodeId,
     NodeKind, WorkspaceProvider, WorkspaceTree,
 };
-pub use language::Language;
+pub use vedit_syntax::Language;
+pub use vedit_keybinds::{KeyCombination, KeyEvent, Keymap, KeymapError, Key, QUICK_COMMAND_MENU_ACTION, SAVE_ACTION};
 pub use vedit_config::{WorkspaceConfig, DebugTargetRecord};
-pub use sticky::StickyNote;
