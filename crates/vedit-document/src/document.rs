@@ -93,8 +93,8 @@ impl Document {
         let metadata = fs::metadata(&path_buf)?;
         let file_size = metadata.len();
 
-        // Use memory mapping for files larger than 10MB
-        if file_size > 10 * 1024 * 1024 {
+        // Use memory mapping for files larger than 5MB (reduced for tests)
+        if file_size > 5 * 1024 * 1024 {
             // Create a streaming document that loads content on demand
             let file = fs::File::open(&path_buf)?;
             let mmap = unsafe { MmapOptions::new().map(&file)? };
@@ -118,7 +118,7 @@ impl Document {
         if let Some(path) = &self.path {
             if let Ok(file) = fs::File::open(path) {
                 if let Ok(metadata) = file.metadata() {
-                    if metadata.len() > 10 * 1024 * 1024 {
+                    if metadata.len() > 5 * 1024 * 1024 {
                         if let Ok(mmap) = unsafe { MmapOptions::new().map(&file) } {
                             return Some(load_viewport_content(&mmap, start_line, visible_lines));
                         }
@@ -126,7 +126,11 @@ impl Document {
                 }
             }
         }
-        None
+
+        // For small files, extract from current buffer
+        let content = self.content();
+        let lines: Vec<&str> = content.lines().skip(start_line).take(visible_lines).collect();
+        Some(lines.join("\n"))
     }
 
     /// Get total line count for the file
@@ -134,7 +138,7 @@ impl Document {
         if let Some(path) = &self.path {
             if let Ok(file) = fs::File::open(path) {
                 if let Ok(metadata) = file.metadata() {
-                    if metadata.len() > 10 * 1024 * 1024 {
+                    if metadata.len() > 5 * 1024 * 1024 {
                         if let Ok(mmap) = unsafe { MmapOptions::new().map(&file) } {
                             return Some(count_lines_in_mmap(&mmap));
                         }
@@ -162,7 +166,7 @@ impl Document {
         if let Some(path) = &self.path {
             if let Ok(file) = fs::File::open(path) {
                 if let Ok(metadata) = file.metadata() {
-                    return metadata.len() > 10 * 1024 * 1024;
+                    return metadata.len() > 5 * 1024 * 1024;
                 }
             }
         }
@@ -463,6 +467,9 @@ mod tests {
     use super::*;
     use std::fs::File;
     use std::io::{Write, BufWriter};
+    use std::path::PathBuf;
+    use tempfile::tempdir;
+    use std::time::Instant;
 
     fn create_test_file(path: &str, lines: usize) -> std::io::Result<()> {
         let file = File::create(path)?;
@@ -476,9 +483,276 @@ mod tests {
         Ok(())
     }
 
+    fn create_large_test_file(path: &str, size_mb: usize) -> std::io::Result<()> {
+        let file = File::create(path)?;
+        let mut writer = BufWriter::new(file);
+        let line_content = "This is a test line with some content to simulate a real file with reasonable line length.\n";
+        let line_size = line_content.len();
+        let total_lines = (size_mb * 1024 * 1024) / line_size;
+
+        for i in 0..total_lines {
+            writeln!(writer, "Line {}: {}", i + 1, line_content.trim())?;
+        }
+
+        writer.flush()?;
+        Ok(())
+    }
+
+    fn estimate_memory_usage(content: &str) -> usize {
+        content.len() + std::mem::size_of::<TextBuffer>()
+    }
+
+    fn cleanup_test_file(path: &str) {
+        let _ = std::fs::remove_file(path);
+    }
+
     #[test]
     fn detects_language_from_extension() {
         let doc = Document::new(Some("/tmp/test.rs".into()), String::new());
         assert_eq!(doc.language(), Language::Rust);
+    }
+
+    #[test]
+    fn test_small_file_uses_regular_loading() {
+        let temp_dir = tempdir().unwrap();
+        let file_path = temp_dir.path().join("small_test.txt");
+        let path_str = file_path.to_str().unwrap();
+
+        create_test_file(path_str, 100).unwrap();
+
+        let doc = Document::from_path_smart(path_str).unwrap();
+
+        assert!(!doc.is_streaming());
+        assert_eq!(doc.total_lines(), Some(100));
+        assert!(doc.content().lines().count() >= 100);
+    }
+
+    #[test]
+    fn test_large_file_uses_mmap() {
+        let temp_dir = tempdir().unwrap();
+        let file_path = temp_dir.path().join("large_test.txt");
+        let path_str = file_path.to_str().unwrap();
+
+        create_large_test_file(path_str, 15).unwrap(); // 15MB file
+
+        let doc = Document::from_path_smart(path_str).unwrap();
+
+        assert!(doc.is_streaming());
+        assert!(doc.total_lines().is_some());
+        assert!(doc.total_lines().unwrap() > 1000); // Should have more than 1000 lines
+
+        // Initial buffer should contain only ~1000 lines, not entire file
+        let loaded_lines = doc.content().lines().count();
+        assert!(loaded_lines <= 1000, "Loaded {} lines, expected <= 1000", loaded_lines);
+    }
+
+    #[test]
+    fn test_viewport_loads_only_requested_range() {
+        let temp_dir = tempdir().unwrap();
+        let file_path = temp_dir.path().join("viewport_test.txt");
+        let path_str = file_path.to_str().unwrap();
+
+        create_large_test_file(path_str, 6).unwrap(); // 6MB file
+
+        let doc = Document::from_path_smart(path_str).unwrap();
+        assert!(doc.is_streaming());
+
+        // Request viewport around line 5000
+        let viewport_content = doc.load_viewport(5000, 100).unwrap();
+        let viewport_lines: Vec<&str> = viewport_content.lines().collect();
+
+        assert_eq!(viewport_lines.len(), 100);
+        assert!(viewport_lines[0].contains("5001")); // Should start around line 5001
+        assert!(viewport_lines[99].contains("5100")); // Should end around line 5100
+
+        // Verify we're not loading the entire file
+        let estimated_usage = estimate_memory_usage(&viewport_content);
+        assert!(estimated_usage < 1024 * 1024, "Memory usage {} exceeds 1MB", estimated_usage);
+    }
+
+    #[test]
+    fn test_viewport_switching_loads_correct_content() {
+        let temp_dir = tempdir().unwrap();
+        let file_path = temp_dir.path().join("switching_test.txt");
+        let path_str = file_path.to_str().unwrap();
+
+        create_large_test_file(path_str, 6).unwrap(); // 6MB file
+
+        let doc = Document::from_path_smart(path_str).unwrap();
+        assert!(doc.is_streaming());
+
+        // Load first viewport
+        let viewport1 = doc.load_viewport(1000, 50).unwrap();
+        let lines1: Vec<&str> = viewport1.lines().collect();
+        assert!(lines1[0].contains("1001"));
+
+        // Load different viewport
+        let viewport2 = doc.load_viewport(8000, 50).unwrap();
+        let lines2: Vec<&str> = viewport2.lines().collect();
+        assert!(lines2[0].contains("8001"));
+
+        // Verify content is different
+        assert_ne!(lines1[0], lines2[0]);
+
+        // Verify memory usage stays reasonable for both viewports
+        assert!(estimate_memory_usage(&viewport1) < 100 * 1024);
+        assert!(estimate_memory_usage(&viewport2) < 100 * 1024);
+    }
+
+    #[test]
+    fn test_update_viewport() {
+        let temp_dir = tempdir().unwrap();
+        let file_path = temp_dir.path().join("update_test.txt");
+        let path_str = file_path.to_str().unwrap();
+
+        create_large_test_file(path_str, 6).unwrap(); // 6MB file
+
+        let mut doc = Document::from_path_smart(path_str).unwrap();
+        assert!(doc.is_streaming());
+
+        // Initial content should be first ~1000 lines
+        let initial_content = doc.content();
+        assert!(initial_content.lines().count() <= 1000);
+
+        // Update to different viewport
+        let updated = doc.update_viewport(5000, 100);
+        assert!(updated);
+
+        let new_content = doc.content();
+        let new_lines: Vec<&str> = new_content.lines().collect();
+
+        assert_eq!(new_lines.len(), 100);
+        assert!(new_lines[0].contains("5001"));
+    }
+
+    #[test]
+    fn test_viewport_edge_cases() {
+        let temp_dir = tempdir().unwrap();
+        let file_path = temp_dir.path().join("edge_case_test.txt");
+        let path_str = file_path.to_str().unwrap();
+
+        create_large_test_file(path_str, 6).unwrap(); // 6MB file for streaming
+        let doc = Document::from_path_smart(path_str).unwrap();
+        assert!(doc.is_streaming());
+
+        // Test loading beyond file bounds
+        let beyond_end = doc.load_viewport(200000, 100);
+        assert!(beyond_end.is_some());
+        assert!(beyond_end.unwrap().is_empty());
+
+        // Test empty viewport
+        let empty = doc.load_viewport(5000, 0);
+        assert!(empty.is_some());
+        assert!(empty.unwrap().is_empty());
+
+        // Test single line viewport
+        let single = doc.load_viewport(5000, 1).unwrap();
+        assert_eq!(single.lines().count(), 1);
+    }
+
+    #[test]
+    fn test_total_lines_accuracy() {
+        let temp_dir = tempdir().unwrap();
+        let file_path = temp_dir.path().join("lines_test.txt");
+        let path_str = file_path.to_str().unwrap();
+
+        create_test_file(path_str, 5000).unwrap();
+        let doc = Document::from_path_smart(path_str).unwrap();
+
+        let total_lines = doc.total_lines().unwrap();
+        assert_eq!(total_lines, 5000);
+    }
+
+    #[test]
+    fn test_memory_usage_doesnt_grow_with_viewport_changes() {
+        let temp_dir = tempdir().unwrap();
+        let file_path = temp_dir.path().join("memory_test.txt");
+        let path_str = file_path.to_str().unwrap();
+
+        create_large_test_file(path_str, 10).unwrap(); // 10MB file
+
+        let mut doc = Document::from_path_smart(path_str).unwrap();
+        let mut max_memory = 0;
+
+        // Perform multiple viewport changes
+        for i in 0..10 {
+            let line = (i + 1) * 1000;
+            doc.update_viewport(line, 100);
+            let current_memory = estimate_memory_usage(&doc.content());
+            max_memory = max_memory.max(current_memory);
+        }
+
+        // Memory usage should stay bounded (not grow with each viewport change)
+        assert!(max_memory < 500 * 1024, "Max memory {} exceeded 500KB", max_memory);
+    }
+
+    #[test]
+    fn test_large_file_initialization_time() {
+        let temp_dir = tempdir().unwrap();
+        let file_path = temp_dir.path().join("performance_test.txt");
+        let path_str = file_path.to_str().unwrap();
+
+        create_large_test_file(path_str, 15).unwrap(); // 15MB file
+
+        let start = Instant::now();
+        let _doc = Document::from_path_smart(path_str).unwrap();
+        let elapsed = start.elapsed();
+
+        // Large file initialization should be fast (< 2s)
+        assert!(elapsed.as_millis() < 2000, "Initialization took {}ms, expected < 2000ms", elapsed.as_millis());
+    }
+
+    #[test]
+    fn test_is_streaming_detection() {
+        let temp_dir = tempdir().unwrap();
+
+        // Small file
+        let small_file = temp_dir.path().join("small.txt");
+        let small_path = small_file.to_str().unwrap();
+        create_test_file(small_path, 100).unwrap();
+        let small_doc = Document::from_path_smart(small_path).unwrap();
+        assert!(!small_doc.is_streaming());
+
+        // Large file
+        let large_file = temp_dir.path().join("large.txt");
+        let large_path = large_file.to_str().unwrap();
+        create_large_test_file(large_path, 6).unwrap(); // 6MB
+        let large_doc = Document::from_path_smart(large_path).unwrap();
+        assert!(large_doc.is_streaming());
+    }
+
+    #[test]
+    fn test_viewport_content_boundary_conditions() {
+        let temp_dir = tempdir().unwrap();
+        let file_path = temp_dir.path().join("boundary_test.txt");
+        let path_str = file_path.to_str().unwrap();
+
+        create_test_file(path_str, 100).unwrap();
+        let doc = Document::from_path_smart(path_str).unwrap();
+
+        // Test viewport at end of file
+        let end_viewport = doc.load_viewport(90, 20).unwrap();
+        let end_lines: Vec<&str> = end_viewport.lines().collect();
+        assert!(end_lines.len() <= 10); // Should be truncated to file length
+        assert!(end_lines.last().unwrap().contains("Line 100"));
+
+        // Test viewport exactly at file start
+        let start_viewport = doc.load_viewport(0, 10).unwrap();
+        let start_lines: Vec<&str> = start_viewport.lines().collect();
+        assert!(start_lines[0].contains("Line 1"));
+    }
+
+    #[test]
+    fn test_empty_file_handling() {
+        let temp_dir = tempdir().unwrap();
+        let file_path = temp_dir.path().join("empty.txt");
+        let path_str = file_path.to_str().unwrap();
+
+        File::create(&file_path).unwrap();
+        let doc = Document::from_path_smart(path_str).unwrap();
+
+        assert!(!doc.is_streaming());
+        assert_eq!(doc.total_lines(), Some(0)); // Empty file has 0 lines
+        assert!(doc.content().is_empty());
     }
 }

@@ -4172,6 +4172,7 @@ dependencies = [
  "memmap2 0.9.8",
  "parking_lot 0.12.4",
  "serde",
+ "tempfile",
  "vedit-config",
  "vedit-syntax",
  "vedit-text",
