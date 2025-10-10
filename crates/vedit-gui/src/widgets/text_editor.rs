@@ -368,7 +368,7 @@ impl CachedLineNumbers {
                 font: Default::default(), // Will be set during rendering
                 horizontal_alignment: alignment::Horizontal::Right,
                 vertical_alignment: alignment::Vertical::Top,
-                shaping: Shaping::Basic,
+                shaping: Shaping::Advanced,
             };
 
             // Only cache the template - actual line numbers will use string interning during render
@@ -994,7 +994,7 @@ impl StreamingBuffer {
                 font,
                 horizontal_alignment: alignment::Horizontal::Right,
                 vertical_alignment: alignment::Vertical::Top,
-                shaping: Shaping::Basic,
+                shaping: Shaping::Advanced,
             };
 
             let x = (gutter_right - text_width - GUTTER_TEXT_PADDING).max(bounds.x);
@@ -1341,7 +1341,7 @@ fn draw_line_numbers_optimized_with_background(
                 font,
                 horizontal_alignment: alignment::Horizontal::Right,
                 vertical_alignment: alignment::Vertical::Top,
-                shaping: Shaping::Basic,
+                shaping: Shaping::Advanced,
             };
             let x = (gutter_right - text_width - GUTTER_TEXT_PADDING).max(bounds.x);
             renderer.fill_text(text, Point::new(x, y), color, *viewport);

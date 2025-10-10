@@ -78,7 +78,13 @@ impl Document {
     /// Load a document from a file path
     pub fn from_path(path: impl AsRef<Path>) -> io::Result<Self> {
         let path_buf = path.as_ref().to_path_buf();
-        let contents = fs::read_to_string(&path_buf)?;
+        let contents = fs::read(&path_buf)?;
+
+        // Try to decode as UTF-8, handling invalid UTF-8 sequences gracefully
+        let contents = String::from_utf8(contents)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData,
+                format!("File contains invalid UTF-8: {}", e)))?;
+
         Ok(Self::new(
             Some(path_buf.to_string_lossy().to_string()),
             contents,
@@ -754,5 +760,77 @@ mod tests {
         assert!(!doc.is_streaming());
         assert_eq!(doc.total_lines(), Some(0)); // Empty file has 0 lines
         assert!(doc.content().is_empty());
+    }
+
+    #[test]
+    fn test_unicode_file_loading() {
+        let temp_dir = tempdir().unwrap();
+        let file_path = temp_dir.path().join("unicode.txt");
+        let path_str = file_path.to_str().unwrap();
+
+        // Create a test file with various Unicode content
+        let file = File::create(&file_path).unwrap();
+        let mut writer = BufWriter::new(file);
+        writeln!(writer, "ASCII: Hello World").unwrap();
+        writeln!(writer, "Emojis: 🚀🎉🦀😀😃😄😁").unwrap();
+        writeln!(writer, "Accents: café résumé naïve").unwrap();
+        writeln!(writer, "Chinese: 你好世界").unwrap();
+        writeln!(writer, "Japanese: こんにちは世界").unwrap();
+        writeln!(writer, "Arabic: مرحبا بالعالم").unwrap();
+        writeln!(writer, "Mixed: Hello 世界 🌍 café").unwrap();
+        writeln!(writer, "ZWNJ sequences: 👨‍👩‍👧‍👦 🏳️‍🌈").unwrap();
+        writer.flush().unwrap();
+
+        let doc = Document::from_path(path_str).unwrap();
+        let content = doc.content();
+
+        // Test that all Unicode content is preserved correctly
+        assert!(content.contains("Hello World"));
+        assert!(content.contains("🚀🎉🦀"));
+        assert!(content.contains("café résumé"));
+        assert!(content.contains("你好世界"));
+        assert!(content.contains("こんにちは世界"));
+        assert!(content.contains("مرحبا بالعالم"));
+        assert!(content.contains("Hello 世界 🌍 café"));
+
+        // Test that the content length is correct (should be more bytes than ASCII characters)
+        let lines: Vec<&str> = content.lines().collect();
+        assert_eq!(lines.len(), 8);
+
+        // Verify Unicode character counting works
+        let emoji_line = lines.iter().find(|line| line.contains("Emojis")).unwrap();
+        let emoji_count = emoji_line.chars().filter(|c| {
+            let cp = *c as u32;
+            (cp >= 0x1F600 && cp <= 0x1F64F) || // Emoticons
+            (cp >= 0x1F300 && cp <= 0x1F5FF) || // Misc Symbols
+            (cp >= 0x1F680 && cp <= 0x1F6FF) || // Transport
+            (cp >= 0x1F1E0 && cp <= 0x1F1FF)    // Flags
+        }).count();
+        assert!(emoji_count >= 6); // Should have at least 6 emojis
+    }
+
+    #[test]
+    fn test_invalid_utf8_handling() {
+        let temp_dir = tempdir().unwrap();
+        let file_path = temp_dir.path().join("invalid_utf8.txt");
+        let path_str = file_path.to_str().unwrap();
+
+        // Create a file with invalid UTF-8 sequences
+        let file = File::create(&file_path).unwrap();
+        let mut writer = BufWriter::new(file);
+        writer.write_all(b"Valid text: Hello World\n").unwrap();
+        writer.write_all(&[0xFF, 0xFE, 0xFD]).unwrap(); // Invalid UTF-8
+        writer.write_all(b"\nMore valid text\n").unwrap();
+        writer.flush().unwrap();
+
+        let result = Document::from_path(path_str);
+        assert!(result.is_err());
+
+        let error = result.unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+        // Check for the actual error message from String::from_utf8
+        let error_msg = error.to_string();
+        assert!(error_msg.contains("utf8") || error_msg.contains("UTF-8") || error_msg.contains("invalid utf8"));
+        println!("Error message: {}", error_msg);
     }
 }

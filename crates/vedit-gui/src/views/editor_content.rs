@@ -4,6 +4,7 @@ use crate::style::{panel_container, active_document_button, document_button};
 use crate::syntax::{format_highlight, SyntaxHighlighter};
 use crate::widgets::text_editor::TextEditor as EditorWidget;
 use crate::views::scrollbar_style::EditorScrollbarStyle;
+use crate::views::console_panel;
 use iced::widget::{button, column, container, horizontal_space, pick_list, row, scrollable, text, text_input, vertical_slider, Row};
 use iced::{theme, Alignment, Color, Element, Font, Length, Padding, Pixels};
 use iced::widget::slider;
@@ -189,37 +190,16 @@ pub fn render_editor_content(
         .height(Length::Fill);
 
     if state.console().is_visible() {
-        let header: iced::widget::Row<'_, Message, iced::Theme, iced::Renderer> = row![
-            pick_list(
-                vec!["Terminal".to_string(), "Debug".to_string(), "Output".to_string()],
-                Some("Terminal".to_string()),
-                |_| Message::DocumentSelected(0), // dummy
-            ),
-            button(text("▼").style(iced::theme::Text::Color(crate::style::TEXT)))
-                .style(crate::style::custom_button())
-                .on_press(Message::ConsoleVisibilityToggled),
-        ]
-        .spacing(8)
-        .align_items(Alignment::Center);
-
-        let log_view = scrollable(
-            column![
-                text("Application started").style(iced::theme::Text::Color(crate::style::TEXT)),
-                text("Warning: deprecated function").style(iced::theme::Text::Color(crate::style::WARNING)),
-                text("Error: file not found").style(iced::theme::Text::Color(crate::style::ERROR)),
-            ]
-            .spacing(4)
-            .padding(8)
-        )
-        .style(crate::style::custom_scrollable());
-
-        let content = column![header, log_view].spacing(8);
-
         layout = layout.push(
-            container(content)
-                .style(crate::style::status_container())
-                .width(Length::Fill)
-                .height(Length::Fixed(200.0))
+            container(console_panel::render_console_panel(
+                state,
+                scale,
+                spacing_large,
+                spacing_medium,
+                spacing_small,
+            ))
+            .width(Length::Fill)
+            .height(Length::Fixed(300.0))
         );
     }
 
