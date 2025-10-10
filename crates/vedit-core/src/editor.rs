@@ -1,5 +1,5 @@
-use crate::document::Document;
-use crate::sticky::StickyNote;
+use vedit_document::Document;
+use vedit_config::StickyNote;
 use vedit_text::TextBuffer;
 use vedit_workspace::{self, FileNode, build_tree, build_tree_with_ignored, build_solution_tree, find_node_mut, load_directory_children};
 use std::io;

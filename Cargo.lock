@@ -4132,13 +4132,11 @@ dependencies = [
 name = "vedit-core"
 version = "0.1.0"
 dependencies = [
- "crossbeam",
- "memmap2 0.9.8",
- "parking_lot 0.12.4",
  "serde",
  "slab",
  "toml",
  "vedit-config",
+ "vedit-document",
  "vedit-keybinds",
  "vedit-make",
  "vedit-syntax",
@@ -4164,6 +4162,19 @@ version = "0.1.0"
 dependencies = [
  "crossbeam-channel",
  "thiserror 1.0.69",
+]
+
+[[package]]
+name = "vedit-document"
+version = "0.1.0"
+dependencies = [
+ "crossbeam",
+ "memmap2 0.9.8",
+ "parking_lot 0.12.4",
+ "serde",
+ "vedit-config",
+ "vedit-syntax",
+ "vedit-text",
 ]
 
 [[package]]

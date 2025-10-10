@@ -1,0 +1,16 @@
+[package]
+name = "vedit-document"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+memmap2 = "0.9"
+parking_lot = "0.12"
+crossbeam = "0.8"
+vedit-config = { path = "../vedit-config" }
+vedit-text = { path = "../vedit-text" }
+vedit-syntax = { path = "../vedit-syntax" }

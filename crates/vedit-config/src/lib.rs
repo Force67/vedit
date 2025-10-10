@@ -7,6 +7,10 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 use thiserror::Error;
 
+pub mod sticky_notes;
+
+pub use sticky_notes::StickyNote;
+
 const WORKSPACE_DIR: &str = ".vedit";
 const WORKSPACE_FILE: &str = "workspace.toml";
 const WORKSPACE_METADATA_FILE: &str = "metadata.json";
