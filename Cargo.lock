@@ -4188,6 +4188,7 @@ dependencies = [
  "iced_aw",
  "iced_font_awesome",
  "iced_graphics",
+ "itoa",
  "portable-pty",
  "rfd",
  "slab",
