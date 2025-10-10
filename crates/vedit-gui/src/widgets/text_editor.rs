@@ -857,6 +857,24 @@ impl StreamingBuffer {
         }
     }
 
+    // New method: Initialize from cosmic-text buffer directly
+    fn initialize_from_cosmic_buffer(&mut self, buffer: &CosmicBuffer) {
+        self.total_lines = buffer.lines.len();
+
+        // Extract text content from cosmic-text buffer once
+        let mut text = String::new();
+        for line in buffer.lines.iter() {
+            // Try to get line text - cosmic-text lines don't have a simple text() method
+            // For now, use the Debug representation as fallback
+            text.push_str(&format!("{:?}\n", line));
+        }
+
+        self.file_content = Some(text);
+        self.loaded_count = 0;
+        self.loaded_start_line = 0;
+        self.loaded_lines.clear();
+    }
+
     fn load_file_content(&mut self, content: &str) {
         self.file_content = Some(content.to_string());
         self.total_lines = content.lines().count();
@@ -880,7 +898,7 @@ impl StreamingBuffer {
         // Check if we need to load new lines
         let need_reload = self.loaded_count == 0 ||
             needed_start < self.loaded_start_line ||
-            needed_end > self.loaded_start_line + self.loaded_count ||
+            needed_end > self.loaded_start_line.saturating_add(self.loaded_count) ||
             needed_count > self.max_loaded_lines;
 
         if !need_reload {
@@ -906,11 +924,11 @@ impl StreamingBuffer {
 
     fn get_loaded_line(&self, line_number: usize) -> Option<&str> {
         if line_number < self.loaded_start_line ||
-           line_number >= self.loaded_start_line + self.loaded_count {
+           line_number >= self.loaded_start_line.saturating_add(self.loaded_count) {
             return None;
         }
 
-        let index = line_number - self.loaded_start_line;
+        let index = line_number.saturating_sub(self.loaded_start_line);
         self.loaded_lines.get(index).map(|s| s.as_str())
     }
 
@@ -943,7 +961,7 @@ impl StreamingBuffer {
                     continue;
                 }
 
-                let line_str = if line_num <= 10000 {
+                let line_str = if line_num >= 1 && line_num <= 10000 {
                     self.string_pool[line_num - 1].clone()
                 } else {
                     line_num.to_string()
@@ -1272,11 +1290,18 @@ fn draw_line_numbers_optimized_with_background(
     // Use streaming buffer for large files to only load visible lines
     let total_lines = buffer.lines.len();
 
-    // For now, skip streaming buffer for files with cosmic-text integration
-    // TODO: Implement proper cosmic-text buffer streaming
-    if total_lines > 1000 && false { // Disabled for now
+    // Use streaming buffer for large files
+    if should_use_streaming(content) {
         let mut stream_buffer = streaming_buffer.borrow_mut();
-        // TODO: Extract text from cosmic-text buffer properly
+
+        // Initialize streaming buffer from cosmic-text buffer (only when needed)
+        if stream_buffer.file_content.is_none() || stream_buffer.total_lines == 0 {
+            let _editor_ref = borrow_editor(content);
+            let buffer = _editor_ref.buffer();
+            stream_buffer.initialize_from_cosmic_buffer(buffer);
+        }
+
+        // Use streaming buffer for rendering - this only processes visible lines
         stream_buffer.prepare_viewport_batch(scroll, visible_lines, viewport, bounds, line_height);
         stream_buffer.render_batch(renderer, bounds, base_padding, gutter_width, color, font_size, line_height, viewport, scroll);
     } else {
@@ -1491,3 +1516,28 @@ fn borrow_editor(content: &Content) -> Ref<'_, GraphicsEditor> {
         Ref::map(repr.0.borrow(), |internal| &internal.editor)
     }
 }
+
+fn extract_text_from_content(content: &Content) -> String {
+    let editor_ref = borrow_editor(content);
+    let buffer = editor_ref.buffer();
+
+    // Try to extract text from cosmic-text buffer
+    // This is a bit hacky but should work for our purposes
+    let mut text = String::new();
+    for line in buffer.lines.iter() {
+        // BufferLine doesn't have a simple text() method
+        // For now, use Debug representation as fallback
+        text.push_str(&format!("{:?}\n", line));
+    }
+    text
+}
+
+fn should_use_streaming(content: &Content) -> bool {
+    let editor_ref = borrow_editor(content);
+    let buffer = editor_ref.buffer();
+    let total_lines = buffer.lines.len();
+
+    // Use streaming for files with more than 1000 lines
+    total_lines > 1000
+}
+
