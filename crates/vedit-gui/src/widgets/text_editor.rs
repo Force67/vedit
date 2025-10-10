@@ -342,6 +342,7 @@ struct CachedLineMetrics {
     width_hash: u64, // Track layout-affecting changes
     current_scroll: usize, // Cache current scroll position
     last_render_time: std::time::Instant, // Throttle updates
+    should_stream: bool, // Cached streaming decision
 }
 
 impl CachedLineMetrics {
@@ -355,6 +356,7 @@ impl CachedLineMetrics {
             width_hash: 0,
             current_scroll: 0,
             last_render_time: std::time::Instant::now(),
+            should_stream: false,
         }
     }
 
@@ -394,12 +396,17 @@ impl CachedLineMetrics {
         self.font_size = font_size;
         self.visible_lines = buffer.visible_lines().max(0) as usize;
 
-        // Use a wrap index to avoid O(N) scan for total visual lines
+        // Use a wrap index to avoid O(N) scan for total visual lines and cache streaming decision
         let width_hash = compute_width_hash(buffer);
         if self.width_hash != width_hash || self.buffer_version != get_buffer_version(buffer) {
             let mut temp_wrap_index = WrapIndex::new();
             temp_wrap_index.rebuild(buffer, width_hash);
             self.total_visual_lines = temp_wrap_index.total_visual();
+
+            // Cache streaming decision: use streaming for files with more than 1000 logical lines OR 10,000 visual lines
+            let total_logical_lines = buffer.lines.len();
+            self.should_stream = total_logical_lines > 1000 || self.total_visual_lines > 10_000;
+
             self.width_hash = width_hash;
         }
 
@@ -795,16 +802,14 @@ struct StreamingBuffer {
     file_content: Option<String>,
     // Line index for O(1) line access
     line_index: Option<LineIndex>,
-    // Currently loaded lines in memory (small viewport window)
-    loaded_lines: Vec<String>,
-    // Starting line number in the file for loaded_lines[0]
-    loaded_start_line: usize,
-    // Number of lines currently loaded
-    loaded_count: usize,
+    // Sliding window of loaded line indices (no String allocations needed for gutter)
+    loaded: std::collections::VecDeque<usize>,
+    // Starting line number in the file for loaded[0]
+    loaded_start: usize,
     // Total lines in the file
     total_lines: usize,
     // Maximum lines to keep in memory
-    max_loaded_lines: usize,
+    max_loaded: usize,
     // Pre-allocated string pool for line numbers
     string_pool: Vec<String>,
     // Render batch for visible lines only
@@ -824,11 +829,10 @@ impl StreamingBuffer {
         Self {
             file_content: None,
             line_index: None,
-            loaded_lines: Vec::with_capacity(200), // Start with small viewport
-            loaded_start_line: 0,
-            loaded_count: 0,
+            loaded: std::collections::VecDeque::with_capacity(200), // Start with small viewport
+            loaded_start: 0,
             total_lines: 0,
-            max_loaded_lines: 500, // Only keep 500 lines in memory
+            max_loaded: 500, // Only keep 500 lines in memory
             string_pool,
             render_batch: VecDeque::with_capacity(100), // Small render batch
             last_viewport: None,
@@ -848,18 +852,22 @@ impl StreamingBuffer {
         }
 
         self.file_content = Some(text);
-        self.loaded_count = 0;
-        self.loaded_start_line = 0;
-        self.loaded_lines.clear();
+
+        // Build line index immediately to avoid the None issue
+        if let Some(ref content) = self.file_content {
+            self.line_index = Some(LineIndex::from_text(content));
+        }
+
+        self.loaded.clear();
+        self.loaded_start = 0;
     }
 
     fn load_file_content(&mut self, content: &str) {
         self.file_content = Some(content.to_string());
         self.line_index = Some(LineIndex::from_text(content));
         self.total_lines = self.line_index.as_ref().map(|idx| idx.len()).unwrap_or(0);
-        self.loaded_count = 0;
-        self.loaded_start_line = 0;
-        self.loaded_lines.clear();
+        self.loaded.clear();
+        self.loaded_start = 0;
     }
 
     fn ensure_lines_loaded(&mut self, target_line: usize, visible_lines: usize) {
@@ -872,44 +880,46 @@ impl StreamingBuffer {
         let buffer_below = 50; // Load 50 lines below viewport
         let needed_start = target_line.saturating_sub(buffer_above);
         let needed_end = (target_line + visible_lines + buffer_below).min(self.total_lines);
-        let needed_count = needed_end - needed_start;
 
-        // Check if we need to load new lines
-        let need_reload = self.loaded_count == 0 ||
-            needed_start < self.loaded_start_line ||
-            needed_end > self.loaded_start_line.saturating_add(self.loaded_count) ||
-            needed_count > self.max_loaded_lines;
-
-        if !need_reload {
-            return; // Already have the lines we need
+        // Initial fill: populate the window if empty
+        if self.loaded.is_empty() {
+            self.loaded_start = needed_start;
+            let end = needed_end.min(self.total_lines());
+            self.loaded.extend(self.loaded_start..end);
+            return;
         }
 
-        // Clear current loaded lines
-        self.loaded_lines.clear();
-
-        // Load the needed range from file content using LineIndex for O(1) access
-        if let (Some(ref content), Some(ref line_index)) = (&self.file_content, &self.line_index) {
-            self.loaded_lines.reserve(needed_count);
-
-            for line_idx in needed_start..needed_end {
-                if line_idx < line_index.len() {
-                    self.loaded_lines.push(line_index.line(content, line_idx).to_string());
-                }
+        // Slide down: add lines at the back, remove from front
+        while self.loaded_start + self.loaded.len() < needed_end {
+            let next = self.loaded_start + self.loaded.len();
+            if next >= self.total_lines() { break; }
+            self.loaded.push_back(next);
+            if self.loaded.len() > self.max_loaded {
+                self.loaded.pop_front();
+                self.loaded_start += 1;
             }
+        }
 
-            self.loaded_start_line = needed_start;
-            self.loaded_count = self.loaded_lines.len();
+        // Slide up: add lines at the front, remove from back
+        while needed_start < self.loaded_start {
+            let prev = self.loaded_start - 1;
+            self.loaded.push_front(prev);
+            self.loaded_start -= 1;
+            if self.loaded.len() > self.max_loaded {
+                self.loaded.pop_back();
+            }
         }
     }
 
-    fn get_loaded_line(&self, line_number: usize) -> Option<&str> {
-        if line_number < self.loaded_start_line ||
-           line_number >= self.loaded_start_line.saturating_add(self.loaded_count) {
-            return None;
-        }
+    #[inline]
+    fn total_lines(&self) -> usize {
+        self.line_index.as_ref().map(|li| li.len()).unwrap_or(0)
+    }
 
-        let index = line_number.saturating_sub(self.loaded_start_line);
-        self.loaded_lines.get(index).map(|s| s.as_str())
+    fn get_loaded_line(&self, _line_number: usize) -> Option<&str> {
+        // Not used for gutter rendering - gutter uses the computed numbers vector
+        // This method can be used for actual text content streaming if needed
+        None
     }
 
     fn prepare_viewport_batch(&mut self, start_line: usize, visible_lines: usize, viewport: &Rectangle, bounds: Rectangle, line_height: f32) {
@@ -988,13 +998,6 @@ impl StreamingBuffer {
         }
     }
 
-    fn get_total_lines(&self) -> usize {
-        self.total_lines
-    }
-
-    fn is_large_file(&self) -> bool {
-        self.total_lines > 1000 // Consider files > 1000 lines as "large"
-    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1193,6 +1196,48 @@ fn draw_line_numbers(
     }
 }
 
+fn render_gutter_numbers(
+    renderer: &mut IcedRenderer,
+    bounds: Rectangle,
+    viewport: &Rectangle,
+    base_padding: &Padding,
+    gutter_width: f32,
+    color: Color,
+    font_size: f32,
+    line_height: f32,
+    numbers: &[usize],
+) {
+    let text_width = (gutter_width - GUTTER_TEXT_PADDING * 2.0).max(0.0);
+    let gutter_right = bounds.x + base_padding.left + gutter_width;
+    let start_y = bounds.y + base_padding.top;
+    let start_x = (gutter_right - text_width - GUTTER_TEXT_PADDING).max(bounds.x);
+    let font = renderer.default_font();
+    let template = PrimitiveText {
+        content: "",
+        bounds: Size::new(text_width, line_height),
+        size: Pixels(font_size),
+        line_height: LineHeight::Absolute(Pixels(line_height)),
+        font,
+        horizontal_alignment: alignment::Horizontal::Right,
+        vertical_alignment: alignment::Vertical::Top,
+        shaping: Shaping::Basic,
+    };
+
+    // Optional: cull with the viewport
+    let top = viewport.y;
+    let bottom = viewport.y + viewport.height;
+
+    // Zero-allocation formatting
+    let mut itoa_buf = itoa::Buffer::new();
+
+    for (i, &n) in numbers.iter().enumerate() {
+        let y = start_y + (i as f32) * line_height;
+        if y + line_height < top || y > bottom { continue; }
+        let s = itoa_buf.format(n);
+        renderer.fill_text(PrimitiveText { content: s, ..template }, Point::new(start_x, y), color, *viewport);
+    }
+}
+
 fn draw_line_numbers_optimized_with_background(
     renderer: &mut IcedRenderer,
     bounds: Rectangle,
@@ -1285,72 +1330,11 @@ fn draw_line_numbers_optimized_with_background(
         GUTTER_BORDER_COLOR,
     );
 
-    // Use streaming buffer for large files to only load visible lines
-
-    // Use streaming buffer for large files
-    if should_use_streaming(content) {
-        let mut stream_buffer = streaming_buffer.borrow_mut();
-
-        // Initialize streaming buffer from cosmic-text buffer (only when needed)
-        if stream_buffer.file_content.is_none() || stream_buffer.total_lines == 0 {
-            let _editor_ref = borrow_editor(content);
-            let buffer = _editor_ref.buffer();
-            stream_buffer.initialize_from_cosmic_buffer(buffer);
-        }
-
-        // Use streaming buffer for rendering - this only processes visible lines
-        stream_buffer.prepare_viewport_batch(scroll, visible_lines, viewport, bounds, line_height);
-        stream_buffer.render_batch(renderer, bounds, base_padding, gutter_width, color, font_size, line_height, viewport, scroll);
-    } else {
-        // Small file: use traditional rendering
-        let text_size = Pixels(font_size);
-        let font = renderer.default_font();
-        let text_width = (gutter_width - GUTTER_TEXT_PADDING * 2.0).max(0.0);
-
-        // Calculate text positioning
-        let gutter_right = bounds.x + base_padding.left + gutter_width;
-        let start_y = bounds.y + base_padding.top;
-
-        
-        // Viewport culling: only render line numbers that are actually visible
-        let viewport_top = viewport.y;
-        let viewport_bottom = viewport.y + viewport.height;
-
-        // Fast rendering for small files with optimized allocations
-        // Use a stack-allocated buffer for number formatting to avoid allocations
-        let mut itoa_buffer = itoa::Buffer::new();
-        let text_template = PrimitiveText {
-            content: "", // Will be set each iteration
-            bounds: Size::new(text_width, line_height),
-            size: text_size,
-            line_height: LineHeight::Absolute(Pixels(line_height)),
-            font,
-            horizontal_alignment: alignment::Horizontal::Right,
-            vertical_alignment: alignment::Vertical::Top,
-            shaping: Shaping::Basic, // Use Basic shaping for line numbers (ASCII digits only)
-        };
-
-        for (index, line_number) in numbers.iter().enumerate() {
-            let y = start_y + index as f32 * line_height;
-            let text_bottom = y + line_height;
-
-            // Skip if text is completely outside viewport
-            if text_bottom < viewport_top || y > viewport_bottom {
-                continue;
-            }
-
-            // Use itoa for zero-allocation number formatting
-            let line_str = itoa_buffer.format(*line_number);
-
-            let text = PrimitiveText {
-                content: line_str,
-                ..text_template
-            };
-
-            let x = (gutter_right - text_width - GUTTER_TEXT_PADDING).max(bounds.x);
-            renderer.fill_text(text, Point::new(x, y), color, *viewport);
-        }
-    }
+    // Always render gutter numbers from the computed numbers vector
+    // This eliminates the streaming branch that was causing the issue
+    render_gutter_numbers(
+        renderer, bounds, viewport, base_padding, gutter_width, color, font_size, line_height, &numbers
+    );
 }
 
 fn collect_visible_line_numbers_optimized(
@@ -1536,19 +1520,4 @@ fn extract_text_from_content(content: &Content) -> String {
     text
 }
 
-fn should_use_streaming(content: &Content) -> bool {
-    let editor_ref = borrow_editor(content);
-    let buffer = editor_ref.buffer();
-    let total_lines = buffer.lines.len();
-
-    // Create a quick wrap index to check visual lines count
-    let width_hash = compute_width_hash(buffer);
-    let mut temp_wrap_index = WrapIndex::new();
-    temp_wrap_index.rebuild(buffer, width_hash);
-    let total_visual_lines = temp_wrap_index.total_visual();
-
-    // Use streaming for files with more than 1000 logical lines OR 10,000 visual lines
-    // This accounts for files with long wrapped lines that create many visual lines
-    total_lines > 1000 || total_visual_lines > 10_000
-}
 
