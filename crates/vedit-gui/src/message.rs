@@ -73,6 +73,7 @@ pub enum Message {
     DebuggerManualTargetSaved,
     DebuggerLaunchScriptChanged(String),
     DebuggerTick,
+    FpsUpdate,
     Keyboard(keyboard::Event),
     CommandPaletteInputChanged(String),
     CommandPaletteCommandInvoked(QuickCommandId),

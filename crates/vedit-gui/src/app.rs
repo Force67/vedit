@@ -583,6 +583,9 @@ impl Application for EditorApp {
             Message::DebuggerTick => {
                 self.state.tick_notifications(Duration::from_millis(200));
             }
+            Message::FpsUpdate => {
+                self.state.update_fps_counter();
+            }
             Message::NotificationDismissed(id) => {
                 self.state.dismiss_notification(id);
             }
@@ -698,8 +701,9 @@ impl Application for EditorApp {
         });
 
         let tick = time::every(Duration::from_millis(200)).map(|_| Message::DebuggerTick);
+        let fps_tick = time::every(Duration::from_millis(16)).map(|_| Message::FpsUpdate); // ~60 FPS
 
-        Subscription::batch(vec![input, tick])
+        Subscription::batch(vec![input, tick, fps_tick])
     }
 
     fn scale_factor(&self) -> f64 {

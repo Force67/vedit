@@ -63,7 +63,7 @@ pub fn view(state: &EditorState) -> Element<'_, Message> {
         main_element = main_element.push(render_notifications(state, scale, spacing_large, spacing_medium));
     }
 
-    let base = container(
+    let main_content = container(
         main_element
             .spacing(spacing_large)
             .width(Length::Fill)
@@ -74,8 +74,9 @@ pub fn view(state: &EditorState) -> Element<'_, Message> {
     .height(Length::Fill)
     .center_x()
     .center_y()
-    .style(root_container())
-    .into();
+    .style(root_container());
+
+    let base = main_content.into();
 
     // Overlay the command prompt on top without dimming
     if state.command_palette().is_open() {

@@ -4,6 +4,7 @@ use crate::notifications::{Notification, NotificationCenter, NotificationRequest
 use crate::scaling;
 use crate::syntax::{DocumentKey, SyntaxSettings, SyntaxSystem};
 use crate::widgets::file_explorer::FileExplorer;
+use crate::widgets::fps_counter::FpsCounter;
 use crate::widgets::text_editor::{buffer_scroll_metrics, scroll_to, ScrollMetrics};
 use iced::keyboard;
 use iced::widget::text_editor::{Action as TextEditorAction, Content};
@@ -175,6 +176,7 @@ pub struct EditorState {
     pub resize_start_pos: Option<iced::Point>,
     pub resize_start_size: Option<iced::Size>,
     pub resize_direction: Option<ResizeDirection>,
+    fps_counter: FpsCounter,
 }
 
 impl Default for EditorState {
@@ -209,6 +211,7 @@ impl Default for EditorState {
             resize_start_pos: None,
             resize_start_size: None,
             resize_direction: None,
+            fps_counter: FpsCounter::new(),
         };
         state.sync_buffer_from_editor();
         state
@@ -679,6 +682,14 @@ impl EditorState {
 
     pub fn scale_factor(&self) -> f64 {
         self.scale_factor
+    }
+
+    pub fn fps_counter(&self) -> &FpsCounter {
+        &self.fps_counter
+    }
+
+    pub fn update_fps_counter(&mut self) {
+        self.fps_counter.update();
     }
 
     pub fn code_font_zoom(&self) -> f64 {

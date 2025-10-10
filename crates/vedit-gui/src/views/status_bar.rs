@@ -39,6 +39,18 @@ pub fn render_status_bar(
             .size((14.0 * scale).max(10.0)),
             text(state.format_scale_factor()).size((14.0 * scale).max(10.0)),
             text(state.format_code_font_zoom()).size((14.0 * scale).max(10.0)),
+            text(format!(
+                "FPS: {:.0}",
+                state.fps_counter().fps()
+            ))
+            .size((18.0 * scale).max(12.0)) // Bigger font for FPS
+            .style(if state.fps_counter().fps() >= 60.0 {
+                Color::from_rgb(0.0, 1.0, 0.0) // Green
+            } else if state.fps_counter().fps() >= 30.0 {
+                Color::from_rgb(1.0, 1.0, 0.0) // Yellow
+            } else {
+                Color::from_rgb(1.0, 0.0, 0.0) // Red
+            }),
             match (state.error(), state.workspace_notice()) {
                 (Some(err), _) => text(format!("Error: {}", err)).size((14.0 * scale).max(10.0)),
                 (None, Some(notice)) => text(notice)
