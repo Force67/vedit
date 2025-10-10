@@ -240,6 +240,9 @@ impl EditorState {
     }
 
     pub fn set_buffer_scroll(&mut self, position: f32) {
+        // Mark scroll start to optimize syntax highlighting cache
+        self.syntax.mark_scroll_start();
+
         let metrics = buffer_scroll_metrics(&self.buffer_content);
         let max_scroll = metrics.max_scroll() as f32;
         let target = position
@@ -690,6 +693,10 @@ impl EditorState {
 
     pub fn update_fps_counter(&mut self) {
         self.fps_counter.update();
+    }
+
+    pub fn reset_rapid_scroll(&mut self) {
+        self.syntax.reset_rapid_scroll();
     }
 
     pub fn code_font_zoom(&self) -> f64 {

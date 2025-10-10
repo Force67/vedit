@@ -47,6 +47,16 @@ impl SyntaxSystem {
         }
     }
 
+    /// Call this to optimize syntax highlighting for scrolling performance
+    pub fn mark_scroll_start(&self) {
+        self.store.mark_scroll_start();
+    }
+
+    /// Call this periodically to re-enable syntax highlighting after rapid scrolling
+    pub fn reset_rapid_scroll(&self) {
+        self.store.reset_rapid_scroll();
+    }
+
     pub fn update_document(&self, key: DocumentKey, language: Language, contents: &str) {
         let highlight = if let Some(config) = self.registry.resolve(language) {
             match highlight_document(contents, config) {
@@ -444,28 +454,132 @@ impl PaletteIndex {
     const TOTAL: usize = 14;
 }
 
-#[derive(Default)]
+impl Default for HighlightStore {
+    fn default() -> Self {
+        Self {
+            entries: Mutex::new(HashMap::new()),
+            scroll_cache: Mutex::new(HashMap::new()),
+            last_scroll_time: Mutex::new(std::time::Instant::now()),
+            rapid_scroll_count: Mutex::new(0),
+        }
+    }
+}
+
 struct HighlightStore {
     entries: Mutex<HashMap<DocumentKey, DocumentHighlight>>,
+    // Fast-path cache for scrolling performance
+    scroll_cache: Mutex<HashMap<(DocumentKey, usize), Vec<LineHighlight>>>,
+    last_scroll_time: Mutex<std::time::Instant>,
+    rapid_scroll_count: Mutex<u32>, // Track consecutive scroll operations
 }
 
 impl HighlightStore {
     fn set(&self, key: DocumentKey, highlight: DocumentHighlight) {
+        let key_clone = key.clone();
         if let Ok(mut entries) = self.entries.lock() {
             entries.insert(key, highlight);
+        }
+
+        // Clear scroll cache when document changes
+        if let Ok(mut scroll_cache) = self.scroll_cache.lock() {
+            scroll_cache.retain(|(doc_key, _), _| doc_key != &key_clone);
         }
     }
 
     fn line_spans(&self, key: &DocumentKey, line: usize) -> Vec<LineHighlight> {
-        if let Ok(entries) = self.entries.lock() {
-            if let Some(doc) = entries.get(key) {
-                if let Some(spans) = doc.lines.get(line) {
-                    return spans.clone();
+        let now = std::time::Instant::now();
+
+        // Check if we're in rapid scrolling mode - if so, return empty spans for maximum performance
+        {
+            if let Ok(rapid_scroll_count) = self.rapid_scroll_count.lock() {
+                if *rapid_scroll_count > 5 {
+                    // During rapid scrolling, disable syntax highlighting entirely for 60 FPS
+                    return Vec::new();
                 }
             }
         }
 
-        Vec::new()
+        // Fast path: check if we're in a scroll operation and can use cache
+        {
+            if let Ok(last_scroll_time) = self.last_scroll_time.lock() {
+                let time_since_scroll = now.duration_since(*last_scroll_time);
+
+                // If we scrolled recently (within 150ms), try cache first
+                if time_since_scroll.as_millis() < 150 {
+                    if let Ok(scroll_cache) = self.scroll_cache.lock() {
+                        if let Some(cached_spans) = scroll_cache.get(&(key.clone(), line)) {
+                            return cached_spans.clone();
+                        }
+                    }
+                }
+            }
+        }
+
+        // Slow path: get from main store and cache for future scrolls
+        let spans = if let Ok(entries) = self.entries.lock() {
+            if let Some(doc) = entries.get(key) {
+                if let Some(spans) = doc.lines.get(line) {
+                    Some(spans.clone())
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        }.unwrap_or_default();
+
+        // Cache the result for future scroll operations
+        if let Ok(mut scroll_cache) = self.scroll_cache.lock() {
+            scroll_cache.insert((key.clone(), line), spans.clone());
+
+            // Update scroll time
+            if let Ok(mut last_scroll_time) = self.last_scroll_time.lock() {
+                *last_scroll_time = now;
+            }
+
+            // Limit cache size to prevent memory bloat
+            if scroll_cache.len() > 1000 {
+                // Remove oldest entries (simple strategy)
+                let keys_to_remove: Vec<_> = scroll_cache.keys().take(200).cloned().collect();
+                for key in keys_to_remove {
+                    scroll_cache.remove(&key);
+                }
+            }
+        }
+
+        spans
+    }
+
+    // Call this when scroll starts to optimize cache usage
+    fn mark_scroll_start(&self) {
+        let now = std::time::Instant::now();
+
+        if let Ok(mut last_scroll_time) = self.last_scroll_time.lock() {
+            let time_since_last_scroll = now.duration_since(*last_scroll_time);
+
+            // If this is a rapid scroll (within 50ms), increment counter
+            if time_since_last_scroll.as_millis() < 50 {
+                if let Ok(mut rapid_scroll_count) = self.rapid_scroll_count.lock() {
+                    *rapid_scroll_count = rapid_scroll_count.saturating_add(1);
+                }
+            } else {
+                // Reset counter if scroll is not rapid
+                if let Ok(mut rapid_scroll_count) = self.rapid_scroll_count.lock() {
+                    *rapid_scroll_count = 0;
+                }
+            }
+
+            *last_scroll_time = now;
+        }
+    }
+
+    // Call this periodically to reset rapid scroll counter
+    pub fn reset_rapid_scroll(&self) {
+        if let Ok(mut rapid_scroll_count) = self.rapid_scroll_count.lock() {
+            *rapid_scroll_count = 0;
+        }
     }
 }
 

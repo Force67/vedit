@@ -585,6 +585,8 @@ impl Application for EditorApp {
             }
             Message::FpsUpdate => {
                 self.state.update_fps_counter();
+                // Reset rapid scroll counter to re-enable syntax highlighting
+                self.state.reset_rapid_scroll();
             }
             Message::NotificationDismissed(id) => {
                 self.state.dismiss_notification(id);
