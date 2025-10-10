@@ -23,6 +23,8 @@ use iced::Theme as IcedTheme;
 use iced::advanced::text::{LineHeight, Shaping, Text as PrimitiveText};
 use iced::advanced::text::highlighter;
 use iced::advanced::text::Highlighter as IcedHighlighter;
+use std::sync::Arc;
+use std::collections::VecDeque;
 use iced::advanced::text::Renderer as TextRenderer;
 use iced::advanced::Renderer as _;
 use iced_graphics::text::Editor as GraphicsEditor;
@@ -491,6 +493,7 @@ where
     cached_line_metrics: Rc<RefCell<CachedLineMetrics>>,
     cached_scroll_metrics: Rc<RefCell<CachedScrollMetrics>>,
     incremental_line_state: Rc<RefCell<IncrementalLineState>>,
+    streaming_renderer: Rc<RefCell<StreamingLineRenderer>>,
 }
 
 impl<'a, Message> TextEditor<'a, Message, highlighter::PlainText> {
@@ -521,6 +524,7 @@ impl<'a, Message> TextEditor<'a, Message, highlighter::PlainText> {
             cached_line_metrics: Rc::new(RefCell::new(CachedLineMetrics::new())),
             cached_scroll_metrics: Rc::new(RefCell::new(CachedScrollMetrics::new())),
             incremental_line_state: Rc::new(RefCell::new(IncrementalLineState::new())),
+            streaming_renderer: Rc::new(RefCell::new(StreamingLineRenderer::new())),
         }
     }
 
@@ -551,6 +555,7 @@ impl<'a, Message> TextEditor<'a, Message, highlighter::PlainText> {
             cached_line_metrics: Rc::clone(&self.cached_line_metrics),
             cached_scroll_metrics: Rc::clone(&self.cached_scroll_metrics),
             incremental_line_state: Rc::clone(&self.incremental_line_state),
+            streaming_renderer: Rc::clone(&self.streaming_renderer),
         }
     }
 }
@@ -735,6 +740,7 @@ where
             &self.cached_line_numbers,
             &self.cached_line_metrics,
             &self.incremental_line_state,
+            &self.streaming_renderer,
         );
 
         // Minimap would be more complex, perhaps draw a small version on the right
@@ -804,6 +810,118 @@ fn adjust_point(position: Point, pointer_correction: f32) -> Point {
         position.x - pointer_correction,
         position.y + pointer_correction,
     )
+}
+
+
+// Streaming renderer for large files
+#[derive(Debug)]
+struct StreamingLineRenderer {
+    // Pre-allocated string pool for common line numbers (1-9999)
+    string_pool: Vec<String>,
+    // Batch of line numbers to render
+    render_batch: VecDeque<(usize, String)>,
+    // Last rendered viewport for cache invalidation
+    last_viewport: Option<Rectangle>,
+    // Maximum batch size to prevent memory bloat
+    max_batch_size: usize,
+}
+
+impl StreamingLineRenderer {
+    fn new() -> Self {
+        let mut string_pool = Vec::with_capacity(10000);
+        // Pre-allocate strings for common line numbers (1-9999)
+        for i in 1..=10000 {
+            string_pool.push(i.to_string());
+        }
+
+        Self {
+            string_pool,
+            render_batch: VecDeque::with_capacity(200), // Start with 200 line capacity
+            last_viewport: None,
+            max_batch_size: 1000, // Cap at 1000 lines per batch
+        }
+    }
+
+    fn get_line_string(&mut self, line_number: usize) -> &str {
+        if line_number <= 10000 {
+            &self.string_pool[line_number - 1]
+        } else {
+            // For very large line numbers, allocate on demand (rare case)
+            self.string_pool.push(line_number.to_string());
+            &self.string_pool[self.string_pool.len() - 1]
+        }
+    }
+
+    fn prepare_viewport_batch(&mut self, start_line: usize, visible_lines: usize, viewport: &Rectangle, bounds: Rectangle, line_height: f32) {
+        let viewport_top = viewport.y;
+        let viewport_bottom = viewport.y + viewport.height;
+        let start_y = bounds.y + 10.0; // Approximate base padding top
+
+        // Clear previous batch
+        self.render_batch.clear();
+
+        // Calculate which lines are actually visible
+        let start_visible_line = ((viewport_top - start_y) / line_height).floor() as usize;
+        let end_visible_line = ((viewport_bottom - start_y) / line_height).ceil() as usize + 1;
+
+        // Clamp to visible range and limit batch size
+        let batch_start = start_line + start_visible_line;
+        let batch_end = (batch_start + visible_lines).min(batch_start + self.max_batch_size);
+
+        // Pre-compute line numbers and strings in batch
+        for line_num in batch_start..batch_end {
+            let y = start_y + (line_num - start_line) as f32 * line_height;
+            let text_bottom = y + line_height;
+
+            // Skip if not in viewport (extra culling)
+            if text_bottom < viewport_top || y > viewport_bottom {
+                continue;
+            }
+
+            let line_str = if line_num <= 10000 {
+                self.string_pool[line_num - 1].clone()
+            } else {
+                line_num.to_string()
+            };
+
+            self.render_batch.push_back((line_num, line_str));
+
+            // Limit batch size to prevent memory issues
+            if self.render_batch.len() >= self.max_batch_size {
+                break;
+            }
+        }
+
+        self.last_viewport = Some(*viewport);
+    }
+
+    fn render_batch(&mut self, renderer: &mut IcedRenderer, bounds: Rectangle, base_padding: &Padding, gutter_width: f32, color: Color, font_size: f32, line_height: f32, viewport: &Rectangle, start_line: usize) {
+        let text_size = Pixels(font_size);
+        let font = renderer.default_font();
+        let text_width = (gutter_width - GUTTER_TEXT_PADDING * 2.0).max(0.0);
+        let gutter_right = bounds.x + base_padding.left + gutter_width;
+        let start_y = bounds.y + base_padding.top;
+
+        // Batch render all visible lines
+        while let Some((line_number, line_str)) = self.render_batch.pop_front() {
+            let index = line_number.saturating_sub(start_line); // Convert to 0-based index
+            let y = start_y + index as f32 * line_height;
+
+            let text = PrimitiveText {
+                content: &line_str,
+                bounds: Size::new(text_width, line_height),
+                size: text_size,
+                line_height: LineHeight::Absolute(Pixels(line_height)),
+                font,
+                horizontal_alignment: alignment::Horizontal::Right,
+                vertical_alignment: alignment::Vertical::Top,
+                shaping: Shaping::Basic,
+            };
+
+            let x = (gutter_right - text_width - GUTTER_TEXT_PADDING).max(bounds.x);
+            renderer.fill_text(text, Point::new(x, y), color, *viewport);
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1003,6 +1121,7 @@ fn draw_line_numbers_optimized_with_background(
     cached_line_numbers: &Rc<RefCell<CachedLineNumbers>>,
     cached_line_metrics: &Rc<RefCell<CachedLineMetrics>>,
     incremental_line_state: &Rc<RefCell<IncrementalLineState>>,
+    streaming_renderer: &Rc<RefCell<StreamingLineRenderer>>,
 ) {
     let _editor_ref = borrow_editor(content);
     let buffer = _editor_ref.buffer();
@@ -1081,46 +1200,59 @@ fn draw_line_numbers_optimized_with_background(
         GUTTER_BORDER_COLOR,
     );
 
-    // Ultra-fast text rendering with advanced caching
-    let text_size = Pixels(font_size);
-    let font = renderer.default_font();
-    let text_width = (gutter_width - GUTTER_TEXT_PADDING * 2.0).max(0.0);
+    // Use streaming renderer for large files to eliminate allocations
+    let total_lines = buffer.lines.len();
+    if total_lines > 5000 {
+        // Large file: use streaming renderer
+        let mut stream_renderer = streaming_renderer.borrow_mut();
 
-    // Calculate text positioning
-    let gutter_right = bounds.x + base_padding.left + gutter_width;
-    let start_y = bounds.y + base_padding.top;
+        // Prepare batch with only visible lines
+        stream_renderer.prepare_viewport_batch(scroll, visible_lines, viewport, bounds, line_height);
 
-    // Update text cache if needed
-    line_numbers_cache.ensure_text_cache(&numbers, font_size, text_width, line_height);
+        // Render the batch
+        stream_renderer.render_batch(renderer, bounds, base_padding, gutter_width, color, font_size, line_height, viewport, scroll);
+    } else {
+        // Small file: use traditional rendering
+        let text_size = Pixels(font_size);
+        let font = renderer.default_font();
+        let text_width = (gutter_width - GUTTER_TEXT_PADDING * 2.0).max(0.0);
 
-    // Viewport culling: only render line numbers that are actually visible
-    let viewport_top = viewport.y;
-    let viewport_bottom = viewport.y + viewport.height;
+        // Calculate text positioning
+        let gutter_right = bounds.x + base_padding.left + gutter_width;
+        let start_y = bounds.y + base_padding.top;
 
-    // Ultra-fast rendering with minimal object creation
-    for (index, line_number) in numbers.iter().enumerate() {
-        let y = start_y + index as f32 * line_height;
-        let text_bottom = y + line_height;
+        // Update text cache if needed
+        line_numbers_cache.ensure_text_cache(&numbers, font_size, text_width, line_height);
 
-        // Skip if text is completely outside viewport
-        if text_bottom < viewport_top || y > viewport_bottom {
-            continue;
+        // Viewport culling: only render line numbers that are actually visible
+        let viewport_top = viewport.y;
+        let viewport_bottom = viewport.y + viewport.height;
+
+        // Fast rendering for small files
+        for (index, line_number) in numbers.iter().enumerate() {
+            let y = start_y + index as f32 * line_height;
+            let text_bottom = y + line_height;
+
+            // Skip if text is completely outside viewport
+            if text_bottom < viewport_top || y > viewport_bottom {
+                continue;
+            }
+
+            // Create text with minimal allocations
+            let line_str = line_number.to_string();
+            let text = PrimitiveText {
+                content: &line_str,
+                bounds: Size::new(text_width, line_height),
+                size: text_size,
+                line_height: LineHeight::Absolute(Pixels(line_height)),
+                font,
+                horizontal_alignment: alignment::Horizontal::Right,
+                vertical_alignment: alignment::Vertical::Top,
+                shaping: Shaping::Basic,
+            };
+            let x = (gutter_right - text_width - GUTTER_TEXT_PADDING).max(bounds.x);
+            renderer.fill_text(text, Point::new(x, y), color, *viewport);
         }
-
-        // Create text with minimal allocations
-        let line_str = line_number.to_string();
-        let text = PrimitiveText {
-            content: &line_str,
-            bounds: Size::new(text_width, line_height),
-            size: text_size,
-            line_height: LineHeight::Absolute(Pixels(line_height)),
-            font,
-            horizontal_alignment: alignment::Horizontal::Right,
-            vertical_alignment: alignment::Vertical::Top,
-            shaping: Shaping::Basic,
-        };
-        let x = (gutter_right - text_width - GUTTER_TEXT_PADDING).max(bounds.x);
-        renderer.fill_text(text, Point::new(x, y), color, *viewport);
     }
 }
 
