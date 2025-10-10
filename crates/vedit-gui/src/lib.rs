@@ -6,7 +6,7 @@ mod message;
 mod notifications;
 mod scaling;
 mod state;
-mod view;
+mod views;
 mod keyboard;
 mod widgets;
 mod style;

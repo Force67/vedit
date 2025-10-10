@@ -7,7 +7,7 @@ pub fn startup_banner() -> String {
     "Welcome to vedit".to_string()
 }
 
-pub use document::Document;
+pub use document::{Document, MappedDocument, Viewport, LineIndex};
 pub use editor::Editor;
 pub use sticky::StickyNote;
 

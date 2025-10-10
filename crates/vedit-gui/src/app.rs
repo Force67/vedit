@@ -6,7 +6,7 @@ use crate::debugger::{DebugLaunchPlan, DebuggerType, DebuggerUiEvent};
 use crate::keyboard;
 use crate::message::Message;
 use crate::state::EditorState;
-use crate::view;
+use crate::views;
 use crate::notifications::{NotificationKind, NotificationRequest};
 use iced::Subscription;
 use iced::{event, mouse, window, Application, Command, Element, executor, theme, time, Settings};
@@ -658,7 +658,7 @@ impl Application for EditorApp {
     }
 
     fn view(&self) -> Element<'_, Self::Message> {
-        view::view(&self.state)
+        views::view(&self.state)
     }
 
     fn theme(&self) -> Self::Theme {

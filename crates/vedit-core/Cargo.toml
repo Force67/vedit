@@ -10,6 +10,9 @@ path = "src/lib.rs"
 serde = { version = "1.0", features = ["derive"] }
 toml = "0.8"
 slab = "0.4"
+memmap2 = "0.9"
+parking_lot = "0.12"
+crossbeam = "0.8"
 vedit-config = { path = "../vedit-config" }
 vedit-vs = { path = "../vedit-vs" }
 vedit-make = { path = "../vedit-make" }
