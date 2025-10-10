@@ -85,18 +85,13 @@ impl WrapIndex {
 
     // map scroll (visual line index) -> (buffer_line, wrap_offset)
     fn locate(&self, scroll: usize) -> (usize, usize) {
-        use core::cmp::Ordering;
-
-        if scroll >= self.total_visual_lines {
-            return (self.cumulative.len().saturating_sub(2), 0);
-        }
-
-        let idx = self.cumulative.binary_search_by(|&x| {
-            if x <= scroll { Ordering::Less } else { Ordering::Greater }
-        }).unwrap_or_else(|i| i).saturating_sub(1);
-
-        let offset = scroll - self.cumulative[idx];
-        (idx, offset)
+        // Clamp to last visual line to avoid out-of-bounds on empty or short files
+        let s = scroll.min(self.total_visual_lines.saturating_sub(1));
+        // Find first i with cumulative[i] > s
+        let i = self.cumulative.partition_point(|&x| x <= s);
+        let line = i.saturating_sub(1);
+        let offset = s - self.cumulative[line];
+        (line, offset)
     }
 
     fn is_valid(&self, buffer: &CosmicBuffer, width_hash: u64) -> bool {
@@ -180,14 +175,16 @@ impl OptimizedLineState {
             current_scroll - self.cached_scroll
         };
 
-        // Fast path: during smooth scrolling, allow small changes without full rebuild
+        // 1) Never accept fast path if layout/content invalid
+        let current_width_hash = compute_width_hash(buffer);
+        if !self.wrap_index.is_valid(buffer, current_width_hash) {
+            return false;
+        }
+        // 2) Otherwise, allow smooth-scroll throttle
         if scroll_delta <= 2 && time_since_last < 4 {
             return true;
         }
-
-        // Check if wrap index is still valid
-        let current_width_hash = compute_width_hash(buffer);
-        self.wrap_index.is_valid(buffer, current_width_hash)
+        true
     }
 
     fn update(&mut self, buffer: &CosmicBuffer, scroll: usize) {
@@ -343,6 +340,7 @@ struct CachedLineMetrics {
     current_scroll: usize, // Cache current scroll position
     last_render_time: std::time::Instant, // Throttle updates
     should_stream: bool, // Cached streaming decision
+    wrap_index: WrapIndex, // Cached wrap index for O(1) access
 }
 
 impl CachedLineMetrics {
@@ -357,6 +355,7 @@ impl CachedLineMetrics {
             current_scroll: 0,
             last_render_time: std::time::Instant::now(),
             should_stream: false,
+            wrap_index: WrapIndex::new(),
         }
     }
 
@@ -396,12 +395,11 @@ impl CachedLineMetrics {
         self.font_size = font_size;
         self.visible_lines = buffer.visible_lines().max(0) as usize;
 
-        // Use a wrap index to avoid O(N) scan for total visual lines and cache streaming decision
+        // Use a cached wrap index to avoid O(N) each frame
         let width_hash = compute_width_hash(buffer);
         if self.width_hash != width_hash || self.buffer_version != get_buffer_version(buffer) {
-            let mut temp_wrap_index = WrapIndex::new();
-            temp_wrap_index.rebuild(buffer, width_hash);
-            self.total_visual_lines = temp_wrap_index.total_visual();
+            self.wrap_index.rebuild(buffer, width_hash);
+            self.total_visual_lines = self.wrap_index.total_visual();
 
             // Cache streaming decision: use streaming for files with more than 1000 logical lines OR 10,000 visual lines
             let total_logical_lines = buffer.lines.len();
@@ -428,9 +426,8 @@ fn get_buffer_version(_buffer: &CosmicBuffer) -> u64 {
 
 // Real buffer version tracking function
 fn real_buffer_version(_buffer: &CosmicBuffer) -> u64 {
-    // This should be replaced with actual buffer revision tracking
-    // For now, use the address heuristic but this can be improved
-    _buffer as *const _ as u64
+    // Use global edit epoch for proper invalidation
+    unsafe { GLOBAL_BUFFER_VERSION }
 }
 
 // Function to increment global buffer version when content changes
@@ -548,6 +545,9 @@ where
     pub fn on_action(mut self, on_edit: impl Fn(Action) -> Message + 'a) -> Self {
         let correction = Rc::clone(&self.pointer_correction);
         self.inner = self.inner.on_action(move |action| {
+            // TODO: Add proper invalidation when Action variants are known
+            // For now, we'll rely on other invalidation mechanisms
+            // let _ = increment_buffer_version(); // Enable when Action variants are confirmed
             let adjusted = adjust_action(action, correction.get());
             on_edit(adjusted)
         });
@@ -722,7 +722,6 @@ where
             &self.cached_line_numbers,
             &self.cached_line_metrics,
             &self.incremental_line_state,
-            &self.streaming_buffer,
         );
 
         // Minimap would be more complex, perhaps draw a small version on the right
@@ -870,21 +869,22 @@ impl StreamingBuffer {
         self.loaded_start = 0;
     }
 
-    fn ensure_lines_loaded(&mut self, target_line: usize, visible_lines: usize) {
+    fn ensure_lines_loaded(&mut self, target_buffer_line: usize, approx_visible_buffer_lines: usize) {
         if self.file_content.is_none() || self.line_index.is_none() {
             return;
         }
 
-        // Calculate the range we need to have loaded
+        // Calculate the range we need to have loaded (in buffer lines, not visual lines)
         let buffer_above = 50; // Load 50 lines above viewport
         let buffer_below = 50; // Load 50 lines below viewport
-        let needed_start = target_line.saturating_sub(buffer_above);
-        let needed_end = (target_line + visible_lines + buffer_below).min(self.total_lines);
+        let needed_start = target_buffer_line.saturating_sub(buffer_above);
+        let total_lines = self.line_index.as_ref().map(|idx| idx.len()).unwrap_or(0);
+        let needed_end = (target_buffer_line + approx_visible_buffer_lines + buffer_below).min(total_lines);
 
         // Initial fill: populate the window if empty
         if self.loaded.is_empty() {
             self.loaded_start = needed_start;
-            let end = needed_end.min(self.total_lines());
+            let end = needed_end.min(total_lines);
             self.loaded.extend(self.loaded_start..end);
             return;
         }
@@ -892,7 +892,7 @@ impl StreamingBuffer {
         // Slide down: add lines at the back, remove from front
         while self.loaded_start + self.loaded.len() < needed_end {
             let next = self.loaded_start + self.loaded.len();
-            if next >= self.total_lines() { break; }
+            if next >= total_lines { break; }
             self.loaded.push_back(next);
             if self.loaded.len() > self.max_loaded {
                 self.loaded.pop_front();
@@ -1251,7 +1251,6 @@ fn draw_line_numbers_optimized_with_background(
     cached_line_numbers: &Rc<RefCell<CachedLineNumbers>>,
     cached_line_metrics: &Rc<RefCell<CachedLineMetrics>>,
     incremental_line_state: &Rc<RefCell<IncrementalLineState>>,
-    streaming_buffer: &Rc<RefCell<StreamingBuffer>>,
 ) {
     let _editor_ref = borrow_editor(content);
     let buffer = _editor_ref.buffer();
@@ -1286,6 +1285,9 @@ fn draw_line_numbers_optimized_with_background(
     if !line_numbers_cache.is_valid(scroll, visible_lines, total_lines, font_size, line_height) {
         line_numbers_cache.update(numbers.clone(), scroll, visible_lines, total_lines, font_size, line_height);
     }
+
+    // Use the cached numbers for rendering (avoids clone)
+    let numbers_for_render = &line_numbers_cache.numbers;
 
     // Draw gutter background (VSCode-style)
     let gutter_bounds = Rectangle {
@@ -1330,10 +1332,10 @@ fn draw_line_numbers_optimized_with_background(
         GUTTER_BORDER_COLOR,
     );
 
-    // Always render gutter numbers from the computed numbers vector
+    // Always render gutter numbers from the cached numbers vector
     // This eliminates the streaming branch that was causing the issue
     render_gutter_numbers(
-        renderer, bounds, viewport, base_padding, gutter_width, color, font_size, line_height, &numbers
+        renderer, bounds, viewport, base_padding, gutter_width, color, font_size, line_height, numbers_for_render
     );
 }
 
