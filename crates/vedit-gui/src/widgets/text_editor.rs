@@ -45,6 +45,8 @@ struct CachedLineNumbers {
     total_lines: usize,
     font_size: f32,
     line_height: f32,
+    cached_text_batches: Vec<(String, f32, f32)>, // (text, x, y) positions
+    batch_valid: bool,
 }
 
 /// Incremental line number state for fast scrolling
@@ -56,6 +58,8 @@ struct IncrementalLineState {
     // Cached layout results for buffer lines
     line_wraps: Vec<usize>, // wraps per buffer line
     buffer_version: u64,
+    cached_scroll: usize, // Last processed scroll position
+    last_update_time: std::time::Instant, // Throttle scroll processing
 }
 
 impl IncrementalLineState {
@@ -65,43 +69,63 @@ impl IncrementalLineState {
             start_wrap_offset: 0,
             line_wraps: Vec::new(),
             buffer_version: 0,
+            cached_scroll: 0,
+            last_update_time: std::time::Instant::now(),
         }
     }
 
     fn is_valid(&self, buffer: &CosmicBuffer, current_scroll: usize) -> bool {
+        let now = std::time::Instant::now();
+        // Throttle scroll processing to 120Hz (8ms) for smoother scrolling
+        let time_since_last = now.duration_since(self.last_update_time).as_millis() < 8;
+
         self.buffer_version == get_buffer_version(buffer)
+            && (self.cached_scroll == current_scroll || time_since_last)
     }
 
     fn update(&mut self, buffer: &CosmicBuffer, scroll: usize) {
-        self.buffer_version = get_buffer_version(buffer);
+        // Skip update if scroll position hasn't changed significantly
+        let scroll_delta = if self.cached_scroll > scroll {
+            self.cached_scroll - scroll
+        } else {
+            scroll - self.cached_scroll
+        };
 
-        // Update line wraps cache with layout caching
-        if self.line_wraps.len() != buffer.lines.len() {
-            self.line_wraps.clear();
-            self.line_wraps.reserve(buffer.lines.len());
+        // Only update if scroll changed by more than 1 line or it's been long enough
+        if scroll_delta > 1 || std::time::Instant::now().duration_since(self.last_update_time).as_millis() > 16 {
+            self.cached_scroll = scroll;
+            self.last_update_time = std::time::Instant::now();
 
-            for line in &buffer.lines {
-                // Cache layout results to avoid repeated text shaping
-                let wraps = line
-                    .layout_opt()
-                    .as_ref()
-                    .map(|layout| layout.len())
-                    .unwrap_or(1);
-                self.line_wraps.push(wraps);
+            self.buffer_version = get_buffer_version(buffer);
+
+            // Update line wraps cache with layout caching
+            if self.line_wraps.len() != buffer.lines.len() {
+                self.line_wraps.clear();
+                self.line_wraps.reserve(buffer.lines.len());
+
+                for line in &buffer.lines {
+                    // Cache layout results to avoid repeated text shaping
+                    let wraps = line
+                        .layout_opt()
+                        .as_ref()
+                        .map(|layout| layout.len())
+                        .unwrap_or(1);
+                    self.line_wraps.push(wraps);
+                }
             }
-        }
 
-        // Find the starting buffer line and wrap offset for current scroll
-        let mut remaining = scroll;
-        for (line_index, &wraps) in self.line_wraps.iter().enumerate() {
-            if remaining < wraps {
-                self.start_buffer_line = line_index;
-                self.start_wrap_offset = remaining;
-                break;
+            // Find the starting buffer line and wrap offset for current scroll
+            let mut remaining = scroll;
+            for (line_index, &wraps) in self.line_wraps.iter().enumerate() {
+                if remaining < wraps {
+                    self.start_buffer_line = line_index;
+                    self.start_wrap_offset = remaining;
+                    break;
+                }
+                remaining = remaining.saturating_sub(wraps);
+                self.start_buffer_line = (line_index + 1).min(buffer.lines.len().saturating_sub(1));
+                self.start_wrap_offset = 0;
             }
-            remaining = remaining.saturating_sub(wraps);
-            self.start_buffer_line = (line_index + 1).min(buffer.lines.len().saturating_sub(1));
-            self.start_wrap_offset = 0;
         }
     }
 
@@ -144,6 +168,8 @@ impl CachedLineNumbers {
             total_lines: 0,
             font_size: 0.0,
             line_height: 0.0,
+            cached_text_batches: Vec::new(),
+            batch_valid: false,
         }
     }
 
@@ -162,6 +188,30 @@ impl CachedLineNumbers {
         self.total_lines = total_lines;
         self.font_size = font_size;
         self.line_height = line_height;
+        self.batch_valid = false; // Invalidate cached batches
+    }
+
+    fn get_or_create_text_batches(&mut self, bounds: Rectangle, base_padding: &Padding, gutter_width: f32, line_height: f32) -> &[(String, f32, f32)] {
+        if !self.batch_valid {
+            self.cached_text_batches.clear();
+
+            let gutter_right = bounds.x + base_padding.left + gutter_width;
+            let start_y = bounds.y + base_padding.top;
+            let text_width = (gutter_width - GUTTER_TEXT_PADDING * 2.0).max(0.0);
+            let start_x = (gutter_right - text_width - GUTTER_TEXT_PADDING).max(bounds.x);
+
+            self.cached_text_batches.reserve(self.numbers.len());
+
+            for (index, line_number) in self.numbers.iter().enumerate() {
+                let y = start_y + index as f32 * line_height;
+                let text = line_number.to_string();
+                self.cached_text_batches.push((text, start_x, y));
+            }
+
+            self.batch_valid = true;
+        }
+
+        &self.cached_text_batches
     }
 }
 
@@ -173,6 +223,8 @@ struct CachedLineMetrics {
     visible_lines: usize,
     total_visual_lines: usize,
     buffer_version: u64, // Track buffer changes
+    current_scroll: usize, // Cache current scroll position
+    last_render_time: std::time::Instant, // Throttle updates
 }
 
 impl CachedLineMetrics {
@@ -183,7 +235,23 @@ impl CachedLineMetrics {
             visible_lines: 0,
             total_visual_lines: 0,
             buffer_version: 0,
+            current_scroll: 0,
+            last_render_time: std::time::Instant::now(),
         }
+    }
+
+    fn needs_update(&self, buffer: &CosmicBuffer, font_size: f32, scroll: usize) -> bool {
+        let now = std::time::Instant::now();
+        // Throttle updates to 60Hz (16ms) to prevent excessive calculations
+        let time_since_last = now.duration_since(self.last_render_time).as_millis() < 16;
+
+        if time_since_last {
+            return false; // Skip update if too recent
+        }
+
+        self.buffer_version != get_buffer_version(buffer)
+            || (self.font_size - font_size).abs() > f32::EPSILON
+            || self.current_scroll != scroll
     }
 
     fn is_valid(&self, buffer: &CosmicBuffer, font_size: f32) -> bool {
@@ -191,12 +259,14 @@ impl CachedLineMetrics {
             && self.buffer_version == get_buffer_version(buffer)
     }
 
-    fn update(&mut self, buffer: &CosmicBuffer, font_size: f32) {
+    fn update(&mut self, buffer: &CosmicBuffer, font_size: f32, scroll: usize) {
         self.line_height = buffer.metrics().line_height.max(1.0);
         self.font_size = font_size;
         self.visible_lines = buffer.visible_lines().max(0) as usize;
         self.total_visual_lines = count_visual_lines(buffer);
         self.buffer_version = get_buffer_version(buffer);
+        self.current_scroll = scroll;
+        self.last_render_time = std::time::Instant::now();
     }
 }
 
@@ -744,10 +814,10 @@ fn draw_line_numbers_optimized_with_background(
     let font_size = font_size_override.unwrap_or(buffer.metrics().font_size);
     let scroll = buffer.scroll().max(0) as usize;
 
-    // Check if line metrics cache is valid and update if needed
+    // Check if line metrics cache needs update with throttling
     let mut metrics_cache = cached_line_metrics.borrow_mut();
-    if !metrics_cache.is_valid(buffer, font_size) {
-        metrics_cache.update(buffer, font_size);
+    if metrics_cache.needs_update(buffer, font_size, scroll) {
+        metrics_cache.update(buffer, font_size, scroll);
     }
     let line_height = metrics_cache.line_height;
     let visible_lines = metrics_cache.visible_lines;
@@ -811,26 +881,26 @@ fn draw_line_numbers_optimized_with_background(
         GUTTER_BORDER_COLOR,
     );
 
-    // Calculate text positioning
-    let gutter_right = bounds.x + base_padding.left + gutter_width;
-    let start_y = bounds.y + base_padding.top;
+    // Use batched text rendering with viewport culling
+    let text_batches = line_numbers_cache.get_or_create_text_batches(bounds, base_padding, gutter_width, line_height);
     let text_size = Pixels(font_size);
     let font = renderer.default_font();
     let text_width = (gutter_width - GUTTER_TEXT_PADDING * 2.0).max(0.0);
-    let start_x = (gutter_right - text_width - GUTTER_TEXT_PADDING).max(bounds.x);
 
-    // Pre-allocate a reusable string buffer to reduce allocations
-    let mut label_buffer = String::with_capacity(8); // Most line numbers fit in 8 digits
+    // Viewport culling: only render line numbers that are actually visible
+    let viewport_top = viewport.y;
+    let viewport_bottom = viewport.y + viewport.height;
 
-    for (index, line_number) in numbers.iter().enumerate() {
-        let y = start_y + index as f32 * line_height;
+    for (text_content, x, y) in text_batches.iter() {
+        let text_bottom = *y + line_height;
 
-        // Reuse string buffer to avoid allocations
-        label_buffer.clear();
-        label_buffer.push_str(&line_number.to_string());
+        // Skip if text is completely outside viewport
+        if text_bottom < viewport_top || *y > viewport_bottom {
+            continue;
+        }
 
         let text = PrimitiveText {
-            content: &label_buffer,
+            content: text_content,
             bounds: Size::new(text_width, line_height),
             size: text_size,
             line_height: LineHeight::Absolute(Pixels(line_height)),
@@ -840,7 +910,7 @@ fn draw_line_numbers_optimized_with_background(
             shaping: Shaping::Basic,
         };
 
-        renderer.fill_text(text, Point::new(start_x, y), color, *viewport);
+        renderer.fill_text(text, Point::new(*x, *y), color, *viewport);
     }
 }
 
