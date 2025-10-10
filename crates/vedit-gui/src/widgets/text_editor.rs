@@ -493,7 +493,7 @@ where
     cached_line_metrics: Rc<RefCell<CachedLineMetrics>>,
     cached_scroll_metrics: Rc<RefCell<CachedScrollMetrics>>,
     incremental_line_state: Rc<RefCell<IncrementalLineState>>,
-    streaming_renderer: Rc<RefCell<StreamingLineRenderer>>,
+    streaming_buffer: Rc<RefCell<StreamingBuffer>>,
 }
 
 impl<'a, Message> TextEditor<'a, Message, highlighter::PlainText> {
@@ -524,7 +524,7 @@ impl<'a, Message> TextEditor<'a, Message, highlighter::PlainText> {
             cached_line_metrics: Rc::new(RefCell::new(CachedLineMetrics::new())),
             cached_scroll_metrics: Rc::new(RefCell::new(CachedScrollMetrics::new())),
             incremental_line_state: Rc::new(RefCell::new(IncrementalLineState::new())),
-            streaming_renderer: Rc::new(RefCell::new(StreamingLineRenderer::new())),
+            streaming_buffer: Rc::new(RefCell::new(StreamingBuffer::new())),
         }
     }
 
@@ -555,7 +555,7 @@ impl<'a, Message> TextEditor<'a, Message, highlighter::PlainText> {
             cached_line_metrics: Rc::clone(&self.cached_line_metrics),
             cached_scroll_metrics: Rc::clone(&self.cached_scroll_metrics),
             incremental_line_state: Rc::clone(&self.incremental_line_state),
-            streaming_renderer: Rc::clone(&self.streaming_renderer),
+            streaming_buffer: Rc::clone(&self.streaming_buffer),
         }
     }
 }
@@ -740,7 +740,7 @@ where
             &self.cached_line_numbers,
             &self.cached_line_metrics,
             &self.incremental_line_state,
-            &self.streaming_renderer,
+            &self.streaming_buffer,
         );
 
         // Minimap would be more complex, perhaps draw a small version on the right
@@ -813,20 +813,30 @@ fn adjust_point(position: Point, pointer_correction: f32) -> Point {
 }
 
 
-// Streaming renderer for large files
+// Streaming buffer for truly large files - only loads visible lines
 #[derive(Debug)]
-struct StreamingLineRenderer {
-    // Pre-allocated string pool for common line numbers (1-9999)
+struct StreamingBuffer {
+    // The complete file content (as bytes or string) - this stays on disk
+    file_content: Option<String>,
+    // Currently loaded lines in memory (small viewport window)
+    loaded_lines: Vec<String>,
+    // Starting line number in the file for loaded_lines[0]
+    loaded_start_line: usize,
+    // Number of lines currently loaded
+    loaded_count: usize,
+    // Total lines in the file
+    total_lines: usize,
+    // Maximum lines to keep in memory
+    max_loaded_lines: usize,
+    // Pre-allocated string pool for line numbers
     string_pool: Vec<String>,
-    // Batch of line numbers to render
+    // Render batch for visible lines only
     render_batch: VecDeque<(usize, String)>,
-    // Last rendered viewport for cache invalidation
+    // Last viewport for cache invalidation
     last_viewport: Option<Rectangle>,
-    // Maximum batch size to prevent memory bloat
-    max_batch_size: usize,
 }
 
-impl StreamingLineRenderer {
+impl StreamingBuffer {
     fn new() -> Self {
         let mut string_pool = Vec::with_capacity(10000);
         // Pre-allocate strings for common line numbers (1-9999)
@@ -835,21 +845,73 @@ impl StreamingLineRenderer {
         }
 
         Self {
+            file_content: None,
+            loaded_lines: Vec::with_capacity(200), // Start with small viewport
+            loaded_start_line: 0,
+            loaded_count: 0,
+            total_lines: 0,
+            max_loaded_lines: 500, // Only keep 500 lines in memory
             string_pool,
-            render_batch: VecDeque::with_capacity(200), // Start with 200 line capacity
+            render_batch: VecDeque::with_capacity(100), // Small render batch
             last_viewport: None,
-            max_batch_size: 1000, // Cap at 1000 lines per batch
         }
     }
 
-    fn get_line_string(&mut self, line_number: usize) -> &str {
-        if line_number <= 10000 {
-            &self.string_pool[line_number - 1]
-        } else {
-            // For very large line numbers, allocate on demand (rare case)
-            self.string_pool.push(line_number.to_string());
-            &self.string_pool[self.string_pool.len() - 1]
+    fn load_file_content(&mut self, content: &str) {
+        self.file_content = Some(content.to_string());
+        self.total_lines = content.lines().count();
+        self.loaded_count = 0;
+        self.loaded_start_line = 0;
+        self.loaded_lines.clear();
+    }
+
+    fn ensure_lines_loaded(&mut self, target_line: usize, visible_lines: usize) {
+        if self.file_content.is_none() {
+            return;
         }
+
+        // Calculate the range we need to have loaded
+        let buffer_above = 50; // Load 50 lines above viewport
+        let buffer_below = 50; // Load 50 lines below viewport
+        let needed_start = target_line.saturating_sub(buffer_above);
+        let needed_end = (target_line + visible_lines + buffer_below).min(self.total_lines);
+        let needed_count = needed_end - needed_start;
+
+        // Check if we need to load new lines
+        let need_reload = self.loaded_count == 0 ||
+            needed_start < self.loaded_start_line ||
+            needed_end > self.loaded_start_line + self.loaded_count ||
+            needed_count > self.max_loaded_lines;
+
+        if !need_reload {
+            return; // Already have the lines we need
+        }
+
+        // Clear current loaded lines
+        self.loaded_lines.clear();
+
+        // Load the needed range from file content
+        if let Some(ref content) = self.file_content {
+            let lines: Vec<&str> = content.lines().skip(needed_start).take(needed_count).collect();
+            let line_count = lines.len();
+
+            for line in lines {
+                self.loaded_lines.push(line.to_string());
+            }
+
+            self.loaded_start_line = needed_start;
+            self.loaded_count = line_count;
+        }
+    }
+
+    fn get_loaded_line(&self, line_number: usize) -> Option<&str> {
+        if line_number < self.loaded_start_line ||
+           line_number >= self.loaded_start_line + self.loaded_count {
+            return None;
+        }
+
+        let index = line_number - self.loaded_start_line;
+        self.loaded_lines.get(index).map(|s| s.as_str())
     }
 
     fn prepare_viewport_batch(&mut self, start_line: usize, visible_lines: usize, viewport: &Rectangle, bounds: Rectangle, line_height: f32) {
@@ -864,31 +926,30 @@ impl StreamingLineRenderer {
         let start_visible_line = ((viewport_top - start_y) / line_height).floor() as usize;
         let end_visible_line = ((viewport_bottom - start_y) / line_height).ceil() as usize + 1;
 
-        // Clamp to visible range and limit batch size
-        let batch_start = start_line + start_visible_line;
-        let batch_end = (batch_start + visible_lines).min(batch_start + self.max_batch_size);
+        // Ensure we have the needed lines loaded
+        self.ensure_lines_loaded(start_line, visible_lines);
 
-        // Pre-compute line numbers and strings in batch
-        for line_num in batch_start..batch_end {
-            let y = start_y + (line_num - start_line) as f32 * line_height;
-            let text_bottom = y + line_height;
+        // Prepare batch with only visible lines that we have loaded
+        for line_offset in 0..visible_lines {
+            let line_num = start_line + line_offset;
 
-            // Skip if not in viewport (extra culling)
-            if text_bottom < viewport_top || y > viewport_bottom {
-                continue;
-            }
+            // Skip if we don't have this line loaded
+            if let Some(line_content) = self.get_loaded_line(line_num) {
+                let y = start_y + line_offset as f32 * line_height;
+                let text_bottom = y + line_height;
 
-            let line_str = if line_num <= 10000 {
-                self.string_pool[line_num - 1].clone()
-            } else {
-                line_num.to_string()
-            };
+                // Skip if not in viewport (extra culling)
+                if text_bottom < viewport_top || y > viewport_bottom {
+                    continue;
+                }
 
-            self.render_batch.push_back((line_num, line_str));
+                let line_str = if line_num <= 10000 {
+                    self.string_pool[line_num - 1].clone()
+                } else {
+                    line_num.to_string()
+                };
 
-            // Limit batch size to prevent memory issues
-            if self.render_batch.len() >= self.max_batch_size {
-                break;
+                self.render_batch.push_back((line_num, line_str));
             }
         }
 
@@ -921,6 +982,14 @@ impl StreamingLineRenderer {
             let x = (gutter_right - text_width - GUTTER_TEXT_PADDING).max(bounds.x);
             renderer.fill_text(text, Point::new(x, y), color, *viewport);
         }
+    }
+
+    fn get_total_lines(&self) -> usize {
+        self.total_lines
+    }
+
+    fn is_large_file(&self) -> bool {
+        self.total_lines > 1000 // Consider files > 1000 lines as "large"
     }
 }
 
@@ -1121,7 +1190,7 @@ fn draw_line_numbers_optimized_with_background(
     cached_line_numbers: &Rc<RefCell<CachedLineNumbers>>,
     cached_line_metrics: &Rc<RefCell<CachedLineMetrics>>,
     incremental_line_state: &Rc<RefCell<IncrementalLineState>>,
-    streaming_renderer: &Rc<RefCell<StreamingLineRenderer>>,
+    streaming_buffer: &Rc<RefCell<StreamingBuffer>>,
 ) {
     let _editor_ref = borrow_editor(content);
     let buffer = _editor_ref.buffer();
@@ -1200,17 +1269,16 @@ fn draw_line_numbers_optimized_with_background(
         GUTTER_BORDER_COLOR,
     );
 
-    // Use streaming renderer for large files to eliminate allocations
+    // Use streaming buffer for large files to only load visible lines
     let total_lines = buffer.lines.len();
-    if total_lines > 5000 {
-        // Large file: use streaming renderer
-        let mut stream_renderer = streaming_renderer.borrow_mut();
 
-        // Prepare batch with only visible lines
-        stream_renderer.prepare_viewport_batch(scroll, visible_lines, viewport, bounds, line_height);
-
-        // Render the batch
-        stream_renderer.render_batch(renderer, bounds, base_padding, gutter_width, color, font_size, line_height, viewport, scroll);
+    // For now, skip streaming buffer for files with cosmic-text integration
+    // TODO: Implement proper cosmic-text buffer streaming
+    if total_lines > 1000 && false { // Disabled for now
+        let mut stream_buffer = streaming_buffer.borrow_mut();
+        // TODO: Extract text from cosmic-text buffer properly
+        stream_buffer.prepare_viewport_batch(scroll, visible_lines, viewport, bounds, line_height);
+        stream_buffer.render_batch(renderer, bounds, base_padding, gutter_width, color, font_size, line_height, viewport, scroll);
     } else {
         // Small file: use traditional rendering
         let text_size = Pixels(font_size);
