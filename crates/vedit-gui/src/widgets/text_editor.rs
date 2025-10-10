@@ -47,6 +47,94 @@ struct CachedLineNumbers {
     line_height: f32,
 }
 
+/// Incremental line number state for fast scrolling
+#[derive(Debug, Clone)]
+struct IncrementalLineState {
+    // The buffer line number and wrap offset for the first visible line
+    start_buffer_line: usize,
+    start_wrap_offset: usize,
+    // Cached layout results for buffer lines
+    line_wraps: Vec<usize>, // wraps per buffer line
+    buffer_version: u64,
+}
+
+impl IncrementalLineState {
+    fn new() -> Self {
+        Self {
+            start_buffer_line: 0,
+            start_wrap_offset: 0,
+            line_wraps: Vec::new(),
+            buffer_version: 0,
+        }
+    }
+
+    fn is_valid(&self, buffer: &CosmicBuffer, current_scroll: usize) -> bool {
+        self.buffer_version == get_buffer_version(buffer)
+    }
+
+    fn update(&mut self, buffer: &CosmicBuffer, scroll: usize) {
+        self.buffer_version = get_buffer_version(buffer);
+
+        // Update line wraps cache with layout caching
+        if self.line_wraps.len() != buffer.lines.len() {
+            self.line_wraps.clear();
+            self.line_wraps.reserve(buffer.lines.len());
+
+            for line in &buffer.lines {
+                // Cache layout results to avoid repeated text shaping
+                let wraps = line
+                    .layout_opt()
+                    .as_ref()
+                    .map(|layout| layout.len())
+                    .unwrap_or(1);
+                self.line_wraps.push(wraps);
+            }
+        }
+
+        // Find the starting buffer line and wrap offset for current scroll
+        let mut remaining = scroll;
+        for (line_index, &wraps) in self.line_wraps.iter().enumerate() {
+            if remaining < wraps {
+                self.start_buffer_line = line_index;
+                self.start_wrap_offset = remaining;
+                break;
+            }
+            remaining = remaining.saturating_sub(wraps);
+            self.start_buffer_line = (line_index + 1).min(buffer.lines.len().saturating_sub(1));
+            self.start_wrap_offset = 0;
+        }
+    }
+
+    fn get_visible_lines(&self, start_scroll: usize, visible_lines: usize, total_lines: usize) -> Vec<usize> {
+        let mut result = Vec::with_capacity(visible_lines.saturating_add(1));
+        let mut current_buffer_line = self.start_buffer_line;
+        let mut current_wrap_offset = self.start_wrap_offset;
+        let mut display_index = 0;
+
+        while display_index < visible_lines && current_buffer_line < self.line_wraps.len() {
+            let wraps = self.line_wraps[current_buffer_line];
+
+            for wrap_idx in current_wrap_offset..wraps {
+                result.push(current_buffer_line + 1);
+                display_index += 1;
+
+                if display_index >= visible_lines {
+                    break;
+                }
+            }
+
+            current_buffer_line += 1;
+            current_wrap_offset = 0;
+        }
+
+        if result.is_empty() {
+            result.push(1);
+        }
+
+        result
+    }
+}
+
 impl CachedLineNumbers {
     fn new() -> Self {
         Self {
@@ -137,6 +225,7 @@ where
     cached_line_numbers: Rc<RefCell<CachedLineNumbers>>,
     cached_line_metrics: Rc<RefCell<CachedLineMetrics>>,
     cached_scroll_metrics: Rc<RefCell<CachedScrollMetrics>>,
+    incremental_line_state: Rc<RefCell<IncrementalLineState>>,
 }
 
 impl<'a, Message> TextEditor<'a, Message, highlighter::PlainText> {
@@ -166,6 +255,7 @@ impl<'a, Message> TextEditor<'a, Message, highlighter::PlainText> {
             cached_line_numbers: Rc::new(RefCell::new(CachedLineNumbers::new())),
             cached_line_metrics: Rc::new(RefCell::new(CachedLineMetrics::new())),
             cached_scroll_metrics: Rc::new(RefCell::new(CachedScrollMetrics::new())),
+            incremental_line_state: Rc::new(RefCell::new(IncrementalLineState::new())),
         }
     }
 
@@ -195,6 +285,7 @@ impl<'a, Message> TextEditor<'a, Message, highlighter::PlainText> {
             cached_line_numbers: Rc::clone(&self.cached_line_numbers),
             cached_line_metrics: Rc::clone(&self.cached_line_metrics),
             cached_scroll_metrics: Rc::clone(&self.cached_scroll_metrics),
+            incremental_line_state: Rc::clone(&self.incremental_line_state),
         }
     }
 }
@@ -295,6 +386,10 @@ where
         // Clear line numbers cache entirely as it's more sensitive to changes
         let mut line_numbers_cache = self.cached_line_numbers.borrow_mut();
         line_numbers_cache.numbers.clear();
+
+        // Reset incremental state on content changes
+        let mut incremental_state = self.incremental_line_state.borrow_mut();
+        incremental_state.buffer_version = 0; // Force refresh
     }
 }
 
@@ -374,6 +469,7 @@ where
             self.font_size.map(|p| p.0),
             &self.cached_line_numbers,
             &self.cached_line_metrics,
+            &self.incremental_line_state,
         );
 
         // Minimap would be more complex, perhaps draw a small version on the right
@@ -641,6 +737,7 @@ fn draw_line_numbers_optimized_with_background(
     font_size_override: Option<f32>,
     cached_line_numbers: &Rc<RefCell<CachedLineNumbers>>,
     cached_line_metrics: &Rc<RefCell<CachedLineMetrics>>,
+    incremental_line_state: &Rc<RefCell<IncrementalLineState>>,
 ) {
     let _editor_ref = borrow_editor(content);
     let buffer = _editor_ref.buffer();
@@ -656,18 +753,20 @@ fn draw_line_numbers_optimized_with_background(
     let visible_lines = metrics_cache.visible_lines;
     let total_lines = metrics_cache.total_visual_lines;
 
-    // Check if line numbers cache is valid
+    // Use incremental line state for fast scroll calculations
+    let mut incremental_state = incremental_line_state.borrow_mut();
+    if !incremental_state.is_valid(buffer, scroll) {
+        incremental_state.update(buffer, scroll);
+    }
+
+    // Get line numbers using the incremental approach
+    let numbers = incremental_state.get_visible_lines(scroll, visible_lines, total_lines);
+
+    // Update the traditional cache as well for compatibility
     let mut line_numbers_cache = cached_line_numbers.borrow_mut();
-    let numbers = if line_numbers_cache.is_valid(scroll, visible_lines, total_lines, font_size, line_height) {
-        &line_numbers_cache.numbers
-    } else {
-        // Recompute line numbers using object pool
-        let mut pooled_numbers = get_pooled_usize_vec();
-        let computed_numbers = collect_visible_line_numbers_optimized(buffer, scroll, visible_lines, &mut pooled_numbers);
-        line_numbers_cache.update(computed_numbers, scroll, visible_lines, total_lines, font_size, line_height);
-        return_usize_vec(pooled_numbers);
-        &line_numbers_cache.numbers
-    };
+    if !line_numbers_cache.is_valid(scroll, visible_lines, total_lines, font_size, line_height) {
+        line_numbers_cache.update(numbers.clone(), scroll, visible_lines, total_lines, font_size, line_height);
+    }
 
     // Draw gutter background (VSCode-style)
     let gutter_bounds = Rectangle {
@@ -720,18 +819,18 @@ fn draw_line_numbers_optimized_with_background(
     let text_width = (gutter_width - GUTTER_TEXT_PADDING * 2.0).max(0.0);
     let start_x = (gutter_right - text_width - GUTTER_TEXT_PADDING).max(bounds.x);
 
-    // Use string pool for line number labels
+    // Pre-allocate a reusable string buffer to reduce allocations
+    let mut label_buffer = String::with_capacity(8); // Most line numbers fit in 8 digits
+
     for (index, line_number) in numbers.iter().enumerate() {
         let y = start_y + index as f32 * line_height;
 
-        // Use pooled string for the label
-        let mut pooled_string = get_pooled_string();
-        pooled_string.push_str(&line_number.to_string());
-        let label = pooled_string.clone(); // Clone for the text rendering
-        return_string(pooled_string);
+        // Reuse string buffer to avoid allocations
+        label_buffer.clear();
+        label_buffer.push_str(&line_number.to_string());
 
         let text = PrimitiveText {
-            content: &label,
+            content: &label_buffer,
             bounds: Size::new(text_width, line_height),
             size: text_size,
             line_height: LineHeight::Absolute(Pixels(line_height)),
