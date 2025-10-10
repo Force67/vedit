@@ -18,6 +18,7 @@ use iced::Point;
 use iced::Rectangle;
 use iced::Renderer as IcedRenderer;
 use iced::Size;
+use crate::app::REFRESH_RATE_CONFIG;
 use iced::Theme as IcedTheme;
 use iced::advanced::text::{LineHeight, Shaping, Text as PrimitiveText};
 use iced::advanced::text::highlighter;
@@ -115,11 +116,13 @@ impl IncrementalLineState {
             return true; // Assume content is unchanged during rapid scrolling
         }
 
-        // Use adaptive throttling based on recent performance - optimized for 60 FPS
+        // Use adaptive throttling based on detected refresh rate
+        let target_fps = REFRESH_RATE_CONFIG.get_target_fps();
         let throttle_threshold = if self.high_performance_mode {
-            8 // 120Hz for butter smooth scrolling
+            // Aim for higher than detected refresh rate for maximum smoothness
+            ((1000.0 / target_fps) * 0.8) as u64 // 80% of frame duration
         } else {
-            16 // 60 FPS fallback
+            ((1000.0 / target_fps) * 1.2) as u64 // 120% of frame duration for stability
         };
 
         // Valid if no content changes and small scroll changes with adaptive throttling
@@ -230,19 +233,23 @@ impl IncrementalLineState {
         // Calculate average frame time from recent samples
         let avg_frame_time: f64 = self.frame_time_samples.iter().sum::<u64>() as f64 / 8.0;
 
-        // Target 16.67ms for 60 FPS
-        let target_frame_time = 16.67;
+        // Dynamic target based on detected refresh rate
+        let target_fps = REFRESH_RATE_CONFIG.get_target_fps();
+        let target_frame_time = 1000.0 / target_fps as f64;
         let performance_ratio = avg_frame_time / target_frame_time;
 
-        // Adaptive throttle adjustment
-        if performance_ratio > 1.5 {
-            // Poor performance (>25 FPS), be more aggressive with throttling
-            self.adaptive_throttle_ms = (self.adaptive_throttle_ms + 1).min(16); // Cap at 60Hz
+        // Adaptive throttle adjustment based on detected refresh rate
+        let target_fps = REFRESH_RATE_CONFIG.get_target_fps();
+        let max_throttle = ((1000.0 / target_fps) * 1.5) as u64; // Allow up to 150% of frame duration
+
+        if performance_ratio > 2.0 {
+            // Poor performance relative to target refresh rate
+            self.adaptive_throttle_ms = (self.adaptive_throttle_ms + 1).min(max_throttle);
             self.high_performance_mode = false;
-        } else if performance_ratio < 0.8 {
-            // Good performance (<75 FPS), be less aggressive
+        } else if performance_ratio < 1.2 {
+            // Good performance relative to target refresh rate
             self.adaptive_throttle_ms = self.adaptive_throttle_ms.saturating_sub(1).max(1); // Min 1ms (1000Hz)
-            if self.adaptive_throttle_ms <= 3 {
+            if self.adaptive_throttle_ms <= 2 {
                 self.high_performance_mode = true;
             }
         }
@@ -436,8 +443,10 @@ impl CachedLineMetrics {
             return true;
         }
 
-        // Optimized for 60 FPS: allow updates every frame for butter smooth scrolling
-        time_since_last >= 16
+        // Optimized for detected refresh rate: allow updates every frame for ultra smooth scrolling
+        let target_fps = REFRESH_RATE_CONFIG.get_target_fps();
+        let frame_duration_ms = (1000.0 / target_fps) as u128;
+        time_since_last >= frame_duration_ms
     }
 
     fn is_valid(&self, buffer: &CosmicBuffer, font_size: f32) -> bool {

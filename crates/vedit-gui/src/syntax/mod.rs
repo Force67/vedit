@@ -493,7 +493,7 @@ impl HighlightStore {
         {
             if let Ok(rapid_scroll_count) = self.rapid_scroll_count.lock() {
                 if *rapid_scroll_count > 5 {
-                    // During rapid scrolling, disable syntax highlighting entirely for 60 FPS
+                    // During rapid scrolling, disable syntax highlighting entirely for maximum FPS on 144Hz+ displays
                     return Vec::new();
                 }
             }

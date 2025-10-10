@@ -93,6 +93,7 @@ pub enum Message {
     WindowResizeStart(iced::Point),
     WindowResizeMove(iced::Point),
     WindowResizeEnd,
+    DetectMonitorRefreshRates,
     FileExplorer(crate::widgets::file_explorer::Message),
     RightRailTabSelected(RightRailTab),
 }

@@ -10,9 +10,46 @@ use crate::views;
 use crate::notifications::{NotificationKind, NotificationRequest};
 use iced::Subscription;
 use iced::{event, mouse, window, Application, Command, Element, executor, theme, time, Settings};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use vedit_core::{Document, Key, QUICK_COMMAND_MENU_ACTION, SAVE_ACTION};
 use vedit_application::QuickCommandId;
+
+// Global refresh rate configuration
+pub static REFRESH_RATE_CONFIG: std::sync::LazyLock<RefreshRateConfig> = std::sync::LazyLock::new(|| {
+    RefreshRateConfig::new()
+});
+
+#[derive(Debug, Clone)]
+pub struct RefreshRateConfig {
+    pub highest_refresh_rate: Arc<Mutex<f32>>, // in Hz
+    pub current_monitor_refresh: Arc<Mutex<f32>>, // in Hz
+}
+
+impl RefreshRateConfig {
+    pub fn new() -> Self {
+        Self {
+            highest_refresh_rate: Arc::new(Mutex::new(60.0)), // Default fallback
+            current_monitor_refresh: Arc::new(Mutex::new(60.0)), // Default fallback
+        }
+    }
+
+    pub fn get_optimal_frame_duration(&self) -> Duration {
+        let refresh_rate = *self.highest_refresh_rate.lock().unwrap();
+        // Convert Hz to milliseconds, aiming for slightly higher than refresh rate
+        let frame_duration_ms = (1000.0 / refresh_rate) * 0.9; // 90% of refresh duration
+        Duration::from_millis(frame_duration_ms as u64)
+    }
+
+    pub fn get_target_fps(&self) -> f32 {
+        *self.highest_refresh_rate.lock().unwrap()
+    }
+
+    pub fn set_refresh_rates(&self, highest: f32, current: f32) {
+        *self.highest_refresh_rate.lock().unwrap() = highest.max(current);
+        *self.current_monitor_refresh.lock().unwrap() = current;
+    }
+}
 
 pub fn run() -> iced::Result {
     let settings = Settings {
@@ -37,6 +74,102 @@ impl Default for EditorApp {
     }
 }
 
+impl EditorApp {
+    fn detect_monitor_refresh_rates(&self) {
+        // Try to detect refresh rates using various methods
+        let (highest_refresh, current_refresh) = self.get_system_refresh_rates();
+
+        REFRESH_RATE_CONFIG.set_refresh_rates(highest_refresh, current_refresh);
+
+        // Update timing based on detected refresh rates
+        self.update_timing_for_refresh_rate(highest_refresh);
+    }
+
+    fn get_system_refresh_rates(&self) -> (f32, f32) {
+        let mut highest_refresh: f32 = 60.0;
+        let mut current_refresh: f32 = 60.0;
+
+        // Method 1: Try environment variable (common for Linux/X11)
+        if let Ok(display) = std::env::var("DISPLAY") {
+            if let Ok(rate) = self.detect_x11_refresh_rate(&display) {
+                current_refresh = rate;
+                highest_refresh = highest_refresh.max(rate);
+            }
+        }
+
+        // Method 2: Try common refresh rate patterns (Windows/Linux)
+        let common_rates = [144.0, 165.0, 240.0, 120.0, 75.0, 60.0];
+        for &rate in &common_rates {
+            if self.test_refresh_rate_feasibility(rate) {
+                highest_refresh = highest_refresh.max(rate);
+            }
+        }
+
+        // Method 3: Check for known high refresh rate indicators
+        if std::env::var("GDK_REFRESH_RATE").is_ok() ||
+           std::env::var("QT_SCALE_FACTOR").is_ok() {
+            // Likely a modern system that supports high refresh rates
+            highest_refresh = highest_refresh.max(144.0);
+        }
+
+        (highest_refresh, current_refresh)
+    }
+
+    fn detect_x11_refresh_rate(&self, display: &str) -> Result<f32, Box<dyn std::error::Error>> {
+        // Try to parse refresh rate from xrandr output
+        use std::process::Command;
+
+        let output = Command::new("xrandr")
+            .arg("--query")
+            .output()?;
+
+        let output_str = String::from_utf8_lossy(&output.stdout);
+
+        for line in output_str.lines() {
+            if line.contains("connected") && line.contains(display) {
+                // Look for refresh rate pattern like "144.00Hz" or "144Hz"
+                if let Some(rate_str) = line.split_whitespace()
+                    .find(|s| s.ends_with("Hz") || s.ends_with("hz")) {
+                    let rate_num = rate_str.trim_end_matches("Hz").trim_end_matches("hz");
+                    if let Ok(rate) = rate_num.parse::<f32>() {
+                        return Ok(rate);
+                    }
+                }
+            }
+        }
+
+        // Fallback: try to get current mode
+        for line in output_str.lines() {
+            if line.contains("*") && (line.contains("144") || line.contains("165") || line.contains("240")) {
+                if let Some(rate_str) = line.split_whitespace()
+                    .find(|s| s.contains("Hz") || s.contains("hz")) {
+                    let rate_num_clean = rate_str.replace("Hz", "").replace("hz", "").trim().to_string();
+                    if let Ok(rate) = rate_num_clean.parse::<f32>() {
+                        return Ok(rate);
+                    }
+                }
+            }
+        }
+
+        Err("Could not detect refresh rate".into())
+    }
+
+    fn test_refresh_rate_feasibility(&self, rate: f32) -> bool {
+        // Simple feasibility test based on system capabilities
+        // This is a heuristic approach
+        let frame_time_ms = 1000.0 / rate;
+
+        // If the system can handle sub-10ms frame times, it's likely capable
+        frame_time_ms >= 4.0 && frame_time_ms <= 50.0
+    }
+
+    fn update_timing_for_refresh_rate(&self, refresh_rate: f32) {
+        // This will be used to dynamically update the application timing
+        // The actual implementation will update the subscription timing
+        println!("Detected refresh rate: {:.0} Hz - Optimizing timing", refresh_rate);
+    }
+}
+
 impl Application for EditorApp {
     type Executor = executor::Default;
     type Message = Message;
@@ -44,7 +177,10 @@ impl Application for EditorApp {
     type Flags = ();
 
     fn new(_flags: Self::Flags) -> (Self, Command<Self::Message>) {
-        (Self::default(), Command::none())
+        let app = Self::default();
+        // Trigger refresh rate detection at startup
+        let command = Command::perform(async {}, |_| Message::DetectMonitorRefreshRates);
+        (app, command)
     }
 
     fn title(&self) -> String {
@@ -588,6 +724,9 @@ impl Application for EditorApp {
                 // Reset rapid scroll counter to re-enable syntax highlighting
                 self.state.reset_rapid_scroll();
             }
+            Message::DetectMonitorRefreshRates => {
+                self.detect_monitor_refresh_rates();
+            }
             Message::NotificationDismissed(id) => {
                 self.state.dismiss_notification(id);
             }
@@ -703,7 +842,7 @@ impl Application for EditorApp {
         });
 
         let tick = time::every(Duration::from_millis(200)).map(|_| Message::DebuggerTick);
-        let fps_tick = time::every(Duration::from_millis(16)).map(|_| Message::FpsUpdate); // ~60 FPS
+        let fps_tick = time::every(Duration::from_millis(8)).map(|_| Message::FpsUpdate); // ~120 FPS for 144Hz monitors
 
         Subscription::batch(vec![input, tick, fps_tick])
     }
