@@ -11,5 +11,6 @@ mod keyboard;
 mod widgets;
 mod style;
 mod syntax;
+mod utils;
 
 pub use app::run;

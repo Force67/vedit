@@ -489,7 +489,7 @@ impl DocumentHighlight {
 }
 
 #[derive(Clone)]
-struct LineHighlight {
+pub struct LineHighlight {
     range: Range<usize>,
     palette_index: usize,
 }

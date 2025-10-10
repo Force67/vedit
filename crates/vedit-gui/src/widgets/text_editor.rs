@@ -4,7 +4,7 @@ use iced::event::{self, Event};
 use iced::advanced::layout::{self, Layout};
 use iced::advanced::mouse;
 use iced::advanced::renderer;
-use iced::advanced::widget::{self, Widget, tree};
+use iced::advanced::widget::{Widget, tree};
 use iced::advanced::Shell;
 use iced::alignment;
 use iced::widget::text_editor;
@@ -27,10 +27,97 @@ use iced::advanced::Renderer as _;
 use iced_graphics::text::Editor as GraphicsEditor;
 use std::cell::{Cell, Ref, RefCell};
 use std::rc::Rc;
+use crate::utils::pool::{get_pooled_usize_vec, get_pooled_string, return_usize_vec, return_string};
 
-const DEFAULT_GUTTER_WIDTH: f32 = 42.0;
+const DEFAULT_GUTTER_WIDTH: f32 = 60.0;
 const DEFAULT_LINE_COLOR: Color = Color::from_rgba(0.7, 0.7, 0.7, 1.0);
-const GUTTER_TEXT_PADDING: f32 = 6.0;
+const GUTTER_TEXT_PADDING: f32 = 12.0;
+const GUTTER_BACKGROUND: Color = Color::from_rgba(0.05, 0.05, 0.05, 1.0);
+const GUTTER_BORDER_COLOR: Color = Color::from_rgba(0.3, 0.3, 0.3, 1.0);
+const GUTTER_BORDER_WIDTH: f32 = 1.0;
+
+/// Cached line number data to avoid recomputation
+#[derive(Debug, Clone)]
+struct CachedLineNumbers {
+    numbers: Vec<usize>,
+    scroll: usize,
+    visible_lines: usize,
+    total_lines: usize,
+    font_size: f32,
+    line_height: f32,
+}
+
+impl CachedLineNumbers {
+    fn new() -> Self {
+        Self {
+            numbers: Vec::new(),
+            scroll: 0,
+            visible_lines: 0,
+            total_lines: 0,
+            font_size: 0.0,
+            line_height: 0.0,
+        }
+    }
+
+    fn is_valid(&self, scroll: usize, visible_lines: usize, total_lines: usize, font_size: f32, line_height: f32) -> bool {
+        self.scroll == scroll
+            && self.visible_lines == visible_lines
+            && self.total_lines == total_lines
+            && (self.font_size - font_size).abs() < f32::EPSILON
+            && (self.line_height - line_height).abs() < f32::EPSILON
+    }
+
+    fn update(&mut self, numbers: Vec<usize>, scroll: usize, visible_lines: usize, total_lines: usize, font_size: f32, line_height: f32) {
+        self.numbers = numbers;
+        self.scroll = scroll;
+        self.visible_lines = visible_lines;
+        self.total_lines = total_lines;
+        self.font_size = font_size;
+        self.line_height = line_height;
+    }
+}
+
+/// Cached line metrics to avoid repeated cosmic-text queries
+#[derive(Debug, Clone)]
+struct CachedLineMetrics {
+    line_height: f32,
+    font_size: f32,
+    visible_lines: usize,
+    total_visual_lines: usize,
+    buffer_version: u64, // Track buffer changes
+}
+
+impl CachedLineMetrics {
+    fn new() -> Self {
+        Self {
+            line_height: 0.0,
+            font_size: 0.0,
+            visible_lines: 0,
+            total_visual_lines: 0,
+            buffer_version: 0,
+        }
+    }
+
+    fn is_valid(&self, buffer: &CosmicBuffer, font_size: f32) -> bool {
+        (self.font_size - font_size).abs() < f32::EPSILON
+            && self.buffer_version == get_buffer_version(buffer)
+    }
+
+    fn update(&mut self, buffer: &CosmicBuffer, font_size: f32) {
+        self.line_height = buffer.metrics().line_height.max(1.0);
+        self.font_size = font_size;
+        self.visible_lines = buffer.visible_lines().max(0) as usize;
+        self.total_visual_lines = count_visual_lines(buffer);
+        self.buffer_version = get_buffer_version(buffer);
+    }
+}
+
+// Simple versioning for buffer changes (using address as heuristic)
+fn get_buffer_version(_buffer: &CosmicBuffer) -> u64 {
+    // In a real implementation, you'd want proper version tracking
+    // For now, we use the buffer's memory address as a heuristic
+    _buffer as *const _ as u64
+}
 
 pub struct TextEditor<'a, Message, H = highlighter::PlainText>
 where
@@ -47,6 +134,9 @@ where
     gutter_background: Option<Color>,
     show_minimap: bool,
     font_size: Option<Pixels>,
+    cached_line_numbers: Rc<RefCell<CachedLineNumbers>>,
+    cached_line_metrics: Rc<RefCell<CachedLineMetrics>>,
+    cached_scroll_metrics: Rc<RefCell<CachedScrollMetrics>>,
 }
 
 impl<'a, Message> TextEditor<'a, Message, highlighter::PlainText> {
@@ -70,9 +160,12 @@ impl<'a, Message> TextEditor<'a, Message, highlighter::PlainText> {
             pointer_correction,
             current_line_highlight: None,
             indent_guides: None,
-            gutter_background: None,
+            gutter_background: Some(GUTTER_BACKGROUND),
             show_minimap: false,
             font_size: None,
+            cached_line_numbers: Rc::new(RefCell::new(CachedLineNumbers::new())),
+            cached_line_metrics: Rc::new(RefCell::new(CachedLineMetrics::new())),
+            cached_scroll_metrics: Rc::new(RefCell::new(CachedScrollMetrics::new())),
         }
     }
 
@@ -99,6 +192,9 @@ impl<'a, Message> TextEditor<'a, Message, highlighter::PlainText> {
             gutter_background: self.gutter_background,
             show_minimap: self.show_minimap,
             font_size: self.font_size,
+            cached_line_numbers: Rc::clone(&self.cached_line_numbers),
+            cached_line_metrics: Rc::clone(&self.cached_line_metrics),
+            cached_scroll_metrics: Rc::clone(&self.cached_scroll_metrics),
         }
     }
 }
@@ -167,6 +263,39 @@ where
         self.font_size = Some(size.into());
         self
     }
+
+    /// Get cached scroll metrics, updating cache if needed
+    pub fn cached_scroll_metrics(&self) -> ScrollMetrics {
+        let editor_ref = borrow_editor(self.content);
+        let buffer = editor_ref.buffer();
+        let current_scroll = buffer.scroll().max(0) as usize;
+
+        let mut cache = self.cached_scroll_metrics.borrow_mut();
+        if !cache.is_valid(buffer, current_scroll) {
+            cache.update(buffer);
+        }
+        cache.metrics
+    }
+
+    /// Invalidate caches when content changes
+    pub fn invalidate_caches(&self) {
+        // Force cache invalidation by updating version
+        let editor_ref = borrow_editor(self.content);
+        let buffer = editor_ref.buffer();
+        let version = get_buffer_version(buffer);
+
+        // Update line metrics cache with new version
+        let mut metrics_cache = self.cached_line_metrics.borrow_mut();
+        metrics_cache.buffer_version = version;
+
+        // Update scroll metrics cache with new version
+        let mut scroll_cache = self.cached_scroll_metrics.borrow_mut();
+        scroll_cache.buffer_version = version;
+
+        // Clear line numbers cache entirely as it's more sensitive to changes
+        let mut line_numbers_cache = self.cached_line_numbers.borrow_mut();
+        line_numbers_cache.numbers.clear();
+    }
 }
 
 impl<'a, Message, H> Widget<Message, IcedTheme, IcedRenderer> for TextEditor<'a, Message, H>
@@ -233,15 +362,18 @@ where
         self.inner
             .draw(tree, renderer, theme, style, layout, cursor, viewport);
 
-        draw_line_numbers(
+        draw_line_numbers_optimized_with_background(
             renderer,
             bounds,
             viewport,
             &self.base_padding,
             self.gutter_width,
             self.line_color,
+            self.gutter_background.unwrap_or(GUTTER_BACKGROUND),
             self.content,
             self.font_size.map(|p| p.0),
+            &self.cached_line_numbers,
+            &self.cached_line_metrics,
         );
 
         // Minimap would be more complex, perhaps draw a small version on the right
@@ -256,8 +388,22 @@ where
         viewport: &Rectangle,
         renderer: &IcedRenderer,
     ) -> mouse::Interaction {
-        self.inner
-            .mouse_interaction(tree, layout, cursor, viewport, renderer)
+        if let Some(position) = cursor.position_over(layout.bounds()) {
+            // Check if cursor is in gutter area
+            let gutter_right = layout.bounds().x + self.base_padding.left + self.gutter_width;
+
+            if position.x < gutter_right {
+                // Cursor is in gutter area - VSCode typically shows pointer cursor here
+                mouse::Interaction::Pointer
+            } else {
+                // Cursor is in content area - delegate to inner text editor
+                self.inner
+                    .mouse_interaction(tree, layout, cursor, viewport, renderer)
+            }
+        } else {
+            // Cursor is not over widget
+            mouse::Interaction::default()
+        }
     }
 }
 
@@ -313,19 +459,68 @@ impl ScrollMetrics {
     }
 }
 
+/// Cached scroll metrics to avoid repeated buffer queries
+#[derive(Debug, Clone)]
+struct CachedScrollMetrics {
+    metrics: ScrollMetrics,
+    buffer_version: u64,
+    last_scroll: Option<usize>,
+}
+
+impl CachedScrollMetrics {
+    fn new() -> Self {
+        Self {
+            metrics: ScrollMetrics {
+                scroll: 0,
+                visible_lines: 0,
+                total_visual_lines: 0,
+            },
+            buffer_version: 0,
+            last_scroll: None,
+        }
+    }
+
+    fn is_valid(&self, buffer: &CosmicBuffer, current_scroll: usize) -> bool {
+        self.buffer_version == get_buffer_version(buffer)
+            && self.last_scroll.map_or(false, |last| last == current_scroll)
+    }
+
+    fn update(&mut self, buffer: &CosmicBuffer) {
+        let visible_lines = buffer.visible_lines().max(0) as usize;
+        let scroll = buffer.scroll().max(0) as usize;
+        let total_visual_lines = count_visual_lines(buffer);
+
+        self.metrics = ScrollMetrics {
+            scroll,
+            visible_lines,
+            total_visual_lines,
+        };
+        self.buffer_version = get_buffer_version(buffer);
+        self.last_scroll = Some(scroll);
+    }
+}
+
 pub fn buffer_scroll_metrics(content: &Content) -> ScrollMetrics {
+    buffer_scroll_metrics_optimized(content)
+}
+
+/// Optimized scroll metrics with caching for external use
+pub fn buffer_scroll_metrics_optimized(content: &Content) -> ScrollMetrics {
+    thread_local! {
+        static SCROLL_CACHE: std::cell::RefCell<CachedScrollMetrics> = std::cell::RefCell::new(CachedScrollMetrics::new());
+    }
+
     let editor = borrow_editor(content);
     let buffer = editor.buffer();
+    let current_scroll = buffer.scroll().max(0) as usize;
 
-    let visible_lines = buffer.visible_lines().max(0) as usize;
-    let scroll = buffer.scroll().max(0) as usize;
-    let total_visual_lines = count_visual_lines(buffer);
-
-    ScrollMetrics {
-        scroll,
-        visible_lines,
-        total_visual_lines,
-    }
+    SCROLL_CACHE.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        if !cache.is_valid(buffer, current_scroll) {
+            cache.update(buffer);
+        }
+        cache.metrics
+    })
 }
 
 pub fn scroll_to(content: &mut Content, target: usize) {
@@ -365,6 +560,50 @@ fn draw_line_numbers(
     let scroll = buffer.scroll().max(0) as usize;
     let numbers = collect_visible_line_numbers(buffer, scroll, visible_lines);
 
+    // Draw gutter background (VSCode-style)
+    let gutter_bounds = Rectangle {
+        x: bounds.x,
+        y: bounds.y,
+        width: base_padding.left + gutter_width,
+        height: bounds.height,
+    };
+
+    // Fill gutter background
+    renderer.fill_quad(
+        renderer::Quad {
+            bounds: gutter_bounds,
+            border: iced::Border {
+                color: Color::TRANSPARENT,
+                width: 0.0,
+                radius: 0.0.into(),
+            },
+            shadow: iced::Shadow::default(),
+        },
+        GUTTER_BACKGROUND,
+    );
+
+    // Draw gutter border (separator line)
+    let border_bounds = Rectangle {
+        x: gutter_bounds.x + gutter_bounds.width - GUTTER_BORDER_WIDTH,
+        y: gutter_bounds.y,
+        width: GUTTER_BORDER_WIDTH,
+        height: gutter_bounds.height,
+    };
+
+    renderer.fill_quad(
+        renderer::Quad {
+            bounds: border_bounds,
+            border: iced::Border {
+                color: Color::TRANSPARENT,
+                width: 0.0,
+                radius: 0.0.into(),
+            },
+            shadow: iced::Shadow::default(),
+        },
+        GUTTER_BORDER_COLOR,
+    );
+
+    // Calculate text positioning
     let gutter_right = bounds.x + base_padding.left + gutter_width;
     let start_y = bounds.y + base_padding.top;
     let text_size = Pixels(font_size);
@@ -388,6 +627,193 @@ fn draw_line_numbers(
 
         renderer.fill_text(text, Point::new(start_x, y), color, *viewport);
     }
+}
+
+fn draw_line_numbers_optimized_with_background(
+    renderer: &mut IcedRenderer,
+    bounds: Rectangle,
+    viewport: &Rectangle,
+    base_padding: &Padding,
+    gutter_width: f32,
+    color: Color,
+    background_color: Color,
+    content: &Content,
+    font_size_override: Option<f32>,
+    cached_line_numbers: &Rc<RefCell<CachedLineNumbers>>,
+    cached_line_metrics: &Rc<RefCell<CachedLineMetrics>>,
+) {
+    let _editor_ref = borrow_editor(content);
+    let buffer = _editor_ref.buffer();
+    let font_size = font_size_override.unwrap_or(buffer.metrics().font_size);
+    let scroll = buffer.scroll().max(0) as usize;
+
+    // Check if line metrics cache is valid and update if needed
+    let mut metrics_cache = cached_line_metrics.borrow_mut();
+    if !metrics_cache.is_valid(buffer, font_size) {
+        metrics_cache.update(buffer, font_size);
+    }
+    let line_height = metrics_cache.line_height;
+    let visible_lines = metrics_cache.visible_lines;
+    let total_lines = metrics_cache.total_visual_lines;
+
+    // Check if line numbers cache is valid
+    let mut line_numbers_cache = cached_line_numbers.borrow_mut();
+    let numbers = if line_numbers_cache.is_valid(scroll, visible_lines, total_lines, font_size, line_height) {
+        &line_numbers_cache.numbers
+    } else {
+        // Recompute line numbers using object pool
+        let mut pooled_numbers = get_pooled_usize_vec();
+        let computed_numbers = collect_visible_line_numbers_optimized(buffer, scroll, visible_lines, &mut pooled_numbers);
+        line_numbers_cache.update(computed_numbers, scroll, visible_lines, total_lines, font_size, line_height);
+        return_usize_vec(pooled_numbers);
+        &line_numbers_cache.numbers
+    };
+
+    // Draw gutter background (VSCode-style)
+    let gutter_bounds = Rectangle {
+        x: bounds.x,
+        y: bounds.y,
+        width: base_padding.left + gutter_width,
+        height: bounds.height,
+    };
+
+    // Fill gutter background
+    renderer.fill_quad(
+        renderer::Quad {
+            bounds: gutter_bounds,
+            border: iced::Border {
+                color: Color::TRANSPARENT,
+                width: 0.0,
+                radius: 0.0.into(),
+            },
+            shadow: iced::Shadow::default(),
+        },
+        background_color,
+    );
+
+    // Draw gutter border (separator line)
+    let border_bounds = Rectangle {
+        x: gutter_bounds.x + gutter_bounds.width - GUTTER_BORDER_WIDTH,
+        y: gutter_bounds.y,
+        width: GUTTER_BORDER_WIDTH,
+        height: gutter_bounds.height,
+    };
+
+    renderer.fill_quad(
+        renderer::Quad {
+            bounds: border_bounds,
+            border: iced::Border {
+                color: Color::TRANSPARENT,
+                width: 0.0,
+                radius: 0.0.into(),
+            },
+            shadow: iced::Shadow::default(),
+        },
+        GUTTER_BORDER_COLOR,
+    );
+
+    // Calculate text positioning
+    let gutter_right = bounds.x + base_padding.left + gutter_width;
+    let start_y = bounds.y + base_padding.top;
+    let text_size = Pixels(font_size);
+    let font = renderer.default_font();
+    let text_width = (gutter_width - GUTTER_TEXT_PADDING * 2.0).max(0.0);
+    let start_x = (gutter_right - text_width - GUTTER_TEXT_PADDING).max(bounds.x);
+
+    // Use string pool for line number labels
+    for (index, line_number) in numbers.iter().enumerate() {
+        let y = start_y + index as f32 * line_height;
+
+        // Use pooled string for the label
+        let mut pooled_string = get_pooled_string();
+        pooled_string.push_str(&line_number.to_string());
+        let label = pooled_string.clone(); // Clone for the text rendering
+        return_string(pooled_string);
+
+        let text = PrimitiveText {
+            content: &label,
+            bounds: Size::new(text_width, line_height),
+            size: text_size,
+            line_height: LineHeight::Absolute(Pixels(line_height)),
+            font,
+            horizontal_alignment: alignment::Horizontal::Right,
+            vertical_alignment: alignment::Vertical::Top,
+            shaping: Shaping::Basic,
+        };
+
+        renderer.fill_text(text, Point::new(start_x, y), color, *viewport);
+    }
+}
+
+fn collect_visible_line_numbers_optimized(
+    buffer: &CosmicBuffer,
+    scroll: usize,
+    visible_lines: usize,
+    output: &mut Vec<usize>,
+) -> Vec<usize> {
+    if buffer.lines.is_empty() {
+        output.push(1);
+        return output.clone();
+    }
+
+    output.clear();
+    output.reserve(visible_lines.saturating_add(1));
+
+    let mut remaining = scroll;
+    let mut current_line = 0usize;
+    let mut wrap_offset = 0usize;
+
+    for (index, line) in buffer.lines.iter().enumerate() {
+        let wraps = line
+            .layout_opt()
+            .as_ref()
+            .map(|layout| layout.len())
+            .unwrap_or(1);
+
+        if remaining < wraps {
+            current_line = index;
+            wrap_offset = remaining;
+            break;
+        }
+
+        remaining = remaining.saturating_sub(wraps);
+        current_line = (index + 1).min(buffer.lines.len().saturating_sub(1));
+        wrap_offset = 0;
+    }
+
+    let mut display_index = 0usize;
+    let mut line_index = current_line;
+    let mut local_offset = wrap_offset;
+    let max_entries = visible_lines.saturating_add(1);
+
+    while display_index < max_entries && line_index < buffer.lines.len() {
+        let line = &buffer.lines[line_index];
+        let wraps = line
+            .layout_opt()
+            .as_ref()
+            .map(|layout| layout.len())
+            .unwrap_or(1);
+
+        let start = local_offset.min(wraps);
+        local_offset = 0;
+
+        for _ in start..wraps {
+            output.push(line_index + 1);
+            display_index += 1;
+
+            if display_index >= max_entries {
+                break;
+            }
+        }
+
+        line_index += 1;
+    }
+
+    if output.is_empty() {
+        output.push(current_line + 1);
+    }
+
+    output.clone()
 }
 
 fn collect_visible_line_numbers(
