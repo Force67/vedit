@@ -47,6 +47,10 @@ struct CachedLineNumbers {
     line_height: f32,
     cached_text_batches: Vec<(String, f32, f32)>, // (text, x, y) positions
     batch_valid: bool,
+    // Ultra-fast text rendering cache
+    precomputed_text_elements: std::collections::HashMap<usize, PrimitiveText<'static, iced::Font>>, // line_number -> cached text
+    text_cache_bounds: Option<Rectangle>, // Bounds for which text cache is valid
+    text_cache_font_size: Option<f32>, // Font size for which text cache is valid
 }
 
 /// Incremental line number state for fast scrolling
@@ -60,6 +64,15 @@ struct IncrementalLineState {
     buffer_version: u64,
     cached_scroll: usize, // Last processed scroll position
     last_update_time: std::time::Instant, // Throttle scroll processing
+    // Ultra-fast path optimizations
+    precomputed_scrolls: std::collections::HashMap<usize, (usize, usize)>, // scroll -> (start_line, start_offset)
+    last_scroll_direction: i8, // -1 for up, 1 for down, 0 for none
+    consecutive_smooth_scrolls: u32, // Track smooth scrolling for optimization
+    // Adaptive performance optimization
+    adaptive_throttle_ms: u64, // Adaptive throttle based on performance
+    frame_time_samples: [u64; 8], // Recent frame times for adaptive throttling
+    frame_time_index: usize, // Current index in frame_time_samples
+    high_performance_mode: bool, // Enable/disable optimizations
 }
 
 impl IncrementalLineState {
@@ -71,12 +84,19 @@ impl IncrementalLineState {
             buffer_version: 0,
             cached_scroll: 0,
             last_update_time: std::time::Instant::now(),
+            precomputed_scrolls: std::collections::HashMap::new(),
+            last_scroll_direction: 0,
+            consecutive_smooth_scrolls: 0,
+            adaptive_throttle_ms: 2, // Start with 500Hz (2ms)
+            frame_time_samples: [2; 8], // Initialize with 2ms samples
+            frame_time_index: 0,
+            high_performance_mode: true,
         }
     }
 
     fn is_valid(&self, buffer: &CosmicBuffer, current_scroll: usize) -> bool {
         let now = std::time::Instant::now();
-        let time_since_last = now.duration_since(self.last_update_time).as_millis();
+        let time_since_last = now.duration_since(self.last_update_time).as_millis() as u64;
 
         // Always update if content changed or scroll changed significantly
         let scroll_delta = if self.cached_scroll > current_scroll {
@@ -85,16 +105,56 @@ impl IncrementalLineState {
             current_scroll - self.cached_scroll
         };
 
-        // Valid if no content changes and small scroll changes with time-based throttling
+        // Ultra-fast path: if we have precomputed this scroll position and smooth scrolling is detected
+        if self.high_performance_mode && self.consecutive_smooth_scrolls > 3 && self.precomputed_scrolls.contains_key(&current_scroll) {
+            return true;
+        }
+
+        // Use adaptive throttling based on recent performance
+        let throttle_threshold = if self.high_performance_mode {
+            self.adaptive_throttle_ms
+        } else {
+            self.adaptive_throttle_ms.saturating_mul(2) // More aggressive throttling in low performance mode
+        };
+
+        // Valid if no content changes and small scroll changes with adaptive throttling
         self.buffer_version == get_buffer_version(buffer)
             && scroll_delta <= 3
-            && time_since_last < 4  // 250Hz for very smooth scrolling
+            && time_since_last < throttle_threshold
     }
 
     fn update(&mut self, buffer: &CosmicBuffer, scroll: usize) {
+        // Measure frame time for adaptive throttling
+        let frame_start = std::time::Instant::now();
+
+        // Track scroll direction for predictive caching
+        let scroll_direction = if scroll > self.cached_scroll {
+            1
+        } else if scroll < self.cached_scroll {
+            -1
+        } else {
+            0
+        };
+
+        // Update smooth scrolling detection
+        if scroll_direction == self.last_scroll_direction && scroll_direction != 0 {
+            self.consecutive_smooth_scrolls = self.consecutive_smooth_scrolls.saturating_add(1);
+        } else {
+            self.consecutive_smooth_scrolls = 0;
+        }
+        self.last_scroll_direction = scroll_direction;
+
         self.cached_scroll = scroll;
         self.last_update_time = std::time::Instant::now();
         self.buffer_version = get_buffer_version(buffer);
+
+        // Update frame time tracking
+        let frame_time = frame_start.elapsed().as_millis() as u64;
+        self.frame_time_samples[self.frame_time_index] = frame_time;
+        self.frame_time_index = (self.frame_time_index + 1) % 8;
+
+        // Adaptive performance adjustment
+        self.adaptive_performance_update();
 
         // Update line wraps cache with layout caching
         if self.line_wraps.len() != buffer.lines.len() {
@@ -124,12 +184,84 @@ impl IncrementalLineState {
             self.start_buffer_line = (line_index + 1).min(buffer.lines.len().saturating_sub(1));
             self.start_wrap_offset = 0;
         }
+
+        // Predictive caching: precompute nearby scroll positions during smooth scrolling
+        if self.consecutive_smooth_scrolls > 3 && self.precomputed_scrolls.len() < 50 {
+            self.precompute_nearby_scrolls(scroll);
+        }
+    }
+
+    fn precompute_nearby_scrolls(&mut self, current_scroll: usize) {
+        // Precompute up to 10 scroll positions in the current direction
+        let range = if self.last_scroll_direction > 0 {
+            current_scroll + 1..=current_scroll + 10
+        } else if self.last_scroll_direction < 0 {
+            current_scroll.saturating_sub(10)..=current_scroll.saturating_sub(1)
+        } else {
+            return;
+        };
+
+        for scroll_pos in range {
+            if !self.precomputed_scrolls.contains_key(&scroll_pos) {
+                if let Some((start_line, start_offset)) = self.compute_scroll_position(scroll_pos) {
+                    self.precomputed_scrolls.insert(scroll_pos, (start_line, start_offset));
+                }
+            }
+        }
+    }
+
+    fn compute_scroll_position(&self, scroll: usize) -> Option<(usize, usize)> {
+        let mut remaining = scroll;
+        for (line_index, &wraps) in self.line_wraps.iter().enumerate() {
+            if remaining < wraps {
+                return Some((line_index, remaining));
+            }
+            remaining = remaining.saturating_sub(wraps);
+        }
+        None
+    }
+
+    fn adaptive_performance_update(&mut self) {
+        // Calculate average frame time from recent samples
+        let avg_frame_time: f64 = self.frame_time_samples.iter().sum::<u64>() as f64 / 8.0;
+
+        // Target 16.67ms for 60 FPS
+        let target_frame_time = 16.67;
+        let performance_ratio = avg_frame_time / target_frame_time;
+
+        // Adaptive throttle adjustment
+        if performance_ratio > 1.5 {
+            // Poor performance (>25 FPS), be more aggressive with throttling
+            self.adaptive_throttle_ms = (self.adaptive_throttle_ms + 1).min(16); // Cap at 60Hz
+            self.high_performance_mode = false;
+        } else if performance_ratio < 0.8 {
+            // Good performance (<75 FPS), be less aggressive
+            self.adaptive_throttle_ms = self.adaptive_throttle_ms.saturating_sub(1).max(1); // Min 1ms (1000Hz)
+            if self.adaptive_throttle_ms <= 3 {
+                self.high_performance_mode = true;
+            }
+        }
+
+        // Clear precomputed cache if performance is poor
+        if performance_ratio > 2.0 && self.precomputed_scrolls.len() > 20 {
+            self.precomputed_scrolls.clear();
+        }
     }
 
     fn get_visible_lines(&self, start_scroll: usize, visible_lines: usize, total_lines: usize) -> Vec<usize> {
+        // Ultra-fast path: use precomputed values if available
+        if let Some(&(start_line, start_offset)) = self.precomputed_scrolls.get(&start_scroll) {
+            return self.compute_visible_lines_fast(start_line, start_offset, visible_lines);
+        }
+
+        // Regular path
+        self.compute_visible_lines_fast(self.start_buffer_line, self.start_wrap_offset, visible_lines)
+    }
+
+    fn compute_visible_lines_fast(&self, start_buffer_line: usize, start_wrap_offset: usize, visible_lines: usize) -> Vec<usize> {
         let mut result = Vec::with_capacity(visible_lines.saturating_add(1));
-        let mut current_buffer_line = self.start_buffer_line;
-        let mut current_wrap_offset = self.start_wrap_offset;
+        let mut current_buffer_line = start_buffer_line;
+        let mut current_wrap_offset = start_wrap_offset;
         let mut display_index = 0;
 
         while display_index < visible_lines && current_buffer_line < self.line_wraps.len() {
@@ -167,6 +299,9 @@ impl CachedLineNumbers {
             line_height: 0.0,
             cached_text_batches: Vec::new(),
             batch_valid: false,
+            precomputed_text_elements: std::collections::HashMap::new(),
+            text_cache_bounds: None,
+            text_cache_font_size: None,
         }
     }
 
@@ -186,6 +321,45 @@ impl CachedLineNumbers {
         self.font_size = font_size;
         self.line_height = line_height;
         self.batch_valid = false; // Invalidate cached batches
+        // Invalidate text cache if font size changed
+        if let Some(cached_font_size) = self.text_cache_font_size {
+            if (cached_font_size - font_size).abs() > f32::EPSILON {
+                self.precomputed_text_elements.clear();
+                self.text_cache_font_size = None;
+            }
+        }
+    }
+
+    fn ensure_text_cache(&mut self, numbers: &[usize], font_size: f32, text_width: f32, line_height: f32) {
+        // Check if we need to rebuild the text cache
+        let should_rebuild = self.text_cache_font_size.is_none() ||
+            self.precomputed_text_elements.len() < numbers.len() ||
+            (if let Some(cached_font_size) = self.text_cache_font_size {
+                (cached_font_size - font_size).abs() > f32::EPSILON
+            } else { true });
+
+        if should_rebuild {
+            self.text_cache_font_size = Some(font_size);
+            self.precomputed_text_elements.clear();
+            self.precomputed_text_elements.reserve(numbers.len());
+
+            // Create a common text template to reuse for all line numbers
+            let template = PrimitiveText {
+                content: "99999", // Use placeholder - will be replaced during rendering
+                bounds: Size::new(text_width, line_height),
+                size: Pixels(font_size),
+                line_height: LineHeight::Absolute(Pixels(line_height)),
+                font: Default::default(), // Will be set during rendering
+                horizontal_alignment: alignment::Horizontal::Right,
+                vertical_alignment: alignment::Vertical::Top,
+                shaping: Shaping::Basic,
+            };
+
+            // Cache the template for all line numbers (they're identical except for content)
+            for &line_number in numbers.iter() {
+                self.precomputed_text_elements.insert(line_number, template.clone());
+            }
+        }
     }
 
     fn get_or_create_text_batches(&mut self, bounds: Rectangle, base_padding: &Padding, gutter_width: f32, line_height: f32) -> &[(String, f32, f32)] {
@@ -891,26 +1065,36 @@ fn draw_line_numbers_optimized_with_background(
         GUTTER_BORDER_COLOR,
     );
 
-    // Use batched text rendering with viewport culling
-    let text_batches = line_numbers_cache.get_or_create_text_batches(bounds, base_padding, gutter_width, line_height);
+    // Ultra-fast text rendering with advanced caching
     let text_size = Pixels(font_size);
     let font = renderer.default_font();
     let text_width = (gutter_width - GUTTER_TEXT_PADDING * 2.0).max(0.0);
+
+    // Calculate text positioning
+    let gutter_right = bounds.x + base_padding.left + gutter_width;
+    let start_y = bounds.y + base_padding.top;
+
+    // Update text cache if needed
+    line_numbers_cache.ensure_text_cache(&numbers, font_size, text_width, line_height);
 
     // Viewport culling: only render line numbers that are actually visible
     let viewport_top = viewport.y;
     let viewport_bottom = viewport.y + viewport.height;
 
-    for (text_content, x, y) in text_batches.iter() {
-        let text_bottom = *y + line_height;
+    // Ultra-fast rendering with minimal object creation
+    for (index, line_number) in numbers.iter().enumerate() {
+        let y = start_y + index as f32 * line_height;
+        let text_bottom = y + line_height;
 
         // Skip if text is completely outside viewport
-        if text_bottom < viewport_top || *y > viewport_bottom {
+        if text_bottom < viewport_top || y > viewport_bottom {
             continue;
         }
 
+        // Create text with minimal allocations
+        let line_str = line_number.to_string();
         let text = PrimitiveText {
-            content: text_content,
+            content: &line_str,
             bounds: Size::new(text_width, line_height),
             size: text_size,
             line_height: LineHeight::Absolute(Pixels(line_height)),
@@ -919,8 +1103,8 @@ fn draw_line_numbers_optimized_with_background(
             vertical_alignment: alignment::Vertical::Top,
             shaping: Shaping::Basic,
         };
-
-        renderer.fill_text(text, Point::new(*x, *y), color, *viewport);
+        let x = (gutter_right - text_width - GUTTER_TEXT_PADDING).max(bounds.x);
+        renderer.fill_text(text, Point::new(x, y), color, *viewport);
     }
 }
 
