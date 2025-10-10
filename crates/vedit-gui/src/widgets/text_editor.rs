@@ -106,20 +106,25 @@ impl IncrementalLineState {
         };
 
         // Ultra-fast path: if we have precomputed this scroll position and smooth scrolling is detected
-        if self.high_performance_mode && self.consecutive_smooth_scrolls > 3 && self.precomputed_scrolls.contains_key(&current_scroll) {
+        if self.high_performance_mode && self.consecutive_smooth_scrolls > 2 && self.precomputed_scrolls.contains_key(&current_scroll) {
             return true;
         }
 
-        // Use adaptive throttling based on recent performance
+        // Ultra-fast path: during smooth scrolling, skip content checks for small changes
+        if self.consecutive_smooth_scrolls > 5 && scroll_delta <= 1 && time_since_last < 4 {
+            return true; // Assume content is unchanged during rapid scrolling
+        }
+
+        // Use adaptive throttling based on recent performance - optimized for 60 FPS
         let throttle_threshold = if self.high_performance_mode {
-            self.adaptive_throttle_ms
+            8 // 120Hz for butter smooth scrolling
         } else {
-            self.adaptive_throttle_ms.saturating_mul(2) // More aggressive throttling in low performance mode
+            16 // 60 FPS fallback
         };
 
         // Valid if no content changes and small scroll changes with adaptive throttling
         self.buffer_version == get_buffer_version(buffer)
-            && scroll_delta <= 3
+            && scroll_delta <= 2  // More sensitive for smoother scrolling
             && time_since_last < throttle_threshold
     }
 
@@ -192,11 +197,11 @@ impl IncrementalLineState {
     }
 
     fn precompute_nearby_scrolls(&mut self, current_scroll: usize) {
-        // Precompute up to 10 scroll positions in the current direction
+        // Precompute up to 20 scroll positions in the current direction for butter smooth scrolling
         let range = if self.last_scroll_direction > 0 {
-            current_scroll + 1..=current_scroll + 10
+            current_scroll + 1..=current_scroll + 20
         } else if self.last_scroll_direction < 0 {
-            current_scroll.saturating_sub(10)..=current_scroll.saturating_sub(1)
+            current_scroll.saturating_sub(20)..=current_scroll.saturating_sub(1)
         } else {
             return;
         };
@@ -242,8 +247,8 @@ impl IncrementalLineState {
             }
         }
 
-        // Clear precomputed cache if performance is poor
-        if performance_ratio > 2.0 && self.precomputed_scrolls.len() > 20 {
+        // Clear precomputed cache if performance is poor - but allow larger cache for smooth scrolling
+        if performance_ratio > 2.0 && self.precomputed_scrolls.len() > 50 {
             self.precomputed_scrolls.clear();
         }
     }
@@ -331,21 +336,23 @@ impl CachedLineNumbers {
     }
 
     fn ensure_text_cache(&mut self, numbers: &[usize], font_size: f32, text_width: f32, line_height: f32) {
-        // Check if we need to rebuild the text cache
+        // More aggressive caching - only rebuild if font size or dimensions changed significantly
         let should_rebuild = self.text_cache_font_size.is_none() ||
-            self.precomputed_text_elements.len() < numbers.len() ||
             (if let Some(cached_font_size) = self.text_cache_font_size {
-                (cached_font_size - font_size).abs() > f32::EPSILON
-            } else { true });
+                (cached_font_size - font_size).abs() > 0.1  // Less sensitive for better performance
+            } else { true }) ||
+            self.precomputed_text_elements.is_empty();
 
         if should_rebuild {
             self.text_cache_font_size = Some(font_size);
             self.precomputed_text_elements.clear();
-            self.precomputed_text_elements.reserve(numbers.len());
 
-            // Create a common text template to reuse for all line numbers
+            // Pre-allocate with capacity for growth to avoid frequent reallocations
+            self.precomputed_text_elements.reserve(numbers.len().max(self.precomputed_text_elements.capacity()));
+
+            // Create a single template to reuse - this is the key optimization
             let template = PrimitiveText {
-                content: "99999", // Use placeholder - will be replaced during rendering
+                content: "", // Empty content - will use string caching during rendering
                 bounds: Size::new(text_width, line_height),
                 size: Pixels(font_size),
                 line_height: LineHeight::Absolute(Pixels(line_height)),
@@ -355,7 +362,7 @@ impl CachedLineNumbers {
                 shaping: Shaping::Basic,
             };
 
-            // Cache the template for all line numbers (they're identical except for content)
+            // Only cache the template - actual line numbers will use string interning during render
             for &line_number in numbers.iter() {
                 self.precomputed_text_elements.insert(line_number, template.clone());
             }
@@ -419,9 +426,9 @@ impl CachedLineMetrics {
         // Only throttle if content hasn't changed and scroll is small
         let time_since_last = now.duration_since(self.last_render_time).as_millis();
         let small_scroll_change = if self.current_scroll > scroll {
-            self.current_scroll - scroll <= 2
+            self.current_scroll - scroll <= 1  // More sensitive for smooth scrolling
         } else {
-            scroll - self.current_scroll <= 2
+            scroll - self.current_scroll <= 1
         };
 
         // Always update if scroll changed significantly or content changed
@@ -429,8 +436,8 @@ impl CachedLineMetrics {
             return true;
         }
 
-        // Throttle small scroll changes to 120Hz (8ms)
-        time_since_last >= 8
+        // Optimized for 60 FPS: allow updates every frame for butter smooth scrolling
+        time_since_last >= 16
     }
 
     fn is_valid(&self, buffer: &CosmicBuffer, font_size: f32) -> bool {

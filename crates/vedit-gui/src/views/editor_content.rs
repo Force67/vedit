@@ -26,7 +26,7 @@ pub fn render_editor_content(
         slider_position,
         move |value| Message::BufferScrollChanged(max_scroll - value),
     )
-    .step(1.0_f32)
+    .step(0.5_f32)  // Smaller steps for smoother scrolling
     .width(scrollbar_width)
     .height(Length::Fill)
     .style(theme::Slider::Custom(Box::new(EditorScrollbarStyle)));
