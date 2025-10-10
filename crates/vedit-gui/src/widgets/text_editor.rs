@@ -76,56 +76,53 @@ impl IncrementalLineState {
 
     fn is_valid(&self, buffer: &CosmicBuffer, current_scroll: usize) -> bool {
         let now = std::time::Instant::now();
-        // Throttle scroll processing to 120Hz (8ms) for smoother scrolling
-        let time_since_last = now.duration_since(self.last_update_time).as_millis() < 8;
+        let time_since_last = now.duration_since(self.last_update_time).as_millis();
 
+        // Always update if content changed or scroll changed significantly
+        let scroll_delta = if self.cached_scroll > current_scroll {
+            self.cached_scroll - current_scroll
+        } else {
+            current_scroll - self.cached_scroll
+        };
+
+        // Valid if no content changes and small scroll changes with time-based throttling
         self.buffer_version == get_buffer_version(buffer)
-            && (self.cached_scroll == current_scroll || time_since_last)
+            && scroll_delta <= 3
+            && time_since_last < 4  // 250Hz for very smooth scrolling
     }
 
     fn update(&mut self, buffer: &CosmicBuffer, scroll: usize) {
-        // Skip update if scroll position hasn't changed significantly
-        let scroll_delta = if self.cached_scroll > scroll {
-            self.cached_scroll - scroll
-        } else {
-            scroll - self.cached_scroll
-        };
+        self.cached_scroll = scroll;
+        self.last_update_time = std::time::Instant::now();
+        self.buffer_version = get_buffer_version(buffer);
 
-        // Only update if scroll changed by more than 1 line or it's been long enough
-        if scroll_delta > 1 || std::time::Instant::now().duration_since(self.last_update_time).as_millis() > 16 {
-            self.cached_scroll = scroll;
-            self.last_update_time = std::time::Instant::now();
+        // Update line wraps cache with layout caching
+        if self.line_wraps.len() != buffer.lines.len() {
+            self.line_wraps.clear();
+            self.line_wraps.reserve(buffer.lines.len());
 
-            self.buffer_version = get_buffer_version(buffer);
-
-            // Update line wraps cache with layout caching
-            if self.line_wraps.len() != buffer.lines.len() {
-                self.line_wraps.clear();
-                self.line_wraps.reserve(buffer.lines.len());
-
-                for line in &buffer.lines {
-                    // Cache layout results to avoid repeated text shaping
-                    let wraps = line
-                        .layout_opt()
-                        .as_ref()
-                        .map(|layout| layout.len())
-                        .unwrap_or(1);
-                    self.line_wraps.push(wraps);
-                }
+            for line in &buffer.lines {
+                // Cache layout results to avoid repeated text shaping
+                let wraps = line
+                    .layout_opt()
+                    .as_ref()
+                    .map(|layout| layout.len())
+                    .unwrap_or(1);
+                self.line_wraps.push(wraps);
             }
+        }
 
-            // Find the starting buffer line and wrap offset for current scroll
-            let mut remaining = scroll;
-            for (line_index, &wraps) in self.line_wraps.iter().enumerate() {
-                if remaining < wraps {
-                    self.start_buffer_line = line_index;
-                    self.start_wrap_offset = remaining;
-                    break;
-                }
-                remaining = remaining.saturating_sub(wraps);
-                self.start_buffer_line = (line_index + 1).min(buffer.lines.len().saturating_sub(1));
-                self.start_wrap_offset = 0;
+        // Find the starting buffer line and wrap offset for current scroll
+        let mut remaining = scroll;
+        for (line_index, &wraps) in self.line_wraps.iter().enumerate() {
+            if remaining < wraps {
+                self.start_buffer_line = line_index;
+                self.start_wrap_offset = remaining;
+                break;
             }
+            remaining = remaining.saturating_sub(wraps);
+            self.start_buffer_line = (line_index + 1).min(buffer.lines.len().saturating_sub(1));
+            self.start_wrap_offset = 0;
         }
     }
 
@@ -192,7 +189,10 @@ impl CachedLineNumbers {
     }
 
     fn get_or_create_text_batches(&mut self, bounds: Rectangle, base_padding: &Padding, gutter_width: f32, line_height: f32) -> &[(String, f32, f32)] {
-        if !self.batch_valid {
+        // Always regenerate if bounds changed significantly (window resize, etc.)
+        let should_regenerate = !self.batch_valid || self.cached_text_batches.is_empty() || self.cached_text_batches.len() != self.numbers.len();
+
+        if should_regenerate {
             self.cached_text_batches.clear();
 
             let gutter_right = bounds.x + base_padding.left + gutter_width;
@@ -242,16 +242,21 @@ impl CachedLineMetrics {
 
     fn needs_update(&self, buffer: &CosmicBuffer, font_size: f32, scroll: usize) -> bool {
         let now = std::time::Instant::now();
-        // Throttle updates to 60Hz (16ms) to prevent excessive calculations
-        let time_since_last = now.duration_since(self.last_render_time).as_millis() < 16;
+        // Only throttle if content hasn't changed and scroll is small
+        let time_since_last = now.duration_since(self.last_render_time).as_millis();
+        let small_scroll_change = if self.current_scroll > scroll {
+            self.current_scroll - scroll <= 2
+        } else {
+            scroll - self.current_scroll <= 2
+        };
 
-        if time_since_last {
-            return false; // Skip update if too recent
+        // Always update if scroll changed significantly or content changed
+        if !small_scroll_change || self.buffer_version != get_buffer_version(buffer) || (self.font_size - font_size).abs() > f32::EPSILON {
+            return true;
         }
 
-        self.buffer_version != get_buffer_version(buffer)
-            || (self.font_size - font_size).abs() > f32::EPSILON
-            || self.current_scroll != scroll
+        // Throttle small scroll changes to 120Hz (8ms)
+        time_since_last >= 8
     }
 
     fn is_valid(&self, buffer: &CosmicBuffer, font_size: f32) -> bool {
@@ -814,18 +819,23 @@ fn draw_line_numbers_optimized_with_background(
     let font_size = font_size_override.unwrap_or(buffer.metrics().font_size);
     let scroll = buffer.scroll().max(0) as usize;
 
-    // Check if line metrics cache needs update with throttling
+    // Fast path: use cached values during smooth scrolling to avoid expensive buffer queries
     let mut metrics_cache = cached_line_metrics.borrow_mut();
-    if metrics_cache.needs_update(buffer, font_size, scroll) {
+    let mut incremental_state = incremental_line_state.borrow_mut();
+
+    // Only update caches if really necessary
+    let should_update_metrics = metrics_cache.needs_update(buffer, font_size, scroll);
+    let should_update_incremental = !incremental_state.is_valid(buffer, scroll);
+
+    if should_update_metrics {
         metrics_cache.update(buffer, font_size, scroll);
     }
+
     let line_height = metrics_cache.line_height;
     let visible_lines = metrics_cache.visible_lines;
     let total_lines = metrics_cache.total_visual_lines;
 
-    // Use incremental line state for fast scroll calculations
-    let mut incremental_state = incremental_line_state.borrow_mut();
-    if !incremental_state.is_valid(buffer, scroll) {
+    if should_update_incremental {
         incremental_state.update(buffer, scroll);
     }
 
