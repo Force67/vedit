@@ -14,6 +14,16 @@ pub struct SearchDialog {
     pub total_matches: usize,
     pub replace_mode: bool,
     pub replace_text: String,
+    pub search_state: SearchState,
+    pub pending_search: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum SearchState {
+    Idle,
+    Searching,
+    Complete,
+    NoMatches,
 }
 
 impl Default for SearchDialog {
@@ -28,6 +38,8 @@ impl Default for SearchDialog {
             total_matches: 0,
             replace_mode: false,
             replace_text: String::new(),
+            search_state: SearchState::Idle,
+            pending_search: false,
         }
     }
 }
@@ -47,20 +59,51 @@ impl SearchDialog {
         self.replace_text.clear();
         self.current_match = None;
         self.total_matches = 0;
+        self.search_state = SearchState::Idle;
+        self.pending_search = false;
     }
 
     pub fn toggle(&mut self) {
-        println!("Search dialog toggle called - current visibility: {}", self.is_visible);
         if self.is_visible {
             self.hide();
         } else {
             self.show();
         }
-        println!("Search dialog visibility after toggle: {}", self.is_visible);
     }
 
     pub fn set_search_query(&mut self, query: String) {
-        self.search_query = query;
+        self.search_query = query.clone();
+        if !query.is_empty() && query != self.search_query {
+            self.pending_search = true;
+            self.search_state = SearchState::Idle;
+        }
+    }
+
+    pub fn set_search_state(&mut self, state: SearchState) {
+        self.search_state = state;
+        self.pending_search = false;
+    }
+
+    pub fn start_search(&mut self) {
+        if !self.search_query.is_empty() {
+            self.search_state = SearchState::Searching;
+            self.pending_search = false;
+        }
+    }
+
+    pub fn complete_search(&mut self, total_matches: usize) {
+        self.total_matches = total_matches;
+        if total_matches > 0 {
+            self.current_match = Some(0);
+            self.search_state = SearchState::Complete;
+        } else {
+            self.current_match = None;
+            self.search_state = if self.search_query.is_empty() {
+                SearchState::Idle
+            } else {
+                SearchState::NoMatches
+            };
+        }
     }
 
     pub fn set_replace_text(&mut self, text: String) {
@@ -93,7 +136,6 @@ impl SearchDialog {
     }
 
     pub fn view(&self, scale: f32) -> Element<Message> {
-        println!("Search dialog view called - visibility: {}", self.is_visible);
         if !self.is_visible {
             return container(row![])
                 .height(Length::Fixed(0.0))
@@ -108,6 +150,7 @@ impl SearchDialog {
         let search_input = text_input("Find", &self.search_query)
             .on_input(Message::SearchQueryChanged)
             .on_paste(Message::SearchQueryChanged)
+            .on_submit(Message::SearchExecute)
             .size(14.0 * scale)
             .padding(4.0 * scale);
 
@@ -178,21 +221,37 @@ impl SearchDialog {
         .align_items(Alignment::Center);
 
         // Results text
-        let results_text = if self.total_matches > 0 {
-            if let Some(current) = self.current_match {
-                format!("{} of {} matches", current + 1, self.total_matches)
-            } else {
-                format!("{} matches", self.total_matches)
+        let results_text = match self.search_state {
+            SearchState::Searching => "Searching...".to_string(),
+            SearchState::Complete => {
+                if let Some(current) = self.current_match {
+                    format!("{} of {} matches", current + 1, self.total_matches)
+                } else {
+                    format!("{} matches", self.total_matches)
+                }
             }
-        } else if !self.search_query.is_empty() {
-            "No matches".to_string()
-        } else {
-            "".to_string()
+            SearchState::NoMatches => "No matches".to_string(),
+            SearchState::Idle => {
+                if self.pending_search {
+                    "Press Enter to search".to_string()
+                } else if !self.search_query.is_empty() {
+                    "Press Enter to search".to_string()
+                } else {
+                    "".to_string()
+                }
+            }
+        };
+
+        let results_color = match self.search_state {
+            SearchState::Searching => Color::from_rgb8(100, 150, 200), // Light blue
+            SearchState::Complete => Color::from_rgb8(140, 140, 140),  // Gray
+            SearchState::NoMatches => Color::from_rgb8(200, 100, 100), // Light red
+            SearchState::Idle => Color::from_rgb8(160, 160, 160),     // Lighter gray
         };
 
         let results_label = text(results_text)
             .size(12.0 * scale)
-            .style(Color::from_rgb8(140, 140, 140));
+            .style(results_color);
 
         // Close button
         let close_button = button(text("✕").size(14.0 * scale))

@@ -15,7 +15,7 @@ use std::env;
 use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use vedit_application::{AppState, CommandPaletteState, QuickCommand, QuickCommandId, SettingsState};
 use vedit_core::{Editor, FileNode, KeyEvent, Language, StickyNote, WorkspaceConfig, TextBuffer};
 use vedit_make::Makefile;
@@ -179,6 +179,7 @@ pub struct EditorState {
     pub resize_direction: Option<ResizeDirection>,
     fps_counter: FpsCounter,
     search_dialog: SearchDialog,
+    search_debounce_time: Option<Instant>,
 }
 
 impl Default for EditorState {
@@ -215,6 +216,7 @@ impl Default for EditorState {
             resize_direction: None,
             fps_counter: FpsCounter::new(),
             search_dialog: SearchDialog::new(),
+            search_debounce_time: None,
         };
         state.sync_buffer_from_editor();
         state
@@ -774,10 +776,40 @@ impl EditorState {
         &mut self.search_dialog
     }
 
-    pub fn perform_search(&mut self) {
+    pub fn update_search_query(&mut self, query: String) {
+        self.search_dialog.set_search_query(query);
+        // Set debounce time for 300ms from now
+        self.search_debounce_time = Some(Instant::now() + Duration::from_millis(300));
+    }
+
+    pub fn execute_search(&mut self) {
+        if self.search_dialog.search_query.is_empty() {
+            self.search_dialog.set_search_state(crate::widgets::search_dialog::SearchState::Idle);
+            self.search_dialog.set_matches(None, 0);
+            return;
+        }
+
+        self.search_dialog.start_search();
+        self.perform_search_impl();
+    }
+
+    pub fn check_search_debounce(&mut self) -> bool {
+        if let Some(debounce_time) = self.search_debounce_time {
+            if Instant::now() >= debounce_time {
+                self.search_debounce_time = None;
+                if self.search_dialog.pending_search && !self.search_dialog.search_query.is_empty() {
+                    self.execute_search();
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    fn perform_search_impl(&mut self) {
         let query = self.search_dialog.search_query.clone();
         if query.is_empty() {
-            self.search_dialog.set_matches(None, 0);
+            self.search_dialog.complete_search(0);
             return;
         }
 
@@ -785,19 +817,24 @@ impl EditorState {
         let content = self.get_document_content();
         let matches = self.find_matches(&content, &query);
 
-        self.search_dialog.total_matches = matches.len();
+        // Complete the search with results
+        self.search_dialog.complete_search(matches.len());
+
+        // Jump to first match if we have results
         if !matches.is_empty() {
-            self.search_dialog.current_match = Some(0);
-            // Jump to first match
             if let Some(&(start, _)) = matches.first() {
                 self.jump_to_position(start);
             }
-        } else {
-            self.search_dialog.current_match = None;
         }
     }
 
     pub fn search_next(&mut self) {
+        // If we have pending search, execute it first
+        if self.search_dialog.pending_search {
+            self.execute_search();
+            return;
+        }
+
         if self.search_dialog.total_matches == 0 {
             return;
         }
@@ -817,6 +854,12 @@ impl EditorState {
     }
 
     pub fn search_previous(&mut self) {
+        // If we have pending search, execute it first
+        if self.search_dialog.pending_search {
+            self.execute_search();
+            return;
+        }
+
         if self.search_dialog.total_matches == 0 {
             return;
         }
@@ -856,7 +899,7 @@ impl EditorState {
             self.set_document_content(&new_content);
 
             // Re-search to update matches
-            self.perform_search();
+            self.execute_search();
         }
     }
 

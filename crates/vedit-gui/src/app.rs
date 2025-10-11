@@ -575,7 +575,6 @@ impl Application for EditorApp {
                     // Handle Ctrl+F for search (high priority)
                     if core_event.key == Key::Character('F') &&
                        (core_event.ctrl || core_event.command) {
-                        println!("Ctrl+F detected - toggling search dialog");
                         self.state.search_dialog_mut().toggle();
                         return self.wrap_command(Command::none());
                     }
@@ -830,8 +829,15 @@ impl Application for EditorApp {
                 self.state.search_dialog_mut().hide();
             }
             Message::SearchQueryChanged(query) => {
-                self.state.search_dialog_mut().set_search_query(query);
-                self.state.perform_search();
+                self.state.update_search_query(query);
+            }
+            Message::SearchExecute => {
+                self.state.execute_search();
+            }
+            Message::SearchDebounceTick => {
+                if self.state.check_search_debounce() {
+                    // Search was executed due to debounce
+                }
             }
             Message::SearchNext => {
                 self.state.search_next();
@@ -841,15 +847,15 @@ impl Application for EditorApp {
             }
             Message::SearchCaseSensitive(case_sensitive) => {
                 self.state.search_dialog_mut().set_case_sensitive(case_sensitive);
-                self.state.perform_search();
+                self.state.execute_search();
             }
             Message::SearchWholeWord(whole_word) => {
                 self.state.search_dialog_mut().set_whole_word(whole_word);
-                self.state.perform_search();
+                self.state.execute_search();
             }
             Message::SearchUseRegex(use_regex) => {
                 self.state.search_dialog_mut().set_use_regex(use_regex);
-                self.state.perform_search();
+                self.state.execute_search();
             }
             Message::SearchToggleReplace => {
                 let dialog = self.state.search_dialog_mut();
@@ -915,8 +921,9 @@ impl Application for EditorApp {
 
         let tick = time::every(Duration::from_millis(200)).map(|_| Message::DebuggerTick);
         let fps_tick = time::every(Duration::from_millis(8)).map(|_| Message::FpsUpdate); // ~120 FPS for 144Hz monitors
+        let debounce_tick = time::every(Duration::from_millis(50)).map(|_| Message::SearchDebounceTick); // Check debounce every 50ms
 
-        Subscription::batch(vec![input, tick, fps_tick])
+        Subscription::batch(vec![input, tick, fps_tick, debounce_tick])
     }
 
     fn scale_factor(&self) -> f64 {

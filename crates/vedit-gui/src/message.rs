@@ -100,6 +100,8 @@ pub enum Message {
     SearchOpen,
     SearchClose,
     SearchQueryChanged(String),
+    SearchExecute,
+    SearchDebounceTick,
     SearchNext,
     SearchPrevious,
     SearchCaseSensitive(bool),
