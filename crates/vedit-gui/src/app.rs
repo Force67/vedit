@@ -839,6 +839,11 @@ impl Application for EditorApp {
                     // Search was executed due to debounce
                 }
             }
+            Message::SearchHighlightTick => {
+                if self.state.check_highlight_expiry() {
+                    // Highlight expired, view will be updated
+                }
+            }
             Message::SearchNext => {
                 self.state.search_next();
             }
@@ -922,8 +927,9 @@ impl Application for EditorApp {
         let tick = time::every(Duration::from_millis(200)).map(|_| Message::DebuggerTick);
         let fps_tick = time::every(Duration::from_millis(8)).map(|_| Message::FpsUpdate); // ~120 FPS for 144Hz monitors
         let debounce_tick = time::every(Duration::from_millis(50)).map(|_| Message::SearchDebounceTick); // Check debounce every 50ms
+        let highlight_tick = time::every(Duration::from_millis(100)).map(|_| Message::SearchHighlightTick); // Check highlight expiry every 100ms
 
-        Subscription::batch(vec![input, tick, fps_tick, debounce_tick])
+        Subscription::batch(vec![input, tick, fps_tick, debounce_tick, highlight_tick])
     }
 
     fn scale_factor(&self) -> f64 {

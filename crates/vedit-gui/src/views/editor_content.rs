@@ -38,6 +38,7 @@ pub fn render_editor_content(
         .font_size(font_size)
         .highlight::<SyntaxHighlighter>(state.syntax_settings(), format_highlight)
         .line_number_color(Color::from_rgb8(133, 133, 133))
+        .search_highlight_line(state.get_search_highlight_line())
         .padding(editor_padding)
         .on_action(Message::BufferAction)
         .height(Length::Fill);

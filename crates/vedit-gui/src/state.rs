@@ -180,6 +180,8 @@ pub struct EditorState {
     fps_counter: FpsCounter,
     search_dialog: SearchDialog,
     search_debounce_time: Option<Instant>,
+    search_highlight_line: Option<usize>,
+    search_highlight_end_time: Option<Instant>,
 }
 
 impl Default for EditorState {
@@ -217,6 +219,8 @@ impl Default for EditorState {
             fps_counter: FpsCounter::new(),
             search_dialog: SearchDialog::new(),
             search_debounce_time: None,
+            search_highlight_line: None,
+            search_highlight_end_time: None,
         };
         state.sync_buffer_from_editor();
         state
@@ -806,6 +810,39 @@ impl EditorState {
         false
     }
 
+    pub fn set_search_highlight(&mut self, line_number: usize) {
+        self.search_highlight_line = Some(line_number);
+        self.search_highlight_end_time = Some(Instant::now() + Duration::from_secs(3));
+    }
+
+    pub fn clear_search_highlight(&mut self) {
+        self.search_highlight_line = None;
+        self.search_highlight_end_time = None;
+    }
+
+    pub fn check_highlight_expiry(&mut self) -> bool {
+        if let Some(end_time) = self.search_highlight_end_time {
+            if Instant::now() >= end_time {
+                self.clear_search_highlight();
+                return true;
+            }
+        }
+        false
+    }
+
+    pub fn is_search_highlight_active(&self) -> bool {
+        self.search_highlight_line.is_some() &&
+        self.search_highlight_end_time.map_or(false, |end_time| Instant::now() < end_time)
+    }
+
+    pub fn get_search_highlight_line(&self) -> Option<usize> {
+        if self.is_search_highlight_active() {
+            self.search_highlight_line
+        } else {
+            None
+        }
+    }
+
     fn perform_search_impl(&mut self) {
         let query = self.search_dialog.search_query.clone();
         if query.is_empty() {
@@ -820,9 +857,12 @@ impl EditorState {
         // Complete the search with results
         self.search_dialog.complete_search(matches.len());
 
-        // Jump to first match if we have results
+        // Jump to first match and highlight if we have results
         if !matches.is_empty() {
             if let Some(&(start, _)) = matches.first() {
+                // Calculate line number for highlight
+                let line_number = content[..start].lines().count();
+                self.set_search_highlight(line_number);
                 self.jump_to_position(start);
             }
         }
@@ -849,6 +889,10 @@ impl EditorState {
         let matches = self.find_matches(&content, &query);
 
         if let Some(&(start, _)) = matches.get(next) {
+            // Calculate line number for highlight
+            let content = self.get_document_content();
+            let line_number = content[..start].lines().count();
+            self.set_search_highlight(line_number);
             self.jump_to_position(start);
         }
     }
@@ -878,6 +922,10 @@ impl EditorState {
         let matches = self.find_matches(&content, &query);
 
         if let Some(&(start, _)) = matches.get(prev) {
+            // Calculate line number for highlight
+            let content = self.get_document_content();
+            let line_number = content[..start].lines().count();
+            self.set_search_highlight(line_number);
             self.jump_to_position(start);
         }
     }

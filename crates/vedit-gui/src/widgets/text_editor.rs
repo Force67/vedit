@@ -463,6 +463,7 @@ where
     line_color: Color,
     pointer_correction: Rc<Cell<f32>>,
     current_line_highlight: Option<Color>,
+    search_highlight_line: Option<usize>,
     indent_guides: Option<Color>,
     gutter_background: Option<Color>,
     show_minimap: bool,
@@ -494,6 +495,7 @@ impl<'a, Message> TextEditor<'a, Message, highlighter::PlainText> {
             line_color: DEFAULT_LINE_COLOR,
             pointer_correction,
             current_line_highlight: None,
+            search_highlight_line: None,
             indent_guides: None,
             gutter_background: Some(GUTTER_BACKGROUND),
             show_minimap: false,
@@ -525,6 +527,7 @@ impl<'a, Message> TextEditor<'a, Message, highlighter::PlainText> {
             line_color: self.line_color,
             pointer_correction: Rc::clone(&self.pointer_correction),
             current_line_highlight: self.current_line_highlight,
+            search_highlight_line: self.search_highlight_line,
             indent_guides: self.indent_guides,
             gutter_background: self.gutter_background,
             show_minimap: self.show_minimap,
@@ -583,6 +586,11 @@ where
 
     pub fn current_line_highlight(mut self, color: Color) -> Self {
         self.current_line_highlight = Some(color);
+        self
+    }
+
+    pub fn search_highlight_line(mut self, line_number: Option<usize>) -> Self {
+        self.search_highlight_line = line_number;
         self
     }
 
@@ -709,6 +717,11 @@ where
         self.inner
             .draw(tree, renderer, theme, style, layout, cursor, viewport);
 
+        // Draw search highlight if active
+        if let Some(highlight_line) = self.search_highlight_line {
+            draw_search_highlight_static(renderer, bounds, viewport, highlight_line, self.content, self.base_padding, self.gutter_width, self.font_size);
+        }
+
         draw_line_numbers_optimized_with_background(
             renderer,
             bounds,
@@ -728,7 +741,7 @@ where
         // For now, skip or add a placeholder
     }
 
-    fn mouse_interaction(
+fn mouse_interaction(
         &self,
         tree: &tree::Tree,
         layout: Layout<'_>,
@@ -752,6 +765,55 @@ where
             // Cursor is not over widget
             mouse::Interaction::default()
         }
+    }
+}
+
+fn draw_search_highlight_static(
+    renderer: &mut IcedRenderer,
+    bounds: Rectangle,
+    viewport: &Rectangle,
+    highlight_line: usize,
+    content: &Content,
+    base_padding: Padding,
+    gutter_width: f32,
+    font_size: Option<Pixels>,
+) {
+    let _editor_ref = borrow_editor(content);
+    let buffer = _editor_ref.buffer();
+    let _font_size = font_size.map(|p| p.0).unwrap_or(buffer.metrics().font_size);
+    let line_height = buffer.metrics().line_height.max(1.0);
+    let scroll = buffer.scroll().max(0) as f32;
+
+    // Calculate line position using the same logic as line numbers
+    let start_y = bounds.y + base_padding.top;
+    let line_y = (highlight_line as f32 - scroll) * line_height;
+    let highlight_y = start_y + line_y - line_height; // Subtract one line height to fix offset
+
+    // Only draw if line is visible in viewport
+    if highlight_y + line_height >= viewport.y && highlight_y <= viewport.y + viewport.height {
+        let highlight_rect = Rectangle {
+            x: bounds.x + base_padding.left + gutter_width - 1.0, // Start near gutter with small padding
+            y: highlight_y, // Use the same calculation as line numbers
+            width: bounds.width - base_padding.horizontal() - gutter_width + 2.0, // Extend past gutter with small padding
+            height: line_height, // Use full line height
+        };
+
+        // Create a semi-transparent yellow highlight
+        let highlight_color = Color::from_rgba(1.0, 0.9, 0.3, 0.3); // Yellow with transparency
+
+        // Draw the highlight rectangle
+        renderer.fill_quad(
+            renderer::Quad {
+                bounds: highlight_rect,
+                border: iced::border::Border {
+                    radius: 2.0.into(),
+                    width: 0.0,
+                    color: Color::TRANSPARENT,
+                },
+                shadow: iced::Shadow::default(),
+            },
+            highlight_color,
+        );
     }
 }
 
