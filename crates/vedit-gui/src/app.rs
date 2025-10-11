@@ -572,6 +572,32 @@ impl Application for EditorApp {
                 }
 
                 if let Some(core_event) = keyboard::key_event_from_iced(&key_event) {
+                    // Handle Ctrl+F for search (high priority)
+                    if core_event.key == Key::Character('F') &&
+                       (core_event.ctrl || core_event.command) {
+                        println!("Ctrl+F detected - toggling search dialog");
+                        self.state.search_dialog_mut().toggle();
+                        return self.wrap_command(Command::none());
+                    }
+
+                    // Handle Escape key to close search dialog (high priority)
+                    if core_event.key == Key::Escape && self.state.search_dialog().is_visible {
+                        self.state.search_dialog_mut().hide();
+                        return self.wrap_command(Command::none());
+                    }
+
+                    // Handle F3 for next match, Shift+F3 for previous match (high priority)
+                    if core_event.key == Key::Function(3) {
+                        if self.state.search_dialog().is_visible {
+                            if core_event.shift {
+                                self.state.search_previous();
+                            } else {
+                                self.state.search_next();
+                            }
+                            return self.wrap_command(Command::none());
+                        }
+                    }
+
                     if self.state.matches_action(QUICK_COMMAND_MENU_ACTION, &core_event) {
                         if self.state.command_palette().is_open() {
                             self.state.close_command_palette();
@@ -795,6 +821,52 @@ impl Application for EditorApp {
             }
             Message::RightRailTabSelected(tab) => {
                 self.state.set_selected_right_rail_tab(tab);
+            }
+            // Search dialog messages
+            Message::SearchOpen => {
+                self.state.search_dialog_mut().show();
+            }
+            Message::SearchClose => {
+                self.state.search_dialog_mut().hide();
+            }
+            Message::SearchQueryChanged(query) => {
+                self.state.search_dialog_mut().set_search_query(query);
+                self.state.perform_search();
+            }
+            Message::SearchNext => {
+                self.state.search_next();
+            }
+            Message::SearchPrevious => {
+                self.state.search_previous();
+            }
+            Message::SearchCaseSensitive(case_sensitive) => {
+                self.state.search_dialog_mut().set_case_sensitive(case_sensitive);
+                self.state.perform_search();
+            }
+            Message::SearchWholeWord(whole_word) => {
+                self.state.search_dialog_mut().set_whole_word(whole_word);
+                self.state.perform_search();
+            }
+            Message::SearchUseRegex(use_regex) => {
+                self.state.search_dialog_mut().set_use_regex(use_regex);
+                self.state.perform_search();
+            }
+            Message::SearchToggleReplace => {
+                let dialog = self.state.search_dialog_mut();
+                if dialog.replace_mode {
+                    dialog.disable_replace_mode();
+                } else {
+                    dialog.enable_replace_mode();
+                }
+            }
+            Message::ReplaceTextChanged(text) => {
+                self.state.search_dialog_mut().set_replace_text(text);
+            }
+            Message::ReplaceOne => {
+                self.state.replace_one();
+            }
+            Message::ReplaceAll => {
+                self.state.replace_all();
             }
         }
 

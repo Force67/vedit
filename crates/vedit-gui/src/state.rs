@@ -5,6 +5,7 @@ use crate::scaling;
 use crate::syntax::{DocumentKey, SyntaxSettings, SyntaxSystem};
 use crate::widgets::file_explorer::FileExplorer;
 use crate::widgets::fps_counter::FpsCounter;
+use crate::widgets::search_dialog::SearchDialog;
 use crate::widgets::text_editor::{buffer_scroll_metrics, scroll_to, ScrollMetrics};
 use iced::keyboard;
 use iced::widget::text_editor::{Action as TextEditorAction, Content};
@@ -16,7 +17,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 use vedit_application::{AppState, CommandPaletteState, QuickCommand, QuickCommandId, SettingsState};
-use vedit_core::{Editor, FileNode, KeyEvent, Language, StickyNote, WorkspaceConfig};
+use vedit_core::{Editor, FileNode, KeyEvent, Language, StickyNote, WorkspaceConfig, TextBuffer};
 use vedit_make::Makefile;
 use vedit_vs::{Solution as VsSolution, VcxProject};
 
@@ -177,6 +178,7 @@ pub struct EditorState {
     pub resize_start_size: Option<iced::Size>,
     pub resize_direction: Option<ResizeDirection>,
     fps_counter: FpsCounter,
+    search_dialog: SearchDialog,
 }
 
 impl Default for EditorState {
@@ -212,6 +214,7 @@ impl Default for EditorState {
             resize_start_size: None,
             resize_direction: None,
             fps_counter: FpsCounter::new(),
+            search_dialog: SearchDialog::new(),
         };
         state.sync_buffer_from_editor();
         state
@@ -761,6 +764,196 @@ impl EditorState {
 
     pub fn debugger_mut(&mut self) -> &mut DebuggerState {
         &mut self.debugger
+    }
+
+    pub fn search_dialog(&self) -> &SearchDialog {
+        &self.search_dialog
+    }
+
+    pub fn search_dialog_mut(&mut self) -> &mut SearchDialog {
+        &mut self.search_dialog
+    }
+
+    pub fn perform_search(&mut self) {
+        let query = self.search_dialog.search_query.clone();
+        if query.is_empty() {
+            self.search_dialog.set_matches(None, 0);
+            return;
+        }
+
+        // Get document content
+        let content = self.get_document_content();
+        let matches = self.find_matches(&content, &query);
+
+        self.search_dialog.total_matches = matches.len();
+        if !matches.is_empty() {
+            self.search_dialog.current_match = Some(0);
+            // Jump to first match
+            if let Some(&(start, _)) = matches.first() {
+                self.jump_to_position(start);
+            }
+        } else {
+            self.search_dialog.current_match = None;
+        }
+    }
+
+    pub fn search_next(&mut self) {
+        if self.search_dialog.total_matches == 0 {
+            return;
+        }
+
+        let current = self.search_dialog.current_match.unwrap_or(0);
+        let next = (current + 1) % self.search_dialog.total_matches;
+        self.search_dialog.current_match = Some(next);
+
+        // Get document content and find matches again to get positions
+        let content = self.get_document_content();
+        let query = self.search_dialog.search_query.clone();
+        let matches = self.find_matches(&content, &query);
+
+        if let Some(&(start, _)) = matches.get(next) {
+            self.jump_to_position(start);
+        }
+    }
+
+    pub fn search_previous(&mut self) {
+        if self.search_dialog.total_matches == 0 {
+            return;
+        }
+
+        let current = self.search_dialog.current_match.unwrap_or(0);
+        let prev = if current == 0 {
+            self.search_dialog.total_matches - 1
+        } else {
+            current - 1
+        };
+        self.search_dialog.current_match = Some(prev);
+
+        // Get document content and find matches again to get positions
+        let content = self.get_document_content();
+        let query = self.search_dialog.search_query.clone();
+        let matches = self.find_matches(&content, &query);
+
+        if let Some(&(start, _)) = matches.get(prev) {
+            self.jump_to_position(start);
+        }
+    }
+
+    pub fn replace_one(&mut self) {
+        if self.search_dialog.total_matches == 0 {
+            return;
+        }
+
+        let current = self.search_dialog.current_match.unwrap_or(0);
+        let content = self.get_document_content();
+        let query = self.search_dialog.search_query.clone();
+        let replace_text = self.search_dialog.replace_text.clone();
+
+        let matches = self.find_matches(&content, &query);
+        if let Some(&(start, end)) = matches.get(current) {
+            // Perform replacement
+            let new_content = content[..start].to_string() + &replace_text + &content[end..];
+            self.set_document_content(&new_content);
+
+            // Re-search to update matches
+            self.perform_search();
+        }
+    }
+
+    pub fn replace_all(&mut self) {
+        if self.search_dialog.total_matches == 0 {
+            return;
+        }
+
+        let content = self.get_document_content();
+        let query = self.search_dialog.search_query.clone();
+        let replace_text = self.search_dialog.replace_text.clone();
+
+        let matches = self.find_matches(&content, &query);
+        let mut new_content = content.clone();
+
+        // Replace from end to beginning to avoid position shifting
+        for &(start, end) in matches.iter().rev() {
+            new_content = new_content[..start].to_string() + &replace_text + &new_content[end..];
+        }
+
+        self.set_document_content(&new_content);
+        self.search_dialog.set_matches(None, 0);
+    }
+
+    fn get_document_content(&self) -> String {
+        // Extract text from the editor buffer
+        if let Some(doc) = self.editor().active_document() {
+            doc.buffer.to_string()
+        } else {
+            String::new()
+        }
+    }
+
+    fn set_document_content(&mut self, content: &str) {
+        // Set the editor buffer content
+        if let Some(doc) = self.editor_mut().active_document_mut() {
+            // Replace the entire document content
+            doc.buffer = TextBuffer::from_text(content);
+            doc.is_modified = true;
+            self.sync_buffer_from_editor();
+        }
+    }
+
+    fn find_matches(&self, content: &str, query: &str) -> Vec<(usize, usize)> {
+        let mut matches = Vec::new();
+
+        if query.is_empty() {
+            return matches;
+        }
+
+        let search_content = if self.search_dialog.case_sensitive {
+            content.to_string()
+        } else {
+            content.to_lowercase()
+        };
+
+        let search_query = if self.search_dialog.case_sensitive {
+            query.to_string()
+        } else {
+            query.to_lowercase()
+        };
+
+        let mut start = 0;
+        while let Some(pos) = search_content[start..].find(&search_query) {
+            let absolute_pos = start + pos;
+            let end_pos = absolute_pos + query.len();
+
+            // Check whole word constraint if enabled
+            if self.search_dialog.whole_word {
+                let before_ok = absolute_pos == 0 || !search_content.chars().nth(absolute_pos - 1)
+                    .unwrap_or(' ').is_alphanumeric();
+                let after_ok = end_pos == search_content.len() || !search_content.chars().nth(end_pos)
+                    .unwrap_or(' ').is_alphanumeric();
+
+                if before_ok && after_ok {
+                    matches.push((absolute_pos, end_pos));
+                }
+            } else {
+                matches.push((absolute_pos, end_pos));
+            }
+
+            start = absolute_pos + 1;
+        }
+
+        matches
+    }
+
+    fn jump_to_position(&mut self, position: usize) {
+        // Convert character position to line and column for the editor
+        let content = self.get_document_content();
+        let line_num = content[..position].lines().count();
+
+        // Scroll the GUI buffer to the line containing the match
+        let target_scroll = line_num.saturating_sub(5) as i32;
+        self.buffer_content.perform(iced::widget::text_editor::Action::Scroll {
+            lines: target_scroll
+        });
     }
 
     pub fn refresh_debug_targets(&mut self) -> Result<(), String> {

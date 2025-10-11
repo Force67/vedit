@@ -5,6 +5,7 @@ pub mod file_explorer;
 pub mod fps_counter;
 pub mod left_rail;
 pub mod right_rail;
+pub mod search_dialog;
 pub mod text_editor;
 pub mod toast;
 pub mod top_toolbar;

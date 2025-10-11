@@ -1,0 +1,89 @@
+Welcome to the Unicode Test File for vedit!
+==========================================
+
+This file tests various Unicode characters and encoding support.
+
+ASCII Characters:
+Hello World! This is plain ASCII text.
+
+Latin Accents:
+café résumé naïve façade château El Niño
+Gödel Escher Bach
+São Paulo Brasil
+Moskva Россия
+
+European Scripts:
+Français: Bonjour le monde!
+Deutsch: Guten Tag Welt!
+Español: ¡Hola mundo!
+Italiano: Ciao mondo!
+Português: Olá mundo!
+Nederlands: Hallo wereld!
+Svenska: Hej världen!
+Norsk: Hei verden!
+Dansk: Hej verden!
+Suomi: Hei maailma!
+Polski: Witaj świecie!
+Český: Ahoj světe!
+Magyar: Helló világ!
+Română: Bună ziua lume!
+Türkçe: Merhaba dünya!
+Ελληνικά: Γεια σου κόσμε!
+עברית: שלום עולם!
+
+Asian Scripts:
+Chinese (Simplified): 你好世界！编程很有趣。
+Chinese (Traditional): 你好世界！編程很有趣。
+Japanese: こんにちは世界！プログラミングは楽しいです。
+Korean: 안녕하세요 세계! 프로그래밍은 재미있습니다.
+
+Arabic and RTL Scripts:
+العربية: مرحبا بالعالم! البرمجة ممتعة.
+עברית: שלום עולם! תכנות זה כיף.
+فارسی: سلام دنیا! برنامه نویسی لذت بخش است.
+
+Emoji and Symbols:
+🚀🎉🦀😀😃😄😁😆😅🤣😂🙂🙃
+👍👎👌✌️🤞🤟🤘🤙👈👉👆🖕👇☝️✋🤚
+🌍🌎🌏🌐🗺️🧭🏔️⛰️🌋🗻🏕️🏖️🏜️🏝️
+🍎🍊🍋🍌🍉🍇🍓🫐🍈🍒🍑🥭🍍🥥🥝
+🐶🐱🐭🐹🐰🦊🐻🐼🐨🐯🦁🐮🐷🐽🐸
+👨‍👩‍👧‍👦👨‍👩‍👧👨‍👩‍👦👩‍👩‍👧👩‍👩‍👦👨‍👨‍👧👨‍👨‍👦
+🏳️‍🌈🏴‍☠️🏁🚩🎌🏴🏳️🏳️‍⚧️🏳️‍🌈
+
+Mathematical Symbols:
+∑∏∫∆∇∂∞√∛∜±×÷≤≥≠≈∝∈∉∋∌⊂⊃⊆⊇
+∧∨¬→←↔⇒⇔∀∃∅∪∩⊆⊇⊕⊗⊖
+
+Special Characters:
+…—–«»""''''‹›«»§¶†‡•‰‱′″‴‵‶‷
+℃℉℧℠™Ωℵℶℷℸ⅛⅜⅝⅞ↀↁↂↃↄↅ
+←↑→↓↖↗↘↙⇐⇑⇒⇓⇖⇗⇘⇙⇄⇆⇇⇉⇊⇵⇱⇲⇳⇴⇵⇶⇷⇸⇹⇺⇻⇼⇽⇾⇿
+
+Zero Width Joiners and Complex Emoji:
+Family: 👨‍👩‍👧‍👦 👨‍👩‍👧 👨‍👩‍👦 👩‍👩‍👧 👩‍👩‍👦 👨‍👨‍👧 👨‍👨‍👦
+Flags: 🏳️‍🌈 🏴‍☠️ 🏁 🚩 🎌 🏴 🏳️ 🏳️‍⚧️
+Skin tones: 👋🏻 👋🏼 👋🏽 👋🏾 👋🏿
+Professions: 👨‍⚕️ 👨‍🎓 👨‍🏫 👨‍⚖️ 👨‍🌾 👨‍🍳 👨‍🔧 👨‍🏭 👨‍💼 👨‍🔬 👨‍🎨 👨‍🚀 👨‍🚒 👨‍✈️ 👨‍🌾
+
+Mixed Content Line:
+Hello 世界 🌍! café résumé naïve. 你好编程! 🚀🎉 مرحبا بالعالم! 😊
+
+Code with Unicode Comments:
+// Rust comment with Unicode: let message = "Hello 世界 🌍";
+fn greet(name: &str) -> String {
+    format!("Hello, {}! 🎉", name)
+}
+
+// Test with emojis in comments: 🦀 Rust is awesome! 🚀
+let result = greet("世界"); // Chinese for "world"
+
+End of Unicode Test File
+========================
+
+This file should display correctly in vedit with:
+✓ Proper Unicode character rendering
+✓ Correct emoji display (if font supports it)
+✓ Proper line breaking for mixed content
+✓ RTL script support (if implemented)
+✓ Zero-width joiner sequences for complex emoji

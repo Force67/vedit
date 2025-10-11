@@ -78,10 +78,30 @@ pub fn view(state: &EditorState) -> Element<'_, Message> {
 
     let base = main_content.into();
 
+    // Overlay the search dialog on top without dimming
+    let with_search = if state.search_dialog().is_visible {
+        Modal::new(
+            base,
+            {
+                // Position search dialog at the top-right of the screen
+                let search_contents = state.search_dialog().view(scale);
+                container(search_contents)
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .align_x(iced::alignment::Horizontal::Right)
+                    .align_y(iced::alignment::Vertical::Top)
+                    .into()
+            },
+        )
+        .into()
+    } else {
+        base
+    };
+
     // Overlay the command prompt on top without dimming
     if state.command_palette().is_open() {
         Modal::new(
-            base,
+            with_search,
             {
                 // center the dropdown inside the modal
                 let contents = render_command_palette_contents(state);
@@ -95,6 +115,6 @@ pub fn view(state: &EditorState) -> Element<'_, Message> {
         )
         .into()
     } else {
-        base
+        with_search
     }
 }

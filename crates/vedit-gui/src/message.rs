@@ -96,6 +96,19 @@ pub enum Message {
     DetectMonitorRefreshRates,
     FileExplorer(crate::widgets::file_explorer::Message),
     RightRailTabSelected(RightRailTab),
+    // Search dialog messages
+    SearchOpen,
+    SearchClose,
+    SearchQueryChanged(String),
+    SearchNext,
+    SearchPrevious,
+    SearchCaseSensitive(bool),
+    SearchWholeWord(bool),
+    SearchUseRegex(bool),
+    SearchToggleReplace,
+    ReplaceTextChanged(String),
+    ReplaceOne,
+    ReplaceAll,
 }
 
 #[derive(Clone)]
