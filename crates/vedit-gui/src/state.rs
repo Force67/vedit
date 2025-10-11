@@ -6,7 +6,7 @@ use crate::syntax::{DocumentKey, SyntaxSettings, SyntaxSystem};
 use crate::widgets::file_explorer::FileExplorer;
 use crate::widgets::fps_counter::FpsCounter;
 use crate::widgets::search_dialog::SearchDialog;
-use crate::widgets::text_editor::{buffer_scroll_metrics, scroll_to, ScrollMetrics};
+use crate::widgets::text_editor::{buffer_scroll_metrics, scroll_to, ScrollMetrics, DebugDot};
 use iced::keyboard;
 use iced::widget::text_editor::{Action as TextEditorAction, Content};
 use std::cmp::Ordering;
@@ -182,6 +182,7 @@ pub struct EditorState {
     search_debounce_time: Option<Instant>,
     search_highlight_line: Option<usize>,
     search_highlight_end_time: Option<Instant>,
+    debug_dots: Vec<DebugDot>,
 }
 
 impl Default for EditorState {
@@ -221,6 +222,7 @@ impl Default for EditorState {
             search_debounce_time: None,
             search_highlight_line: None,
             search_highlight_end_time: None,
+            debug_dots: Vec::new(),
         };
         state.sync_buffer_from_editor();
         state
@@ -841,6 +843,33 @@ impl EditorState {
         } else {
             None
         }
+    }
+
+    // Debug dot management methods
+    pub fn add_debug_dot(&mut self, line_number: usize) {
+        if !self.debug_dots.iter().any(|dot| dot.line_number == line_number) {
+            self.debug_dots.push(DebugDot { line_number, enabled: true });
+        }
+    }
+
+    pub fn remove_debug_dot(&mut self, line_number: usize) {
+        self.debug_dots.retain(|dot| dot.line_number != line_number);
+    }
+
+    pub fn toggle_debug_dot(&mut self, line_number: usize) {
+        if let Some(dot) = self.debug_dots.iter_mut().find(|dot| dot.line_number == line_number) {
+            dot.enabled = !dot.enabled;
+        } else {
+            self.debug_dots.push(DebugDot { line_number, enabled: true });
+        }
+    }
+
+    pub fn clear_debug_dots(&mut self) {
+        self.debug_dots.clear();
+    }
+
+    pub fn get_debug_dots(&self) -> &[DebugDot] {
+        &self.debug_dots
     }
 
     fn perform_search_impl(&mut self) {

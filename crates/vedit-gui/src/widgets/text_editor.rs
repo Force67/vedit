@@ -36,6 +36,9 @@ const GUTTER_TEXT_PADDING: f32 = 12.0;
 const GUTTER_BACKGROUND: Color = Color::from_rgba(0.05, 0.05, 0.05, 1.0);
 const GUTTER_BORDER_COLOR: Color = Color::from_rgba(0.3, 0.3, 0.3, 1.0);
 const GUTTER_BORDER_WIDTH: f32 = 1.0;
+const DEBUG_DOT_COLOR: Color = Color::from_rgb(1.0, 0.0, 0.0); // Red color for debug dots
+const DEBUG_DOT_RADIUS: f32 = 5.0;
+const DEBUG_DOT_PADDING: f32 = 4.0;
 
 /// Prefix-sum wrap index for O(log N) scroll-to-line mapping
 #[derive(Debug, Clone)]
@@ -452,6 +455,13 @@ fn compute_width_hash(buffer: &CosmicBuffer) -> u64 {
     hasher.finish()
 }
 
+/// Red dot marker for debugging integration
+#[derive(Debug, Clone)]
+pub struct DebugDot {
+    pub line_number: usize,
+    pub enabled: bool,
+}
+
 pub struct TextEditor<'a, Message, H = highlighter::PlainText>
 where
     H: IcedHighlighter,
@@ -468,6 +478,9 @@ where
     gutter_background: Option<Color>,
     show_minimap: bool,
     font_size: Option<Pixels>,
+    debug_dots: Vec<DebugDot>,
+    on_gutter_click: Option<Rc<dyn Fn(usize) -> Message>>,
+    hover_line: Option<usize>,
     cached_line_numbers: Rc<RefCell<CachedLineNumbers>>,
     cached_line_metrics: Rc<RefCell<CachedLineMetrics>>,
     cached_scroll_metrics: Rc<RefCell<CachedScrollMetrics>>,
@@ -500,6 +513,9 @@ impl<'a, Message> TextEditor<'a, Message, highlighter::PlainText> {
             gutter_background: Some(GUTTER_BACKGROUND),
             show_minimap: false,
             font_size: None,
+            debug_dots: Vec::new(),
+            on_gutter_click: None,
+            hover_line: None,
             cached_line_numbers: Rc::new(RefCell::new(CachedLineNumbers::new())),
             cached_line_metrics: Rc::new(RefCell::new(CachedLineMetrics::new())),
             cached_scroll_metrics: Rc::new(RefCell::new(CachedScrollMetrics::new())),
@@ -532,6 +548,9 @@ impl<'a, Message> TextEditor<'a, Message, highlighter::PlainText> {
             gutter_background: self.gutter_background,
             show_minimap: self.show_minimap,
             font_size: self.font_size,
+            debug_dots: self.debug_dots.clone(),
+            on_gutter_click: self.on_gutter_click.clone(),
+            hover_line: self.hover_line,
             cached_line_numbers: Rc::clone(&self.cached_line_numbers),
             cached_line_metrics: Rc::clone(&self.cached_line_metrics),
             cached_scroll_metrics: Rc::clone(&self.cached_scroll_metrics),
@@ -614,6 +633,34 @@ where
         self
     }
 
+    pub fn debug_dots(mut self, dots: Vec<DebugDot>) -> Self {
+        self.debug_dots = dots;
+        self
+    }
+
+    pub fn add_debug_dot(mut self, line_number: usize) -> Self {
+        self.debug_dots.push(DebugDot { line_number, enabled: true });
+        self
+    }
+
+    pub fn remove_debug_dot(mut self, line_number: usize) -> Self {
+        self.debug_dots.retain(|dot| dot.line_number != line_number);
+        self
+    }
+
+    pub fn clear_debug_dots(mut self) -> Self {
+        self.debug_dots.clear();
+        self
+    }
+
+    pub fn on_gutter_click<F>(mut self, f: F) -> Self
+    where
+        F: Fn(usize) -> Message + 'a + 'static,
+    {
+        self.on_gutter_click = Some(Rc::new(f));
+        self
+    }
+
     /// Get cached scroll metrics, updating cache if needed
     pub fn cached_scroll_metrics(&self) -> ScrollMetrics {
         let editor_ref = borrow_editor(self.content);
@@ -650,6 +697,39 @@ where
         let mut incremental_state = self.incremental_line_state.borrow_mut();
         drop(incremental_state); // Force refresh by dropping and recreating
         *self.incremental_line_state.borrow_mut() = IncrementalLineState::new();
+    }
+
+    /// Get line number from cursor position in the gutter
+    fn get_line_number_from_position(&self, position: Point, bounds: Rectangle) -> Option<usize> {
+        let _editor_ref = borrow_editor(self.content);
+        let buffer = _editor_ref.buffer();
+        let line_height = buffer.metrics().line_height.max(1.0);
+        let scroll = buffer.scroll().max(0) as usize;
+        let start_y = bounds.y + self.base_padding.top;
+
+        // Calculate which line was clicked based on y position
+        let relative_y = position.y - start_y;
+        if relative_y < 0.0 {
+            return None;
+        }
+
+        // Calculate line number considering scroll
+        let clicked_line_float = (relative_y / line_height) + scroll as f32;
+        let line_number = clicked_line_float as usize;
+
+        // Get the actual line number from the incremental state for accuracy
+        let incremental_state = self.incremental_line_state.borrow();
+        let visible_lines = buffer.visible_lines().max(0) as usize;
+        let total_lines = incremental_state.optimized.wrap_index.total_visual();
+
+        let visible_line_numbers = incremental_state.get_visible_lines(scroll, visible_lines, total_lines);
+
+        if line_number < visible_line_numbers.len() {
+            Some(visible_line_numbers[line_number])
+        } else {
+            // Fallback calculation
+            Some(line_number + 1)
+        }
     }
 }
 
@@ -690,6 +770,22 @@ where
         shell: &mut Shell<'_, Message>,
         viewport: &Rectangle,
     ) -> event::Status {
+        // Handle gutter click events
+        if let (Some(gutter_click_handler), Some(cursor_pos)) = (&self.on_gutter_click, cursor.position_over(layout.bounds())) {
+            let gutter_right = layout.bounds().x + self.base_padding.left + self.gutter_width;
+
+            // Check if click is in gutter area
+            if cursor_pos.x < gutter_right {
+                if let Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) = event {
+                    if let Some(line_number) = self.get_line_number_from_position(cursor_pos, layout.bounds()) {
+                        shell.publish(gutter_click_handler(line_number));
+                        return event::Status::Captured;
+                    }
+                }
+            }
+        }
+
+        // Delegate to inner text editor for other events
         self.inner.on_event(
             tree,
             event,
@@ -737,6 +833,18 @@ where
             &self.incremental_line_state,
         );
 
+        // Draw debug dots in the gutter area
+        draw_debug_dots(
+            renderer,
+            bounds,
+            viewport,
+            &self.base_padding,
+            self.gutter_width,
+            &self.debug_dots,
+            self.content,
+            self.font_size.map(|p| p.0),
+        );
+
         // Minimap would be more complex, perhaps draw a small version on the right
         // For now, skip or add a placeholder
     }
@@ -754,7 +862,7 @@ fn mouse_interaction(
             let gutter_right = layout.bounds().x + self.base_padding.left + self.gutter_width;
 
             if position.x < gutter_right {
-                // Cursor is in gutter area - VSCode typically shows pointer cursor here
+                // Cursor is in gutter area - show pointer cursor for clickable debug dots
                 mouse::Interaction::Pointer
             } else {
                 // Cursor is in content area - delegate to inner text editor
@@ -1582,6 +1690,71 @@ fn extract_text_from_content(content: &Content) -> String {
         text.push_str(&format!("{:?}\n", line));
     }
     text
+}
+
+fn draw_debug_dots(
+    renderer: &mut IcedRenderer,
+    bounds: Rectangle,
+    viewport: &Rectangle,
+    base_padding: &Padding,
+    gutter_width: f32,
+    debug_dots: &[DebugDot],
+    content: &Content,
+    font_size_override: Option<f32>,
+) {
+    if debug_dots.is_empty() {
+        return;
+    }
+
+    let _editor_ref = borrow_editor(content);
+    let buffer = _editor_ref.buffer();
+    let font_size = font_size_override.unwrap_or(buffer.metrics().font_size);
+    let line_height = buffer.metrics().line_height.max(1.0);
+    let scroll = buffer.scroll().max(0) as usize;
+
+    // Calculate positions
+    let start_y = bounds.y + base_padding.top;
+    let gutter_right = bounds.x + base_padding.left + gutter_width;
+
+    // Position dots to the right of line numbers, with some padding
+    let dot_x = gutter_right - DEBUG_DOT_PADDING - DEBUG_DOT_RADIUS;
+
+    // Render debug dots with proper viewport bounds checking
+    let buffer_top = bounds.y + base_padding.top;
+    let buffer_bottom = bounds.y + bounds.height - base_padding.bottom;
+
+    for debug_dot in debug_dots.iter().filter(|dot| dot.enabled) {
+        let line_number = debug_dot.line_number;
+
+        // Calculate the y position for this line
+        let line_y = (line_number as f32 - scroll as f32) * line_height;
+        let dot_y = start_y + line_y - line_height + (line_height / 2.0); // Center in the line
+
+        // Aggressive culling: only render if dot is within buffer bounds
+        let dot_top = dot_y - DEBUG_DOT_RADIUS;
+        let dot_bottom = dot_y + DEBUG_DOT_RADIUS;
+
+        if dot_top >= buffer_top && dot_bottom <= buffer_bottom {
+            // Draw the red dot only when within proper buffer area
+            renderer.fill_quad(
+                renderer::Quad {
+                    bounds: Rectangle {
+                        x: dot_x - DEBUG_DOT_RADIUS,
+                        y: dot_y - DEBUG_DOT_RADIUS,
+                        width: DEBUG_DOT_RADIUS * 2.0,
+                        height: DEBUG_DOT_RADIUS * 2.0,
+                    },
+                    border: iced::Border {
+                        color: Color::TRANSPARENT,
+                        width: 0.0,
+                        radius: DEBUG_DOT_RADIUS.into(),
+                    },
+                    shadow: iced::Shadow::default(),
+                },
+                DEBUG_DOT_COLOR,
+            );
+        }
+    }
 }
 
 

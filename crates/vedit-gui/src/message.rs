@@ -112,6 +112,12 @@ pub enum Message {
     ReplaceTextChanged(String),
     ReplaceOne,
     ReplaceAll,
+    // Debug dot messages
+    DebugDotAdd(usize),
+    DebugDotRemove(usize),
+    DebugDotToggle(usize),
+    DebugDotsClear,
+    GutterClicked(usize), // Line number clicked in gutter
 }
 
 #[derive(Clone)]

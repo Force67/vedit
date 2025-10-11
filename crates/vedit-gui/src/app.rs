@@ -879,6 +879,23 @@ impl Application for EditorApp {
             Message::ReplaceAll => {
                 self.state.replace_all();
             }
+            // Debug dot messages
+            Message::DebugDotAdd(line_number) => {
+                self.state.add_debug_dot(line_number);
+            }
+            Message::DebugDotRemove(line_number) => {
+                self.state.remove_debug_dot(line_number);
+            }
+            Message::DebugDotToggle(line_number) => {
+                self.state.toggle_debug_dot(line_number);
+            }
+            Message::DebugDotsClear => {
+                self.state.clear_debug_dots();
+            }
+            Message::GutterClicked(line_number) => {
+                // Toggle debug dot when gutter is clicked
+                self.state.toggle_debug_dot(line_number);
+            }
         }
 
         self.wrap_command(Command::none())
