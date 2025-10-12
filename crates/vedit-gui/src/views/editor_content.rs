@@ -1,4 +1,4 @@
-use crate::message::{Message, RightRailTab};
+use crate::message::Message;
 use crate::state::EditorState;
 use crate::style::{panel_container, active_document_button, document_button};
 use crate::syntax::{format_highlight, SyntaxHighlighter};
@@ -86,111 +86,11 @@ pub fn render_editor_content(
         sidebar_width,
     );
 
-    let tab_bar: iced::widget::Row<'_, Message, iced::Theme, iced::Renderer> = Row::with_children(vec![
-        {
-            let mut btn = button(text("Workspace").style(iced::theme::Text::Color(crate::style::TEXT))).style(crate::style::custom_button()).on_press(Message::RightRailTabSelected(RightRailTab::Workspace));
-            if state.selected_right_rail_tab() == RightRailTab::Workspace {
-                btn = btn.style(crate::style::active_document_button());
-            }
-            btn.into()
-        },
-        {
-            let mut btn = button(text("Solutions").style(iced::theme::Text::Color(crate::style::MUTED))).style(crate::style::custom_button()).on_press(Message::RightRailTabSelected(RightRailTab::Solutions));
-            if state.selected_right_rail_tab() == RightRailTab::Solutions {
-                btn = btn.style(crate::style::active_document_button());
-            }
-            btn.into()
-        },
-        {
-            let mut btn = button(text("Outline").style(iced::theme::Text::Color(crate::style::MUTED))).style(crate::style::custom_button()).on_press(Message::RightRailTabSelected(RightRailTab::Outline));
-            if state.selected_right_rail_tab() == RightRailTab::Outline {
-                btn = btn.style(crate::style::active_document_button());
-            }
-            btn.into()
-        },
-        {
-            let mut btn = button(text("Search").style(iced::theme::Text::Color(crate::style::MUTED))).style(crate::style::custom_button()).on_press(Message::RightRailTabSelected(RightRailTab::Search));
-            if state.selected_right_rail_tab() == RightRailTab::Search {
-                btn = btn.style(crate::style::active_document_button());
-            }
-            btn.into()
-        },
-        {
-            let mut btn = button(text("Problems").style(iced::theme::Text::Color(crate::style::MUTED))).style(crate::style::custom_button()).on_press(Message::RightRailTabSelected(RightRailTab::Problems));
-            if state.selected_right_rail_tab() == RightRailTab::Problems {
-                btn = btn.style(crate::style::active_document_button());
-            }
-            btn.into()
-        },
-        {
-            let mut btn = button(text("Notes").style(iced::theme::Text::Color(crate::style::MUTED))).style(crate::style::custom_button()).on_press(Message::RightRailTabSelected(RightRailTab::Notes));
-            if state.selected_right_rail_tab() == RightRailTab::Notes {
-                btn = btn.style(crate::style::active_document_button());
-            }
-            btn.into()
-        },
-        {
-            let mut btn = button(text("🍷 Wine").style(iced::theme::Text::Color(crate::style::MUTED))).style(crate::style::custom_button()).on_press(Message::RightRailTabSelected(RightRailTab::Wine));
-            if state.selected_right_rail_tab() == RightRailTab::Wine {
-                btn = btn.style(crate::style::active_document_button());
-            }
-            btn.into()
-        },
-    ])
-    .spacing(0);
-
-    let workspace_content: Element<'_, Message> = match state.selected_right_rail_tab() {
-        RightRailTab::Workspace => {
-            if let Some(explorer) = state.file_explorer() {
-                explorer.view().map(Message::FileExplorer)
-            } else {
-                scrollable(
-                    column![text("Open a folder to browse project files").size((14.0 * scale).max(10.0))]
-                        .spacing(4)
-                        .padding(Padding::from([8.0, 16.0]))
-                )
-                .height(Length::Fill)
-                .style(crate::style::custom_scrollable())
-                .into()
-            }
-        }
-        RightRailTab::Solutions => {
-            if let Some(_root) = state.editor().workspace_root() {
-                scrollable(crate::views::solutions::render_solutions_tab(state, scale))
-                    .style(crate::style::custom_scrollable())
-                    .into()
-            } else {
-                scrollable(
-                    column![text("Open a folder to view solutions").style(iced::theme::Text::Color(crate::style::TEXT))]
-                        .spacing(4)
-                        .padding(8)
-                )
-                .style(crate::style::custom_scrollable())
-                .into()
-            }
-        }
-        RightRailTab::Wine => {
-            crate::widgets::wine_simple::render_wine_panel()
-        }
-        _ => {
-            scrollable(
-                column![text("Not implemented yet").style(iced::theme::Text::Color(crate::style::TEXT))]
-                    .spacing(4)
-                    .padding(8)
-            )
-            .style(crate::style::custom_scrollable())
-            .into()
-        }
-    };
-
-    let workspace_panel: Element<'_, Message> = container(
-        column![tab_bar, workspace_content]
-            .spacing(0)
-    )
-    .style(panel_container())
-    .width(Length::Fixed(sidebar_width))
-    .height(Length::Fill)
-    .into();
+    let workspace_panel = crate::widgets::right_rail::render_right_rail(
+        state,
+        scale,
+        sidebar_width,
+    );
 
     let content_row = row![open_panel, editor_panel, workspace_panel]
         .spacing(spacing_large)

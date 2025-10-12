@@ -1,128 +1,136 @@
-use iced::widget::{button, column, container, row, scrollable, text, Column, Row};
-use iced::{Element, Length};
-use std::path::PathBuf;
+use iced::widget::{button, column, container, scrollable, text, Row};
+use iced::{theme, Color, Element, Length, Padding};
+use iced_font_awesome::fa_icon_solid;
 
-use crate::widgets::file_explorer;
-
-use crate::style;
 use crate::message::{Message, RightRailTab};
+use crate::state::EditorState;
+use crate::style;
 
-pub struct RightRail {
-    pub workspace_root: PathBuf,
-}
+pub fn render_right_rail(
+    state: &EditorState,
+    scale: f32,
+    sidebar_width: f32,
+) -> Element<Message> {
+    // Create the tab bar with Font Awesome icons
+    let tab_bar: Row<Message, theme::Theme, iced::Renderer> = Row::with_children(vec![
+        {
+            let mut btn = button(fa_icon_solid("folder").size(14.0).color(iced::Color::WHITE))
+                .style(crate::style::custom_button())
+                .on_press(Message::RightRailTabSelected(RightRailTab::Workspace));
+            if state.selected_right_rail_tab() == RightRailTab::Workspace {
+                btn = btn.style(crate::style::active_document_button());
+            }
+            btn.into()
+        },
+        {
+            let mut btn = button(fa_icon_solid("lightbulb").size(14.0).color(crate::style::MUTED))
+                .style(crate::style::custom_button())
+                .on_press(Message::RightRailTabSelected(RightRailTab::Solutions));
+            if state.selected_right_rail_tab() == RightRailTab::Solutions {
+                btn = btn.style(crate::style::active_document_button());
+            }
+            btn.into()
+        },
+        {
+            let mut btn = button(fa_icon_solid("list").size(14.0).color(crate::style::MUTED))
+                .style(crate::style::custom_button())
+                .on_press(Message::RightRailTabSelected(RightRailTab::Outline));
+            if state.selected_right_rail_tab() == RightRailTab::Outline {
+                btn = btn.style(crate::style::active_document_button());
+            }
+            btn.into()
+        },
+        {
+            let mut btn = button(fa_icon_solid("magnifying-glass").size(14.0).color(crate::style::MUTED))
+                .style(crate::style::custom_button())
+                .on_press(Message::RightRailTabSelected(RightRailTab::Search));
+            if state.selected_right_rail_tab() == RightRailTab::Search {
+                btn = btn.style(crate::style::active_document_button());
+            }
+            btn.into()
+        },
+        {
+            let mut btn = button(fa_icon_solid("triangle-exclamation").size(14.0).color(crate::style::MUTED))
+                .style(crate::style::custom_button())
+                .on_press(Message::RightRailTabSelected(RightRailTab::Problems));
+            if state.selected_right_rail_tab() == RightRailTab::Problems {
+                btn = btn.style(crate::style::active_document_button());
+            }
+            btn.into()
+        },
+        {
+            let mut btn = button(fa_icon_solid("note-sticky").size(14.0).color(crate::style::MUTED))
+                .style(crate::style::custom_button())
+                .on_press(Message::RightRailTabSelected(RightRailTab::Notes));
+            if state.selected_right_rail_tab() == RightRailTab::Notes {
+                btn = btn.style(crate::style::active_document_button());
+            }
+            btn.into()
+        },
+        {
+            let mut btn = button(fa_icon_solid("wine-glass").size(14.0).color(crate::style::MUTED))
+                .style(crate::style::custom_button())
+                .on_press(Message::RightRailTabSelected(RightRailTab::Wine));
+            if state.selected_right_rail_tab() == RightRailTab::Wine {
+                btn = btn.style(crate::style::active_document_button());
+            }
+            btn.into()
+        },
+    ])
+    .spacing(0);
 
-impl RightRail {
-    pub fn new(workspace_root: PathBuf) -> Self {
-        Self {
-            workspace_root,
+    // Render the content for the selected tab
+    let content: Element<Message> = match state.selected_right_rail_tab() {
+        RightRailTab::Workspace => {
+            if let Some(explorer) = state.file_explorer() {
+                explorer.view().map(Message::FileExplorer)
+            } else {
+                scrollable(
+                    column![text("Open a folder to browse project files").size((14.0 * scale).max(10.0))]
+                        .spacing(4)
+                        .padding(Padding::from([8.0, 16.0]))
+                )
+                .height(Length::Fill)
+                .style(crate::style::custom_scrollable())
+                .into()
+            }
         }
-    }
-
-    pub fn view(&self, active_tab: RightRailTab, scale: f32) -> Element<Message> {
-        let tab_bar = Row::new()
-            .spacing(0)
-            .push(button(text("📁 Workspace").size(14))
-                .style(if active_tab == RightRailTab::Workspace { style::active() } else { style::secondary() })
-                .on_press(Message::RightRailTabSelected(RightRailTab::Workspace)))
-            .push(button(text("📝 Solutions").size(14))
-                .style(if active_tab == RightRailTab::Solutions { style::active() } else { style::secondary() })
-                .on_press(Message::RightRailTabSelected(RightRailTab::Solutions)))
-            .push(button(text("📄 Outline").size(14))
-                .style(if active_tab == RightRailTab::Outline { style::active() } else { style::secondary() })
-                .on_press(Message::RightRailTabSelected(RightRailTab::Outline)))
-            .push(button(text("🔍 Search").size(14))
-                .style(if active_tab == RightRailTab::Search { style::active() } else { style::secondary() })
-                .on_press(Message::RightRailTabSelected(RightRailTab::Search)))
-            .push(button(text("⚠️ Problems").size(14))
-                .style(if active_tab == RightRailTab::Problems { style::active() } else { style::secondary() })
-                .on_press(Message::RightRailTabSelected(RightRailTab::Problems)))
-            .push(button(text("📝 Notes").size(14))
-                .style(if active_tab == RightRailTab::Notes { style::active() } else { style::secondary() })
-                .on_press(Message::RightRailTabSelected(RightRailTab::Notes)))
-            .push(button(text("🍷 Wine").size(14))
-                .style(if active_tab == RightRailTab::Wine { style::active() } else { style::secondary() })
-                .on_press(Message::RightRailTabSelected(RightRailTab::Wine)));
-
-        let content = match active_tab {
-            RightRailTab::Workspace => self.workspace_tab(scale),
-            RightRailTab::Solutions => self.solutions_tab(scale),
-            RightRailTab::Outline => self.outline_tab(scale),
-            RightRailTab::Search => self.search_tab(scale),
-            RightRailTab::Problems => self.problems_tab(scale),
-            RightRailTab::Notes => self.notes_tab(scale),
-            RightRailTab::Wine => crate::widgets::wine_simple::render_wine_panel(),
-        };
-
-        let rail = Column::new()
-            .push(tab_bar)
-            .push(content);
-
-        container(rail)
-            .style(style::panel_container())
-            .width(Length::Fill)
-            .height(Length::Fill)
+        RightRailTab::Solutions => {
+            if let Some(_root) = state.editor().workspace_root() {
+                scrollable(crate::views::solutions::render_solutions_tab(state, scale))
+                    .style(crate::style::custom_scrollable())
+                    .into()
+            } else {
+                scrollable(
+                    column![text("Open a folder to view solutions").style(iced::theme::Text::Color(crate::style::TEXT))]
+                        .spacing(4)
+                        .padding(8)
+                )
+                .style(crate::style::custom_scrollable())
+                .into()
+            }
+        }
+        RightRailTab::Wine => {
+            crate::widgets::wine_simple::render_wine_panel()
+        }
+        _ => {
+            scrollable(
+                column![text("Not implemented yet").style(iced::theme::Text::Color(crate::style::TEXT))]
+                    .spacing(4)
+                    .padding(8)
+            )
+            .style(crate::style::custom_scrollable())
             .into()
-    }
+        }
+    };
 
-    fn workspace_tab(&self, _scale: f32) -> Element<Message> {
-        // This is now handled in view.rs
-        text("Workspace").into()
-    }
-
-    fn solutions_tab(&self, _scale: f32) -> Element<Message> {
-        text("Solutions placeholder").into()
-    }
-
-    fn outline_tab(&self, _scale: f32) -> Element<Message> {
-        scrollable(
-            column![
-                text("Outline").style(iced::theme::Text::Color(style::TEXT)),
-                text("fn main()").style(iced::theme::Text::Color(style::MUTED)),
-                text("fn helper()").style(iced::theme::Text::Color(style::MUTED)),
-            ]
-            .spacing(4)
-            .padding(8)
-        )
-        .style(style::custom_scrollable())
-        .into()
-    }
-
-    fn search_tab(&self, _scale: f32) -> Element<Message> {
-        scrollable(
-            column![
-                text("Search Results").style(iced::theme::Text::Color(style::TEXT)),
-                text("No results").style(iced::theme::Text::Color(style::MUTED)),
-            ]
-            .spacing(4)
-            .padding(8)
-        )
-        .style(style::custom_scrollable())
-        .into()
-    }
-
-    fn problems_tab(&self, _scale: f32) -> Element<Message> {
-        scrollable(
-            column![
-                text("Problems").style(iced::theme::Text::Color(style::TEXT)),
-                text("No problems").style(iced::theme::Text::Color(style::MUTED)),
-            ]
-            .spacing(4)
-            .padding(8)
-        )
-        .style(style::custom_scrollable())
-        .into()
-    }
-
-    fn notes_tab(&self, _scale: f32) -> Element<Message> {
-        scrollable(
-            column![
-                text("Notes").style(iced::theme::Text::Color(style::TEXT)),
-                text("No notes").style(iced::theme::Text::Color(style::MUTED)),
-            ]
-            .spacing(4)
-            .padding(8)
-        )
-        .style(style::custom_scrollable())
-        .into()
-    }
+    // Combine tab bar and content into the right rail panel
+    container(
+        column![tab_bar, content]
+            .spacing(0)
+    )
+    .style(style::panel_container())
+    .width(Length::Fixed(sidebar_width))
+    .height(Length::Fill)
+    .into()
 }
