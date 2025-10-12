@@ -1021,6 +1021,31 @@ impl Application for EditorApp {
             Message::RightRailTabSelected(tab) => {
                 self.state.set_selected_right_rail_tab(tab);
             }
+            // Wine integration messages
+            Message::WineCreateEnvironmentDialog => {
+                // TODO: Show create environment dialog
+            }
+            // TODO: Add remaining Wine message handlers
+            Message::WineEnvNameChanged(_name) => {
+                // TODO: Handle environment name input
+            }
+            Message::WineExePathChanged(_path) => {
+                // TODO: Handle executable path input
+            }
+            Message::WineArgsChanged(_args) => {
+                // TODO: Handle arguments input
+            }
+            Message::WineEnvironmentToggled(_env_id) => {
+                // TODO: Handle environment toggle
+            }
+            Message::WineCreateEnvironment => {
+                // Handle environment creation
+                println!("Wine: Create environment requested");
+            }
+            Message::WineSpawnProcess => {
+                // Handle process spawning
+                println!("Wine: Spawn process requested");
+            }
             // Search dialog messages
             Message::SearchOpen => {
                 self.state.search_dialog_mut().show();
@@ -1304,6 +1329,7 @@ impl Application for EditorApp {
                 }
                 // Handle other window state changes as needed
             }
+            // TODO: Handle remaining Wine messages when complex widget is re-enabled
         }
 
         self.wrap_command(Command::none())

@@ -12,6 +12,7 @@ members = [
     "crates/vedit-make",
     "crates/vedit-debugger-gdb",
     "crates/vedit-debugger",
+    "crates/vedit-wine",
 ]
 resolver = "2"
 
@@ -23,3 +24,4 @@ edition = "2021"
 [dependencies]
 vedit-core = { path = "crates/vedit-core" }
 vedit-gui = { path = "crates/vedit-gui" }
+vedit-wine = { path = "crates/vedit-wine" }

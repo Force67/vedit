@@ -5,42 +5,52 @@ use std::path::PathBuf;
 use crate::widgets::file_explorer;
 
 use crate::style;
-
-#[derive(Debug, Clone)]
-pub enum Message {
-    TabSelected(usize),
-    FileExplorer(file_explorer::Message),
-}
+use crate::message::{Message, RightRailTab};
 
 pub struct RightRail {
-    pub active_tab: usize,
     pub workspace_root: PathBuf,
 }
 
 impl RightRail {
     pub fn new(workspace_root: PathBuf) -> Self {
         Self {
-            active_tab: 0,
             workspace_root,
         }
     }
 
-    pub fn view(&self) -> Element<Message> {
+    pub fn view(&self, active_tab: RightRailTab, scale: f32) -> Element<Message> {
         let tab_bar = Row::new()
             .spacing(0)
-            .push(button(text("Workspace").style(iced::theme::Text::Color(if self.active_tab == 0 { style::TEXT } else { style::MUTED })).size(14)).style(style::custom_button()).on_press(Message::TabSelected(0)))
-            .push(button(text("Outline").style(iced::theme::Text::Color(if self.active_tab == 1 { style::TEXT } else { style::MUTED })).size(14)).style(style::custom_button()).on_press(Message::TabSelected(1)))
-            .push(button(text("Search").style(iced::theme::Text::Color(if self.active_tab == 2 { style::TEXT } else { style::MUTED })).size(14)).style(style::custom_button()).on_press(Message::TabSelected(2)))
-            .push(button(text("Problems").style(iced::theme::Text::Color(if self.active_tab == 3 { style::TEXT } else { style::MUTED })).size(14)).style(style::custom_button()).on_press(Message::TabSelected(3)))
-            .push(button(text("Notes").style(iced::theme::Text::Color(if self.active_tab == 4 { style::TEXT } else { style::MUTED })).size(14)).style(style::custom_button()).on_press(Message::TabSelected(4)));
+            .push(button(text("📁 Workspace").size(14))
+                .style(if active_tab == RightRailTab::Workspace { style::active() } else { style::secondary() })
+                .on_press(Message::RightRailTabSelected(RightRailTab::Workspace)))
+            .push(button(text("📝 Solutions").size(14))
+                .style(if active_tab == RightRailTab::Solutions { style::active() } else { style::secondary() })
+                .on_press(Message::RightRailTabSelected(RightRailTab::Solutions)))
+            .push(button(text("📄 Outline").size(14))
+                .style(if active_tab == RightRailTab::Outline { style::active() } else { style::secondary() })
+                .on_press(Message::RightRailTabSelected(RightRailTab::Outline)))
+            .push(button(text("🔍 Search").size(14))
+                .style(if active_tab == RightRailTab::Search { style::active() } else { style::secondary() })
+                .on_press(Message::RightRailTabSelected(RightRailTab::Search)))
+            .push(button(text("⚠️ Problems").size(14))
+                .style(if active_tab == RightRailTab::Problems { style::active() } else { style::secondary() })
+                .on_press(Message::RightRailTabSelected(RightRailTab::Problems)))
+            .push(button(text("📝 Notes").size(14))
+                .style(if active_tab == RightRailTab::Notes { style::active() } else { style::secondary() })
+                .on_press(Message::RightRailTabSelected(RightRailTab::Notes)))
+            .push(button(text("🍷 Wine").size(14))
+                .style(if active_tab == RightRailTab::Wine { style::active() } else { style::secondary() })
+                .on_press(Message::RightRailTabSelected(RightRailTab::Wine)));
 
-        let content = match self.active_tab {
-            0 => self.workspace_tab(),
-            1 => self.outline_tab(),
-            2 => self.search_tab(),
-            3 => self.problems_tab(),
-            4 => self.notes_tab(),
-            _ => self.workspace_tab(),
+        let content = match active_tab {
+            RightRailTab::Workspace => self.workspace_tab(scale),
+            RightRailTab::Solutions => self.solutions_tab(scale),
+            RightRailTab::Outline => self.outline_tab(scale),
+            RightRailTab::Search => self.search_tab(scale),
+            RightRailTab::Problems => self.problems_tab(scale),
+            RightRailTab::Notes => self.notes_tab(scale),
+            RightRailTab::Wine => crate::widgets::wine_simple::render_wine_panel(),
         };
 
         let rail = Column::new()
@@ -54,12 +64,16 @@ impl RightRail {
             .into()
     }
 
-    fn workspace_tab(&self) -> Element<Message> {
+    fn workspace_tab(&self, _scale: f32) -> Element<Message> {
         // This is now handled in view.rs
         text("Workspace").into()
     }
 
-    fn outline_tab(&self) -> Element<Message> {
+    fn solutions_tab(&self, _scale: f32) -> Element<Message> {
+        text("Solutions placeholder").into()
+    }
+
+    fn outline_tab(&self, _scale: f32) -> Element<Message> {
         scrollable(
             column![
                 text("Outline").style(iced::theme::Text::Color(style::TEXT)),
@@ -73,7 +87,7 @@ impl RightRail {
         .into()
     }
 
-    fn search_tab(&self) -> Element<Message> {
+    fn search_tab(&self, _scale: f32) -> Element<Message> {
         scrollable(
             column![
                 text("Search Results").style(iced::theme::Text::Color(style::TEXT)),
@@ -86,7 +100,7 @@ impl RightRail {
         .into()
     }
 
-    fn problems_tab(&self) -> Element<Message> {
+    fn problems_tab(&self, _scale: f32) -> Element<Message> {
         scrollable(
             column![
                 text("Problems").style(iced::theme::Text::Color(style::TEXT)),
@@ -99,7 +113,7 @@ impl RightRail {
         .into()
     }
 
-    fn notes_tab(&self) -> Element<Message> {
+    fn notes_tab(&self, _scale: f32) -> Element<Message> {
         scrollable(
             column![
                 text("Notes").style(iced::theme::Text::Color(style::TEXT)),

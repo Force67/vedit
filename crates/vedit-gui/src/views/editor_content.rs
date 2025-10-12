@@ -129,6 +129,13 @@ pub fn render_editor_content(
             }
             btn.into()
         },
+        {
+            let mut btn = button(text("🍷 Wine").style(iced::theme::Text::Color(crate::style::MUTED))).style(crate::style::custom_button()).on_press(Message::RightRailTabSelected(RightRailTab::Wine));
+            if state.selected_right_rail_tab() == RightRailTab::Wine {
+                btn = btn.style(crate::style::active_document_button());
+            }
+            btn.into()
+        },
     ])
     .spacing(0);
 
@@ -161,6 +168,9 @@ pub fn render_editor_content(
                 .style(crate::style::custom_scrollable())
                 .into()
             }
+        }
+        RightRailTab::Wine => {
+            crate::widgets::wine_simple::render_wine_panel()
         }
         _ => {
             scrollable(

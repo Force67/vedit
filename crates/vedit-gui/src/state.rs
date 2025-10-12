@@ -7,6 +7,7 @@ use crate::syntax::{DocumentKey, SyntaxSettings, SyntaxSystem};
 use crate::widgets::file_explorer::FileExplorer;
 use crate::widgets::fps_counter::FpsCounter;
 use crate::widgets::search_dialog::SearchDialog;
+// use crate::widgets::wine::WineState; // Temporarily disabled
 use crate::widgets::text_editor::{buffer_scroll_metrics, scroll_to, ScrollMetrics, DebugDot};
 use iced::keyboard;
 use iced::widget::text_editor::{Action as TextEditorAction, Content};
@@ -187,6 +188,7 @@ pub struct EditorState {
     debug_dots: Vec<DebugDot>,
     session_state: Option<SessionState>,
     pending_files_to_restore: Vec<PathBuf>,
+    // wine: WineState, // Temporarily disabled
 }
 
 impl Default for EditorState {
@@ -232,6 +234,7 @@ impl Default for EditorState {
             debug_dots: Vec::new(),
             session_state: None,
             pending_files_to_restore: Vec::new(),
+            // wine: WineState::new(), // Temporarily disabled
         };
 
         // Set up console state for logging
@@ -804,6 +807,16 @@ impl EditorState {
     pub fn search_dialog(&self) -> &SearchDialog {
         &self.search_dialog
     }
+
+    /*
+pub fn wine(&self) -> &WineState {
+        &self.wine
+    }
+
+    pub fn wine_mut(&mut self) -> &mut WineState {
+        &mut self.wine
+    }
+*/ // Temporarily disabled
 
     pub fn search_dialog_mut(&mut self) -> &mut SearchDialog {
         &mut self.search_dialog

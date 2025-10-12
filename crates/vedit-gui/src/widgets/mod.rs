@@ -9,3 +9,5 @@ pub mod search_dialog;
 pub mod text_editor;
 pub mod toast;
 pub mod top_toolbar;
+pub mod wine_simple;
+// pub mod wine; // Temporarily disabled for compilation

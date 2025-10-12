@@ -2,6 +2,10 @@ use iced::theme;
 use iced::widget::{button, container, scrollable, text_input, pick_list, rule};
 use iced::{Background, Border, Color, Shadow, Vector};
 
+// pub mod button_style;
+// pub mod container_style;
+// pub mod text_input_style;
+
 const fn rgb(r: u8, g: u8, b: u8) -> Color {
     Color::from_rgb(r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0)
 }
@@ -195,6 +199,11 @@ impl button::StyleSheet for ActiveDocumentButton {
 pub fn root_container() -> theme::Container {
     theme::Container::Custom(Box::new(RootContainer))
 }
+
+// Re-export style modules for convenience
+// pub use button_style::*;
+// pub use container_style::*;
+// pub use text_input_style::*;
 
 pub fn panel_container() -> theme::Container {
     theme::Container::Custom(Box::new(PanelContainer))
@@ -609,6 +618,15 @@ impl pick_list::StyleSheet for CustomPickList {
         appearance.border.color = PRIMARY;
         appearance
     }
+}
+
+// Convenience functions
+pub fn active() -> theme::Button {
+    theme::Button::Primary
+}
+
+pub fn secondary() -> theme::Button {
+    theme::Button::Secondary
 }
 
 #[derive(Debug, Clone, Copy, Default)]

@@ -4,11 +4,13 @@ use iced::widget::text_editor::Action as TextEditorAction;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
+use uuid::Uuid;
 use vedit_core::{Document, FileNode};
 use vedit_application::{QuickCommandId, SettingsCategory};
 use crate::commands::WorkspaceData;
 use crate::commands::DebugSession;
 use crate::debugger::DebuggerType;
+// use crate::widgets::wine::{WineState, WineTab, WineArchitecture, WineWindowsVersion, WineDesktopType}; // Temporarily disabled
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RightRailTab {
@@ -18,6 +20,7 @@ pub enum RightRailTab {
     Search,
     Problems,
     Notes,
+    Wine,
 }
 
 #[derive(Debug, Clone)]
@@ -133,6 +136,16 @@ pub enum Message {
     WindowChanged(u32, u32), // width, height
     WindowMoved(i32, i32),    // x, y
     WindowStateChanged(iced::window::Id, iced::window::Event),
+
+    // Wine integration messages
+    // Simple Wine integration messages
+    WineCreateEnvironmentDialog,
+    WineEnvNameChanged(String),
+    WineExePathChanged(String),
+    WineArgsChanged(String),
+    WineEnvironmentToggled(String),
+    WineCreateEnvironment,
+    WineSpawnProcess,
 }
 
 #[derive(Clone)]
