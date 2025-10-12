@@ -12,9 +12,11 @@ pub mod mapped;
 pub mod viewport;
 pub mod line_index;
 pub mod indexing;
+pub mod search;
 
 // Re-export main types for convenience
 pub use document::Document;
 pub use mapped::MappedDocument;
 pub use viewport::Viewport;
 pub use line_index::LineIndex;
+pub use search::{BoyerMooreSearcher, search_pattern, find_pattern, contains_pattern};

@@ -4212,6 +4212,7 @@ dependencies = [
  "vedit-core",
  "vedit-debugger",
  "vedit-debugger-gdb",
+ "vedit-document",
  "vedit-make",
  "vedit-vs",
 ]

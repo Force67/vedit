@@ -1039,26 +1039,28 @@ impl EditorState {
             query.to_lowercase()
         };
 
-        let mut start = 0;
-        while let Some(pos) = search_content[start..].find(&search_query) {
-            let absolute_pos = start + pos;
-            let end_pos = absolute_pos + query.len();
+        // Use Boyer-Moore search for improved performance
+        use vedit_document::BoyerMooreSearcher;
+        let searcher = BoyerMooreSearcher::new(search_query.as_bytes());
+        let byte_positions = searcher.find_all(search_content.as_bytes());
+
+        // Convert byte positions to char positions and apply whole word constraint if needed
+        for &byte_start in &byte_positions {
+            let char_start = search_content[..byte_start].chars().count();
+            let char_end = char_start + search_query.chars().count();
 
             // Check whole word constraint if enabled
             if self.search_dialog.whole_word {
-                let before_ok = absolute_pos == 0 || !search_content.chars().nth(absolute_pos - 1)
-                    .unwrap_or(' ').is_alphanumeric();
-                let after_ok = end_pos == search_content.len() || !search_content.chars().nth(end_pos)
-                    .unwrap_or(' ').is_alphanumeric();
+                let content_chars: Vec<char> = search_content.chars().collect();
+                let before_ok = char_start == 0 || !content_chars[char_start - 1].is_alphanumeric();
+                let after_ok = char_end >= content_chars.len() || !content_chars[char_end].is_alphanumeric();
 
                 if before_ok && after_ok {
-                    matches.push((absolute_pos, end_pos));
+                    matches.push((char_start, char_end));
                 }
             } else {
-                matches.push((absolute_pos, end_pos));
+                matches.push((char_start, char_end));
             }
-
-            start = absolute_pos + 1;
         }
 
         matches

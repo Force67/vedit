@@ -2,6 +2,7 @@ use iced::widget::{button, checkbox, container, row, text, text_input, column, h
 use iced::{Element, Color, Length, Padding, Alignment};
 use crate::message::Message;
 use crate::style::panel_container;
+use iced::widget::text_input::Id;
 
 #[derive(Debug, Clone)]
 pub struct SearchDialog {
@@ -16,6 +17,7 @@ pub struct SearchDialog {
     pub replace_text: String,
     pub search_state: SearchState,
     pub pending_search: bool,
+    pub search_input_id: Id,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -40,6 +42,7 @@ impl Default for SearchDialog {
             replace_text: String::new(),
             search_state: SearchState::Idle,
             pending_search: false,
+            search_input_id: Id::unique(),
         }
     }
 }
@@ -51,6 +54,10 @@ impl SearchDialog {
 
     pub fn show(&mut self) {
         self.is_visible = true;
+    }
+
+    pub fn get_search_input_id(&self) -> Id {
+        self.search_input_id.clone()
     }
 
     pub fn hide(&mut self) {
@@ -148,6 +155,7 @@ impl SearchDialog {
 
         // Search input row
         let search_input = text_input("Find", &self.search_query)
+            .id(self.search_input_id.clone())
             .on_input(Message::SearchQueryChanged)
             .on_paste(Message::SearchQueryChanged)
             .on_submit(Message::SearchExecute)
@@ -283,16 +291,28 @@ impl SearchDialog {
         }
 
         // Action buttons row
-        let action_buttons = row![
+        let mut action_buttons = row![
             button(text("Toggle Replace").size(12.0 * scale))
                 .on_press(Message::SearchToggleReplace)
-                .padding(6.0 * scale),
-            button(text("Close").size(12.0 * scale))
-                .on_press(Message::SearchClose)
                 .padding(6.0 * scale),
         ]
         .spacing(spacing)
         .align_items(Alignment::Center);
+
+        // Add Next Match button if there are multiple matches
+        if self.search_state == SearchState::Complete && self.total_matches > 1 {
+            action_buttons = action_buttons.push(
+                button(text("Next Match").size(12.0 * scale))
+                    .on_press(Message::SearchNext)
+                    .padding(6.0 * scale)
+            );
+        }
+
+        action_buttons = action_buttons.push(
+            button(text("Close").size(12.0 * scale))
+                .on_press(Message::SearchClose)
+                .padding(6.0 * scale)
+        );
 
         content = content.push(action_buttons);
 
