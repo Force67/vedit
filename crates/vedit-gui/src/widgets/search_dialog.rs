@@ -146,11 +146,15 @@ impl SearchDialog {
         let search_row = row![
             text("Find:").size(14.0 * scale),
             search_input,
-            button(text("▲").size(12.0 * scale))
+            button(fa_icon_solid("chevron-up")
+                .size(14.0 * scale)
+                .color(Color::from_rgb8(180, 180, 180)))
                 .on_press(Message::SearchPrevious)
                 .padding(4.0 * scale)
                 .width(Length::Fixed(30.0 * scale)),
-            button(text("▼").size(12.0 * scale))
+            button(fa_icon_solid("chevron-down")
+                .size(14.0 * scale)
+                .color(Color::from_rgb8(180, 180, 180)))
                 .on_press(Message::SearchNext)
                 .padding(4.0 * scale)
                 .width(Length::Fixed(30.0 * scale)),
@@ -169,10 +173,20 @@ impl SearchDialog {
             Some(row![
                 text("Replace:").size(14.0 * scale),
                 replace_input,
-                button(text("Replace").size(12.0 * scale))
+                button(row![
+                    fa_icon_solid("file")
+                        .size(12.0 * scale)
+                        .color(Color::from_rgb8(180, 180, 180)),
+                    text("Replace").size(12.0 * scale)
+                ].spacing(4.0 * scale).align_items(Alignment::Center))
                     .on_press(Message::ReplaceOne)
                     .padding(4.0 * scale),
-                button(text("All").size(12.0 * scale))
+                button(row![
+                    fa_icon_solid("file")
+                        .size(12.0 * scale)
+                        .color(Color::from_rgb8(180, 180, 180)),
+                    text("All").size(12.0 * scale)
+                ].spacing(4.0 * scale).align_items(Alignment::Center))
                     .on_press(Message::ReplaceAll)
                     .padding(4.0 * scale),
             ]
@@ -244,7 +258,9 @@ impl SearchDialog {
             .style(results_color);
 
         // Close button
-        let close_button = button(text("✕").size(14.0 * scale))
+        let close_button = button(fa_icon_solid("xmark")
+                .size(14.0 * scale)
+                .color(Color::from_rgb8(180, 180, 180)))
             .on_press(Message::SearchClose)
             .padding(4.0 * scale)
             .width(Length::Fixed(24.0 * scale))
@@ -252,9 +268,6 @@ impl SearchDialog {
 
         // Header row with title and close button
         let header_row = row![
-            fa_icon_solid("search")
-                .size(16.0 * scale)
-                .color(Color::from_rgb8(180, 180, 180)),
             text("Search").size(16.0 * scale),
             horizontal_space(),
             close_button,
@@ -278,7 +291,12 @@ impl SearchDialog {
 
         // Action buttons row
         let mut action_buttons = row![
-            button(text("Toggle Replace").size(12.0 * scale))
+            button(row![
+                fa_icon_solid("gear")
+                    .size(12.0 * scale)
+                    .color(Color::from_rgb8(180, 180, 180)),
+                text("Toggle Replace").size(12.0 * scale)
+            ].spacing(4.0 * scale).align_items(Alignment::Center))
                 .on_press(Message::SearchToggleReplace)
                 .padding(6.0 * scale),
         ]
@@ -288,14 +306,24 @@ impl SearchDialog {
         // Add Next Match button if there are multiple matches
         if self.search_state == SearchState::Complete && self.total_matches > 1 {
             action_buttons = action_buttons.push(
-                button(text("Next Match").size(12.0 * scale))
+                button(row![
+                    fa_icon_solid("angle-down")
+                        .size(12.0 * scale)
+                        .color(Color::from_rgb8(180, 180, 180)),
+                    text("Next Match").size(12.0 * scale)
+                ].spacing(4.0 * scale).align_items(Alignment::Center))
                     .on_press(Message::SearchNext)
                     .padding(6.0 * scale)
             );
         }
 
         action_buttons = action_buttons.push(
-            button(text("Close").size(12.0 * scale))
+            button(row![
+                fa_icon_solid("xmark")
+                    .size(12.0 * scale)
+                    .color(Color::from_rgb8(180, 180, 180)),
+                text("Close").size(12.0 * scale)
+            ].spacing(4.0 * scale).align_items(Alignment::Center))
                 .on_press(Message::SearchClose)
                 .padding(6.0 * scale)
         );
