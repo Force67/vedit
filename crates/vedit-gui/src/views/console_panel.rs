@@ -99,30 +99,40 @@ pub fn render_console_panel(
         .spacing(spacing_medium)
         .width(Length::Fill);
 
-        if active.kind() == ConsoleKind::Shell {
-            let input_field = text_input("Run command", active.input())
-                .on_input(move |value| Message::ConsoleInputChanged(tab_id, value))
-                .on_submit(Message::ConsoleInputSubmitted(tab_id))
-                .padding((6.0 * scale).max(4.0))
-                .size((14.0 * scale).max(10.0))
-                .width(Length::Fill);
+        match active.kind() {
+            ConsoleKind::Shell => {
+                let input_field = text_input("Run command", active.input())
+                    .on_input(move |value| Message::ConsoleInputChanged(tab_id, value))
+                    .on_submit(Message::ConsoleInputSubmitted(tab_id))
+                    .padding((6.0 * scale).max(4.0))
+                    .size((14.0 * scale).max(10.0))
+                    .width(Length::Fill);
 
-            let send_button = button(text("Send").size((14.0 * scale).max(10.0)))
-                .padding((6.0 * scale).max(4.0))
-                .style(theme::Button::Primary)
-                .on_press(Message::ConsoleInputSubmitted(tab_id));
+                let send_button = button(text("Send").size((14.0 * scale).max(10.0)))
+                    .padding((6.0 * scale).max(4.0))
+                    .style(theme::Button::Primary)
+                    .on_press(Message::ConsoleInputSubmitted(tab_id));
 
-            content = content.push(
-                row![input_field, send_button]
-                    .spacing(spacing_small)
-                    .align_items(Alignment::Center),
-            );
-        } else {
-            content = content.push(
-                text("Debug output (read-only)")
-                    .size((13.0 * scale).max(9.0))
-                    .style(Color::from_rgb8(180, 180, 180)),
-            );
+                content = content.push(
+                    row![input_field, send_button]
+                        .spacing(spacing_small)
+                        .align_items(Alignment::Center),
+                );
+            }
+            ConsoleKind::Debug => {
+                content = content.push(
+                    text("Debug output (read-only)")
+                        .size((13.0 * scale).max(9.0))
+                        .style(Color::from_rgb8(180, 180, 180)),
+                );
+            }
+            ConsoleKind::EditorLog => {
+                content = content.push(
+                    text("Editor internal debug log (read-only)")
+                        .size((13.0 * scale).max(9.0))
+                        .style(Color::from_rgb8(180, 180, 180)),
+                );
+            }
         }
 
         container(content)

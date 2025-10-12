@@ -2,7 +2,7 @@ use iced::widget::{button, checkbox, container, row, text, text_input, column, h
 use iced::{Element, Color, Length, Padding, Alignment};
 use iced_font_awesome::fa_icon_solid;
 use crate::message::Message;
-use crate::style::panel_container;
+use crate::style::{panel_container, custom_button};
 use iced::widget::text_input::Id;
 
 #[derive(Debug, Clone)]
@@ -53,54 +53,69 @@ impl SearchDialog {
         Self::default()
     }
 
-    pub fn get_search_input_id(&self) -> Id {
-        self.search_input_id.clone()
-    }
-
     pub fn show(&mut self) {
         self.is_visible = true;
     }
 
+    pub fn get_search_input_id(&self) -> Id {
+        self.search_input_id.clone()
+    }
+
     pub fn hide(&mut self) {
         self.is_visible = false;
+        self.search_query.clear();
+        self.replace_text.clear();
+        self.current_match = None;
+        self.total_matches = 0;
+        self.search_state = SearchState::Idle;
+        self.pending_search = false;
     }
 
     pub fn toggle(&mut self) {
-        self.is_visible = !self.is_visible;
+        if self.is_visible {
+            self.hide();
+        } else {
+            self.show();
+        }
     }
 
-    pub fn toggle_replace(&mut self) {
-        self.replace_mode = !self.replace_mode;
-    }
-
-    // Methods required by the app.rs and state.rs
     pub fn set_search_query(&mut self, query: String) {
-        self.search_query = query;
+        self.search_query = query.clone();
+        if !query.is_empty() && query != self.search_query {
+            self.pending_search = true;
+            self.search_state = SearchState::Idle;
+        }
     }
 
     pub fn set_search_state(&mut self, state: SearchState) {
         self.search_state = state;
-    }
-
-    pub fn set_matches(&mut self, current: Option<usize>, total: usize) {
-        self.current_match = current;
-        self.total_matches = total;
+        self.pending_search = false;
     }
 
     pub fn start_search(&mut self) {
-        self.search_state = SearchState::Searching;
-        self.pending_search = true;
+        if !self.search_query.is_empty() {
+            self.search_state = SearchState::Searching;
+            self.pending_search = false;
+        }
     }
 
     pub fn complete_search(&mut self, total_matches: usize) {
-        self.search_state = if total_matches == 0 {
-            SearchState::NoMatches
-        } else {
-            SearchState::Complete
-        };
         self.total_matches = total_matches;
-        self.current_match = if total_matches > 0 { Some(0) } else { None };
-        self.pending_search = false;
+        if total_matches > 0 {
+            self.current_match = Some(0);
+            self.search_state = SearchState::Complete;
+        } else {
+            self.current_match = None;
+            self.search_state = if self.search_query.is_empty() {
+                SearchState::Idle
+            } else {
+                SearchState::NoMatches
+            };
+        }
+    }
+
+    pub fn set_replace_text(&mut self, text: String) {
+        self.replace_text = text;
     }
 
     pub fn set_case_sensitive(&mut self, case_sensitive: bool) {
@@ -115,6 +130,11 @@ impl SearchDialog {
         self.use_regex = use_regex;
     }
 
+    pub fn set_matches(&mut self, current: Option<usize>, total: usize) {
+        self.current_match = current;
+        self.total_matches = total;
+    }
+
     pub fn enable_replace_mode(&mut self) {
         self.replace_mode = true;
     }
@@ -123,18 +143,18 @@ impl SearchDialog {
         self.replace_mode = false;
     }
 
-    pub fn set_replace_text(&mut self, text: String) {
-        self.replace_text = text;
-    }
-
     pub fn view(&self, scale: f32) -> Element<Message> {
-        let spacing = 8.0 * scale;
-
         if !self.is_visible {
-            return container(text("")).into();
+            return container(row![])
+                .height(Length::Fixed(0.0))
+                .width(Length::Fixed(0.0))
+                .into();
         }
 
-        // Search input field
+        let spacing = 8.0 * scale;
+        let padding = Padding::from([spacing, spacing * 1.5]);
+
+        // Search input row
         let search_input = text_input("Find", &self.search_query)
             .id(self.search_input_id.clone())
             .on_input(Message::SearchQueryChanged)
@@ -144,13 +164,21 @@ impl SearchDialog {
             .padding(4.0 * scale);
 
         let search_row = row![
-            text("Find:").size(14.0 * scale),
+            fa_icon_solid("search")
+                .size(14.0 * scale)
+                .color(Color::from_rgb8(180, 180, 180)),
             search_input,
-            button(text("▲").size(12.0 * scale))
+            button(fa_icon_solid("chevron-up")
+                .size(12.0 * scale)
+                .color(iced::Color::WHITE))
+                .style(custom_button())
                 .on_press(Message::SearchPrevious)
                 .padding(4.0 * scale)
                 .width(Length::Fixed(30.0 * scale)),
-            button(text("▼").size(12.0 * scale))
+            button(fa_icon_solid("chevron-down")
+                .size(12.0 * scale)
+                .color(iced::Color::WHITE))
+                .style(custom_button())
                 .on_press(Message::SearchNext)
                 .padding(4.0 * scale)
                 .width(Length::Fixed(30.0 * scale)),
@@ -167,12 +195,20 @@ impl SearchDialog {
                 .padding(4.0 * scale);
 
             Some(row![
-                text("Replace:").size(14.0 * scale),
+                fa_icon_solid("exchange-alt")
+                    .size(14.0 * scale)
+                    .color(Color::from_rgb8(180, 180, 180)),
                 replace_input,
-                button(text("Replace").size(12.0 * scale))
+                button(fa_icon_solid("sync")
+                    .size(12.0 * scale)
+                    .color(iced::Color::WHITE))
+                    .style(custom_button())
                     .on_press(Message::ReplaceOne)
                     .padding(4.0 * scale),
-                button(text("All").size(12.0 * scale))
+                button(fa_icon_solid("sync-alt")
+                    .size(12.0 * scale)
+                    .color(iced::Color::WHITE))
+                    .style(custom_button())
                     .on_press(Message::ReplaceAll)
                     .padding(4.0 * scale),
             ]
@@ -200,11 +236,26 @@ impl SearchDialog {
 
         let options_row = row![
             case_checkbox,
-            text("Match Case").size(12.0 * scale),
+            row![
+                fa_icon_solid("font")
+                    .size(11.0 * scale)
+                    .color(Color::from_rgb8(140, 140, 140)),
+                text("Match Case").size(12.0 * scale)
+            ].spacing(4.0),
             whole_word_checkbox,
-            text("Whole Word").size(12.0 * scale),
+            row![
+                fa_icon_solid("text-height")
+                    .size(11.0 * scale)
+                    .color(Color::from_rgb8(140, 140, 140)),
+                text("Whole Word").size(12.0 * scale)
+            ].spacing(4.0),
             regex_checkbox,
-            text("Regex").size(12.0 * scale),
+            row![
+                fa_icon_solid("asterisk")
+                    .size(11.0 * scale)
+                    .color(Color::from_rgb8(140, 140, 140)),
+                text("Regex").size(12.0 * scale)
+            ].spacing(4.0),
         ]
         .spacing(spacing * 1.5)
         .align_items(Alignment::Center);
@@ -213,29 +264,28 @@ impl SearchDialog {
         let results_text = match self.search_state {
             SearchState::Searching => "Searching...".to_string(),
             SearchState::Complete => {
-                if self.total_matches == 0 {
-                    "No matches found".to_string()
+                if let Some(current) = self.current_match {
+                    format!("{} of {} matches", current + 1, self.total_matches)
                 } else {
-                    match self.current_match {
-                        Some(current) => format!("Match {} of {}", current + 1, self.total_matches),
-                        None => format!("{} matches found", self.total_matches),
-                    }
+                    format!("{} matches", self.total_matches)
                 }
             }
-            SearchState::NoMatches => "No matches found".to_string(),
+            SearchState::NoMatches => "No matches".to_string(),
             SearchState::Idle => {
-                if self.search_query.is_empty() {
-                    "Enter search text".to_string()
+                if self.pending_search {
+                    "Press Enter to search".to_string()
+                } else if !self.search_query.is_empty() {
+                    "Press Enter to search".to_string()
                 } else {
-                    "Ready to search".to_string()
+                    "".to_string()
                 }
             }
         };
 
         let results_color = match self.search_state {
-            SearchState::Searching => Color::from_rgb8(100, 150, 255),     // Blue
-            SearchState::Complete => Color::from_rgb8(100, 200, 100),      // Green
-            SearchState::NoMatches => Color::from_rgb8(255, 100, 100),      // Red
+            SearchState::Searching => Color::from_rgb8(100, 150, 200), // Light blue
+            SearchState::Complete => Color::from_rgb8(140, 140, 140),  // Gray
+            SearchState::NoMatches => Color::from_rgb8(200, 100, 100), // Light red
             SearchState::Idle => Color::from_rgb8(160, 160, 160),     // Lighter gray
         };
 
@@ -244,7 +294,10 @@ impl SearchDialog {
             .style(results_color);
 
         // Close button
-        let close_button = button(text("✕").size(14.0 * scale))
+        let close_button = button(fa_icon_solid("times")
+                .size(14.0 * scale)
+                .color(iced::Color::WHITE))
+            .style(custom_button())
             .on_press(Message::SearchClose)
             .padding(4.0 * scale)
             .width(Length::Fixed(24.0 * scale))
@@ -266,10 +319,9 @@ impl SearchDialog {
             header_row,
             search_row,
             options_row,
-            results_label,
+            row![results_label, horizontal_space()],
         ]
-        .spacing(spacing)
-        .width(Length::Fill);
+        .spacing(spacing);
 
         // Add replace row if in replace mode
         if let Some(replace_row) = replace_row {
@@ -278,7 +330,13 @@ impl SearchDialog {
 
         // Action buttons row
         let mut action_buttons = row![
-            button(text("Toggle Replace").size(12.0 * scale))
+            button(row![
+                fa_icon_solid("exchange-alt")
+                    .size(12.0 * scale)
+                    .color(iced::Color::WHITE),
+                text("Toggle Replace").size(12.0 * scale)
+            ].spacing(4.0))
+                .style(custom_button())
                 .on_press(Message::SearchToggleReplace)
                 .padding(6.0 * scale),
         ]
@@ -288,14 +346,26 @@ impl SearchDialog {
         // Add Next Match button if there are multiple matches
         if self.search_state == SearchState::Complete && self.total_matches > 1 {
             action_buttons = action_buttons.push(
-                button(text("Next Match").size(12.0 * scale))
+                button(row![
+                    fa_icon_solid("arrow-down")
+                        .size(12.0 * scale)
+                        .color(iced::Color::WHITE),
+                    text("Next Match").size(12.0 * scale)
+                ].spacing(4.0))
+                    .style(custom_button())
                     .on_press(Message::SearchNext)
                     .padding(6.0 * scale)
             );
         }
 
         action_buttons = action_buttons.push(
-            button(text("Close").size(12.0 * scale))
+            button(row![
+                fa_icon_solid("times")
+                    .size(12.0 * scale)
+                    .color(iced::Color::WHITE),
+                text("Close").size(12.0 * scale)
+            ].spacing(4.0))
+                .style(custom_button())
                 .on_press(Message::SearchClose)
                 .padding(6.0 * scale)
         );
@@ -304,9 +374,9 @@ impl SearchDialog {
 
         // Wrap in container with styling
         container(content)
-            .padding(spacing)
-            .style(panel_container())
+            .padding(padding)
             .width(Length::Fill)
+            .style(panel_container())
             .into()
     }
 }

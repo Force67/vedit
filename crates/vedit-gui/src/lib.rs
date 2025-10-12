@@ -1,3 +1,6 @@
+#[macro_use]
+mod editor_log;
+
 mod app;
 mod console;
 mod commands;

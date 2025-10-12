@@ -8,6 +8,7 @@ pub enum QuickCommandId {
     ShowScaleFactor,
     AddStickyNote,
     IncreaseCodeFontZoom,
+    ShowEditorLog,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -66,6 +67,12 @@ static QUICK_COMMANDS: &[QuickCommand] = &[
         title: "Increase Code Font Zoom",
         description: "Make the code window font larger",
         action: Some("quick_command.increase_code_font_zoom"),
+    },
+    QuickCommand {
+        id: QuickCommandId::ShowEditorLog,
+        title: "Show Editor Log",
+        description: "Open the editor debug log terminal",
+        action: Some("quick_command.show_editor_log"),
     },
 ];
 

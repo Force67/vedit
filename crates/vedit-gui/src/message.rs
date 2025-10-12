@@ -84,6 +84,7 @@ pub enum Message {
     ConsoleNewRequested,
     ConsoleInputChanged(u64, String),
     ConsoleInputSubmitted(u64),
+    EditorLogShowRequested,
     MouseWheelScrolled(mouse::ScrollDelta),
     NotificationDismissed(u64),
     WindowMinimize,

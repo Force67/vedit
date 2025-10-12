@@ -1,0 +1,7 @@
+Latin Accents:
+café résumé naïve façade
+
+Some more Unicode text:
+你好 世界
+🌍🚀💻
+Test case sensitive: Café vs café

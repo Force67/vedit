@@ -1,0 +1,6 @@
+This is a test file for search functionality.
+It contains multiple lines with different words.
+The word "search" appears multiple times in this file.
+Search functionality should be able to find this word.
+This is the last occurrence of search in this file.
+We can also test other words like "test" and "functionality".

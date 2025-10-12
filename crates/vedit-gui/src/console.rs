@@ -98,6 +98,31 @@ impl ConsoleState {
         id
     }
 
+    pub fn create_editor_log_tab(&mut self, title: String) -> u64 {
+        let id = self.allocate_id();
+        let tab = ConsoleTab::new_editor_log(id, title);
+        self.tabs.push(tab);
+        self.active_tab = Some(id);
+        id
+    }
+
+    pub fn find_or_create_editor_log(&mut self) -> u64 {
+        // Look for existing editor log tab
+        for tab in &self.tabs {
+            if tab.is_editor_log() {
+                return tab.id;
+            }
+        }
+
+        // Create new editor log tab
+        self.create_editor_log_tab("Editor Log".to_string())
+    }
+
+    pub fn log_to_editor(&mut self, kind: ConsoleLineKind, message: String) {
+        let tab_id = self.find_or_create_editor_log();
+        self.push_lines(tab_id, vec![(kind, message)]);
+    }
+
     pub fn process_events(&mut self) {
         for tab in &mut self.tabs {
             let mut events = Vec::new();
@@ -177,6 +202,7 @@ pub enum ConsoleStatus {
 pub enum ConsoleKind {
     Shell,
     Debug,
+    EditorLog,
 }
 
 pub struct ConsoleTab {
@@ -227,6 +253,19 @@ impl ConsoleTab {
             pending: String::new(),
             status: ConsoleStatus::Running,
             kind: ConsoleKind::Debug,
+            runtime: None,
+        }
+    }
+
+    fn new_editor_log(id: u64, title: String) -> Self {
+        Self {
+            id,
+            title,
+            input: String::new(),
+            lines: Vec::new(),
+            pending: String::new(),
+            status: ConsoleStatus::Running,
+            kind: ConsoleKind::EditorLog,
             runtime: None,
         }
     }
@@ -325,6 +364,10 @@ impl ConsoleTab {
         }
         self.append_line(ConsoleLineKind::Command, &command);
         Ok(())
+    }
+
+    pub fn is_editor_log(&self) -> bool {
+        self.kind == ConsoleKind::EditorLog
     }
 }
 

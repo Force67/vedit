@@ -1,5 +1,6 @@
 use crate::console::{ConsoleKind, ConsoleLineKind, ConsoleState};
 use crate::debugger::{DebugLaunchPlan, DebuggerConsoleEntry, DebuggerState, DebuggerUiEvent, DebugTarget};
+use crate::editor_log::{init_logger, set_console_state};
 use crate::notifications::{Notification, NotificationCenter, NotificationRequest};
 use crate::scaling;
 use crate::syntax::{DocumentKey, SyntaxSettings, SyntaxSystem};
@@ -187,6 +188,9 @@ pub struct EditorState {
 
 impl Default for EditorState {
     fn default() -> Self {
+        // Initialize the editor logger
+        init_logger();
+
         let zoom_config = ZoomConfig::load();
         let detected_scale = scaling::detect_scale_factor().unwrap_or(1.0);
         let initial_scale = zoom_config.initial_scale(detected_scale);
@@ -224,6 +228,14 @@ impl Default for EditorState {
             search_highlight_end_time: None,
             debug_dots: Vec::new(),
         };
+
+        // Set up console state for logging
+        set_console_state(&mut state.console);
+
+        // Log initialization
+        editor_log_info!("EDITOR", "Editor state initialized");
+        editor_log_debug!("EDITOR", "Scale factor: {:.2}", initial_scale);
+
         state.sync_buffer_from_editor();
         state
     }
@@ -296,6 +308,13 @@ impl EditorState {
 
     pub fn submit_console_input(&mut self, id: u64) -> Result<(), String> {
         self.console.submit_input(id)
+    }
+
+    pub fn show_editor_log(&mut self) {
+        self.console.find_or_create_editor_log();
+        self.console.set_visible(true);
+        self.notify_console_metadata_changed();
+        // editor_log_info!("EDITOR", "Editor log tab opened");
     }
 
     pub fn process_console_events(&mut self) {
@@ -507,6 +526,9 @@ impl EditorState {
             let updated = self.editor_contents_to_string();
             self.app.editor_mut().update_active_buffer(updated.clone());
             self.refresh_active_highlighting(&updated);
+
+            // Log significant edits but not every keystroke (avoid logging every keystroke to reduce noise)
+            // Skip logging for now to avoid spam
         }
     }
 
@@ -890,7 +912,8 @@ impl EditorState {
         if !matches.is_empty() {
             if let Some(&(start, _)) = matches.first() {
                 // Calculate line number for highlight
-                let line_number = content[..start].lines().count();
+                let byte_start = content.char_indices().nth(start).map_or(0, |(i, _)| i);
+                let line_number = content[..byte_start].lines().count();
                 self.set_search_highlight(line_number);
                 self.jump_to_position(start);
             }
@@ -905,6 +928,7 @@ impl EditorState {
         }
 
         if self.search_dialog.total_matches == 0 {
+            // editor_log_warning!("SEARCH", "No matches found for search");
             return;
         }
 
@@ -920,9 +944,11 @@ impl EditorState {
         if let Some(&(start, _)) = matches.get(next) {
             // Calculate line number for highlight
             let content = self.get_document_content();
-            let line_number = content[..start].lines().count();
+            let byte_start = content.char_indices().nth(start).map_or(0, |(i, _)| i);
+            let line_number = content[..byte_start].lines().count();
             self.set_search_highlight(line_number);
             self.jump_to_position(start);
+            // editor_log_debug!("SEARCH", "Jumped to match {}/{} at line {}", next + 1, self.search_dialog.total_matches, line_number + 1);
         }
     }
 
@@ -953,7 +979,8 @@ impl EditorState {
         if let Some(&(start, _)) = matches.get(prev) {
             // Calculate line number for highlight
             let content = self.get_document_content();
-            let line_number = content[..start].lines().count();
+            let byte_start = content.char_indices().nth(start).map_or(0, |(i, _)| i);
+            let line_number = content[..byte_start].lines().count();
             self.set_search_highlight(line_number);
             self.jump_to_position(start);
         }
@@ -971,8 +998,10 @@ impl EditorState {
 
         let matches = self.find_matches(&content, &query);
         if let Some(&(start, end)) = matches.get(current) {
-            // Perform replacement
-            let new_content = content[..start].to_string() + &replace_text + &content[end..];
+            // Perform replacement - convert char positions to byte positions
+            let byte_start = content.char_indices().nth(start).map_or(0, |(i, _)| i);
+            let byte_end = content.char_indices().nth(end).map_or(content.len(), |(i, _)| i);
+            let new_content = content[..byte_start].to_string() + &replace_text + &content[byte_end..];
             self.set_document_content(&new_content);
 
             // Re-search to update matches
@@ -994,7 +1023,10 @@ impl EditorState {
 
         // Replace from end to beginning to avoid position shifting
         for &(start, end) in matches.iter().rev() {
-            new_content = new_content[..start].to_string() + &replace_text + &new_content[end..];
+            // Convert char positions to byte positions for safe slicing
+            let byte_start = new_content.char_indices().nth(start).map_or(0, |(i, _)| i);
+            let byte_end = new_content.char_indices().nth(end).map_or(new_content.len(), |(i, _)| i);
+            new_content = new_content[..byte_start].to_string() + &replace_text + &new_content[byte_end..];
         }
 
         self.set_document_content(&new_content);
@@ -1069,7 +1101,8 @@ impl EditorState {
     fn jump_to_position(&mut self, position: usize) {
         // Convert character position to line and column for the editor
         let content = self.get_document_content();
-        let line_num = content[..position].lines().count();
+        let byte_position = content.char_indices().nth(position).map_or(0, |(i, _)| i);
+        let line_num = content[..byte_position].lines().count();
 
         // Scroll the GUI buffer to the line containing the match
         let target_scroll = line_num.saturating_sub(5) as i32;

@@ -4182,6 +4182,7 @@ dependencies = [
 name = "vedit-gui"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "cosmic-text",
  "crossbeam-channel",
  "iced",

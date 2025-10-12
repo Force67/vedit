@@ -200,6 +200,8 @@ impl Application for EditorApp {
             }
             Message::FileLoaded(result) => match result {
                 Ok(Some(document)) => {
+                    let file_path = document.path.clone().unwrap_or_else(|| "unnamed".to_string());
+                    // editor_log_info!("FILE", "File loaded successfully: {}", file_path);
                     self.state.editor_mut().open_document(document);
                     self.state.clear_error();
                     self.state.sync_buffer_from_editor();
@@ -212,8 +214,10 @@ impl Application for EditorApp {
                 }
                 Ok(None) => {
                     // user cancelled dialog
+                    // editor_log_debug!("FILE", "File loading cancelled by user");
                 }
                 Err(err) => {
+                    // editor_log_error!("FILE", "Failed to load file: {}", err);
                     self.state.set_error(Some(err));
                 }
             },
@@ -741,6 +745,9 @@ impl Application for EditorApp {
                     self.state.set_error(Some(err));
                 }
             }
+            Message::EditorLogShowRequested => {
+                self.state.show_editor_log();
+            }
             Message::DebuggerTick => {
                 self.state.tick_notifications(Duration::from_millis(200));
             }
@@ -1031,6 +1038,10 @@ impl EditorApp {
             }
             QuickCommandId::IncreaseCodeFontZoom => {
                 self.state.increase_code_font_zoom();
+                Command::none()
+            }
+            QuickCommandId::ShowEditorLog => {
+                self.state.show_editor_log();
                 Command::none()
             }
         }
