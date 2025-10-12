@@ -2,9 +2,11 @@ use crate::commands::{
     self, DebugSessionBreakpoint, DebugSessionRequest, SaveDocumentRequest, SaveKeymapRequest,
     WorkspaceData,
 };
+use std::path::PathBuf;
 use crate::debugger::{DebugLaunchPlan, DebuggerType, DebuggerUiEvent};
 use crate::keyboard;
 use crate::message::Message;
+use crate::session::{SessionManager, SessionState, WindowState, WorkspaceState};
 use crate::state::EditorState;
 use crate::views;
 use crate::notifications::{NotificationKind, NotificationRequest};
@@ -52,8 +54,37 @@ impl RefreshRateConfig {
 }
 
 pub fn run() -> iced::Result {
+    // Load session state first to get window settings
+    let session_manager = SessionManager::new()
+        .unwrap_or_else(|e| {
+            eprintln!("Failed to initialize session manager: {}", e);
+            let temp_dir = std::env::temp_dir().join("vedit");
+            std::fs::create_dir_all(&temp_dir).ok();
+            SessionManager::with_config_dir(temp_dir)
+        });
+
+    let session_state = match session_manager.load_session_state() {
+        Ok(state) => {
+            println!("DEBUG: Loaded session for window configuration");
+            state
+        }
+        Err(e) => {
+            println!("DEBUG: Failed to load session for window config: {}, using defaults", e);
+            SessionState::default()
+        }
+    };
+
+    let window_state = &session_state.window;
+    println!("DEBUG: Restoring window to {}x{} at ({}, {}), maximized: {}",
+        window_state.width, window_state.height,
+        window_state.x, window_state.y,
+        window_state.maximized);
+
     let settings = Settings {
         window: window::Settings {
+            size: iced::Size::new(window_state.width as f32, window_state.height as f32),
+            position: iced::window::Position::Centered,
+            resizable: true,
             decorations: false,
             ..Default::default()
         },
@@ -64,12 +95,26 @@ pub fn run() -> iced::Result {
 
 struct EditorApp {
     state: EditorState,
+    session_manager: SessionManager,
 }
 
 impl Default for EditorApp {
     fn default() -> Self {
+        let session_manager = SessionManager::new()
+            .unwrap_or_else(|e| {
+                eprintln!("Failed to initialize session manager: {}", e);
+                // Create a fallback session manager that uses temp directory
+                let temp_dir = std::env::temp_dir().join("vedit");
+                std::fs::create_dir_all(&temp_dir).ok();
+                println!("DEBUG: Using fallback session dir: {}", temp_dir.display());
+                SessionManager::with_config_dir(temp_dir)
+            });
+
+        println!("DEBUG: Session manager initialized with config dir: {}", session_manager.config_dir.display());
+
         Self {
             state: EditorState::default(),
+            session_manager,
         }
     }
 }
@@ -177,10 +222,29 @@ impl Application for EditorApp {
     type Flags = ();
 
     fn new(_flags: Self::Flags) -> (Self, Command<Self::Message>) {
-        let app = Self::default();
+        let mut app = Self::default();
+
+        // Load session state at startup
+        let session_manager = app.session_manager.clone();
+        let config_dir = session_manager.config_dir.clone();
+        let load_command = Command::perform(
+            async move {
+                println!("DEBUG: Attempting to load session from: {}", config_dir.display());
+                let result = session_manager.load_session_state();
+                match &result {
+                    Ok(_) => println!("DEBUG: Session loaded successfully"),
+                    Err(e) => println!("DEBUG: Failed to load session: {}", e),
+                }
+                result.map_err(|e| format!("Failed to load session: {}", e))
+            },
+            Message::SessionLoad,
+        );
+
         // Trigger refresh rate detection at startup
-        let command = Command::perform(async {}, |_| Message::DetectMonitorRefreshRates);
-        (app, command)
+        let refresh_command = Command::perform(async {}, |_| Message::DetectMonitorRefreshRates);
+
+        let combined_command = Command::batch(vec![load_command, refresh_command]);
+        (app, combined_command)
     }
 
     fn title(&self) -> String {
@@ -201,10 +265,41 @@ impl Application for EditorApp {
             Message::FileLoaded(result) => match result {
                 Ok(Some(document)) => {
                     let file_path = document.path.clone().unwrap_or_else(|| "unnamed".to_string());
-                    // editor_log_info!("FILE", "File loaded successfully: {}", file_path);
+                    println!("DEBUG: File loaded successfully: {}", file_path);
                     self.state.editor_mut().open_document(document);
                     self.state.clear_error();
                     self.state.sync_buffer_from_editor();
+
+                    // Update session state with new open file
+                    self.state.update_session_open_files();
+
+                    // Also save session immediately when files change
+                    if let Some(session_state) = self.state.get_session_state() {
+                        let session_state = session_state.clone();
+                        let session_manager = self.session_manager.clone();
+                        return self.wrap_command(Command::perform(
+                            async move {
+                                let result = session_manager.save_session_state(&session_state);
+                                match &result {
+                                    Ok(()) => println!("DEBUG: Session saved after file open"),
+                                    Err(e) => println!("DEBUG: Failed to save session after file open: {}", e),
+                                }
+                                result.map_err(|e| format!("Failed to save session: {}", e))
+                            },
+                            Message::SessionSave,
+                        ));
+                    }
+
+                    // Check if we have additional files to restore
+                    let additional_files = self.state.take_pending_files_to_restore();
+                    if !additional_files.is_empty() {
+                        println!("DEBUG: Loading {} additional files", additional_files.len());
+                        return self.wrap_command(Command::perform(
+                            async move { additional_files },
+                            Message::AdditionalFilesRestoreRequested,
+                        ));
+                    }
+
                     if let Some((root, config)) = self.state.record_recent_workspace_file() {
                 return self.wrap_command(Command::perform(
                     commands::save_workspace_config(root, config),
@@ -254,6 +349,55 @@ impl Application for EditorApp {
                         .install_workspace(root.clone(), tree, config, metadata);
                     self.state.refresh_file_explorer();
                     self.state.clear_error();
+
+                    // Update open files in session state
+                    self.state.update_session_open_files();
+
+                    // Trigger file restoration if we have pending files
+                    let pending_files = self.state.take_pending_files_to_restore();
+                    if !pending_files.is_empty() {
+                        println!("DEBUG: Triggering restoration of {} pending files", pending_files.len());
+                        return self.wrap_command(Command::perform(
+                            async move { pending_files },
+                            Message::FilesRestoreRequested,
+                        ));
+                    }
+
+                    // Save workspace state to session
+                    let workspace_state = crate::session::WorkspaceState {
+                        workspace_root: Some(std::path::PathBuf::from(&root)),
+                        last_folder: Some(std::path::PathBuf::from(&root)),
+                        open_files: self.state.get_open_file_paths(),
+                        active_file_index: self.state.get_active_file_index(),
+                    };
+
+                    // Also save complete session state
+                    let session_state = crate::session::SessionState {
+                        window: crate::session::WindowState::default(), // TODO: Track actual window state
+                        workspace: workspace_state.clone(),
+                    };
+
+                    println!("DEBUG: Saving complete session for root: {}", root);
+                    let session_manager = self.session_manager.clone();
+                    return self.wrap_command(Command::perform(
+                        async move {
+                            // Save both workspace state and complete session
+                            let workspace_result = session_manager.save_workspace_state(&workspace_state);
+                            let session_result = session_manager.save_session_state(&session_state);
+
+                            match &workspace_result {
+                                Ok(()) => println!("DEBUG: Successfully saved workspace state"),
+                                Err(e) => println!("DEBUG: Failed to save workspace state: {}", e),
+                            }
+                            match &session_result {
+                                Ok(()) => println!("DEBUG: Successfully saved complete session"),
+                                Err(e) => println!("DEBUG: Failed to save complete session: {}", e),
+                            }
+
+                            session_result.map_err(|e| format!("Failed to save session: {}", e))
+                        },
+                        Message::SessionSave,
+                    ));
                 }
                 Ok(None) => {
                     // user cancelled dialog
@@ -273,6 +417,55 @@ impl Application for EditorApp {
                         .install_workspace(root.clone(), tree, config, metadata);
                     self.state.refresh_file_explorer();
                     self.state.clear_error();
+
+                    // Update open files in session state
+                    self.state.update_session_open_files();
+
+                    // Trigger file restoration if we have pending files
+                    let pending_files = self.state.take_pending_files_to_restore();
+                    if !pending_files.is_empty() {
+                        println!("DEBUG: Triggering restoration of {} pending files", pending_files.len());
+                        return self.wrap_command(Command::perform(
+                            async move { pending_files },
+                            Message::FilesRestoreRequested,
+                        ));
+                    }
+
+                    // Save workspace state to session
+                    let workspace_state = crate::session::WorkspaceState {
+                        workspace_root: Some(std::path::PathBuf::from(&root)),
+                        last_folder: Some(std::path::PathBuf::from(&root)),
+                        open_files: self.state.get_open_file_paths(),
+                        active_file_index: self.state.get_active_file_index(),
+                    };
+
+                    // Also save complete session state
+                    let session_state = crate::session::SessionState {
+                        window: crate::session::WindowState::default(), // TODO: Track actual window state
+                        workspace: workspace_state.clone(),
+                    };
+
+                    println!("DEBUG: Saving complete session for root: {}", root);
+                    let session_manager = self.session_manager.clone();
+                    return self.wrap_command(Command::perform(
+                        async move {
+                            // Save both workspace state and complete session
+                            let workspace_result = session_manager.save_workspace_state(&workspace_state);
+                            let session_result = session_manager.save_session_state(&session_state);
+
+                            match &workspace_result {
+                                Ok(()) => println!("DEBUG: Successfully saved workspace state"),
+                                Err(e) => println!("DEBUG: Failed to save workspace state: {}", e),
+                            }
+                            match &session_result {
+                                Ok(()) => println!("DEBUG: Successfully saved complete session"),
+                                Err(e) => println!("DEBUG: Failed to save complete session: {}", e),
+                            }
+
+                            session_result.map_err(|e| format!("Failed to save session: {}", e))
+                        },
+                        Message::SessionSave,
+                    ));
                 }
                 Ok(None) => {}
                 Err(err) => {
@@ -903,6 +1096,214 @@ impl Application for EditorApp {
                 // Toggle debug dot when gutter is clicked
                 self.state.toggle_debug_dot(line_number);
             }
+
+            // Session management messages
+            Message::SessionLoad(Ok(session_state)) => {
+                // Store session state for later use
+                self.state.set_session_state(session_state.clone());
+
+                // Debug: Log what we loaded
+                println!("DEBUG: Session loaded successfully");
+                if let Some(root) = &session_state.workspace.workspace_root {
+                    println!("DEBUG: Workspace root in session: {}", root.display());
+                } else {
+                    println!("DEBUG: No workspace root in session");
+                }
+                if let Some(last_folder) = &session_state.workspace.last_folder {
+                    println!("DEBUG: Last folder in session: {}", last_folder.display());
+                } else {
+                    println!("DEBUG: No last folder in session");
+                }
+
+                // Log window state in session
+                println!("DEBUG: Window state in session: {}x{} at ({}, {}), maximized: {}",
+                    session_state.window.width, session_state.window.height,
+                    session_state.window.x, session_state.window.y,
+                    session_state.window.maximized);
+
+                // Log open files in session
+                println!("DEBUG: Open files in session: {}", session_state.workspace.open_files.len());
+                for (i, file_path) in session_state.workspace.open_files.iter().enumerate() {
+                    println!("DEBUG:   File {}: {}", i, file_path.display());
+                }
+                if let Some(active_index) = session_state.workspace.active_file_index {
+                    println!("DEBUG: Active file index: {}", active_index);
+                } else {
+                    println!("DEBUG: No active file index");
+                }
+
+                // Restore workspace if we have a saved workspace root or last folder
+                let workspace_to_restore = session_state.workspace.workspace_root.clone()
+                    .or(session_state.workspace.last_folder.clone());
+
+                if let Some(workspace_path) = workspace_to_restore {
+                    println!("DEBUG: Attempting to restore workspace: {}", workspace_path.display());
+                    if workspace_path.exists() {
+                        println!("DEBUG: Workspace exists, triggering restore");
+                        // Attempt to restore the workspace
+                        return self.wrap_command(Command::perform(
+                            async move { (workspace_path, session_state) },
+                            |(path, state)| Message::WorkspaceRestoreFromPath(path, state),
+                        ));
+                    } else {
+                        println!("DEBUG: Workspace path does not exist: {}", workspace_path.display());
+                    }
+                } else {
+                    println!("DEBUG: No workspace to restore");
+                }
+            }
+
+            Message::SessionLoad(Err(error)) => {
+                eprintln!("Failed to load session: {}", error);
+                // Continue with default state
+            }
+
+            Message::SessionSave(Ok(())) => {
+                // Session saved successfully
+            }
+
+            Message::SessionSave(Err(error)) => {
+                eprintln!("Failed to save session: {}", error);
+            }
+
+            Message::WindowStateUpdate(window_state) => {
+                // Save window state
+                let session_manager = self.session_manager.clone();
+                return self.wrap_command(Command::perform(
+                    async move {
+                        session_manager.save_window_state(&window_state)
+                            .map_err(|e| format!("Failed to save window state: {}", e))
+                    },
+                    Message::SessionSave,
+                ));
+            }
+
+            Message::WorkspaceStateUpdate(workspace_state) => {
+                // Save workspace state
+                let session_manager = self.session_manager.clone();
+                return self.wrap_command(Command::perform(
+                    async move {
+                        session_manager.save_workspace_state(&workspace_state)
+                            .map_err(|e| format!("Failed to save workspace state: {}", e))
+                    },
+                    Message::SessionSave,
+                ));
+            }
+
+            Message::WorkspaceRestoreFromPath(path, session_state) => {
+                // Attempt to restore workspace from saved path
+                println!("DEBUG: Restoring workspace and files from path: {}", path.display());
+
+                // Store files to restore in state
+                let files_to_restore: Vec<PathBuf> = session_state.workspace.open_files.iter()
+                    .filter(|p| p.exists())
+                    .cloned()
+                    .collect();
+
+                self.state.set_pending_files_to_restore(files_to_restore.clone());
+
+                return self.wrap_command(Command::perform(
+                    commands::load_workspace_from_path_with_files(path, session_state),
+                    Message::WorkspaceLoaded,
+                ));
+            }
+
+            Message::FilesRestoreRequested(file_paths) => {
+                println!("DEBUG: Restoring {} files", file_paths.len());
+                if file_paths.is_empty() {
+                    return self.wrap_command(Command::none());
+                }
+
+                // Separate first file from additional files
+                let first_file = file_paths[0].clone();
+                let additional_files: Vec<PathBuf> = file_paths.into_iter().skip(1).collect();
+
+                println!("DEBUG: Loading first restored file: {}", first_file.display());
+                if !additional_files.is_empty() {
+                    println!("DEBUG: Storing {} additional files for later loading", additional_files.len());
+                    self.state.set_pending_files_to_restore(additional_files);
+                }
+
+                return self.wrap_command(Command::perform(
+                    commands::load_document_from_path(first_file.to_string_lossy().to_string()),
+                    |result| Message::FileLoaded(result.map(Some).map_err(|e| e)),
+                ));
+            }
+
+            Message::AdditionalFilesRestoreRequested(file_paths) => {
+                println!("DEBUG: Loading {} additional files", file_paths.len());
+                if file_paths.is_empty() {
+                    return self.wrap_command(Command::none());
+                }
+
+                // Load the next file in the list
+                let first_file = file_paths[0].clone();
+                let remaining_files: Vec<PathBuf> = file_paths.into_iter().skip(1).collect();
+
+                // Store remaining files for later
+                self.state.set_pending_files_to_restore(remaining_files.clone());
+
+                println!("DEBUG: Loading additional file: {}", first_file.display());
+                return self.wrap_command(Command::perform(
+                    commands::load_document_from_path(first_file.to_string_lossy().to_string()),
+                    |result| Message::FileLoaded(result.map(Some).map_err(|e| e)),
+                ));
+            }
+
+            // Window state tracking messages
+            Message::WindowChanged(width, height) => {
+                println!("DEBUG: Window resized to {}x{}", width, height);
+                // Update window state with current position and new size
+                self.state.update_window_state(0, 0, width, height, false);
+
+                // Save session immediately
+                if let Some(session_state) = self.state.get_session_state() {
+                    let session_state = session_state.clone();
+                    let session_manager = self.session_manager.clone();
+                    return self.wrap_command(Command::perform(
+                        async move {
+                            let result = session_manager.save_session_state(&session_state);
+                            match &result {
+                                Ok(()) => println!("DEBUG: Window state saved to session"),
+                                Err(e) => println!("DEBUG: Failed to save window state: {}", e),
+                            }
+                            result.map_err(|e| format!("Failed to save session: {}", e))
+                        },
+                        Message::SessionSave,
+                    ));
+                }
+            }
+
+            Message::WindowMoved(x, y) => {
+                println!("DEBUG: Window moved to ({}, {})", x, y);
+                // Note: We need to track current window dimensions to update properly
+                // For now, just update position
+                let session_state = self.state.get_session_state().cloned();
+                if let Some(session_state) = session_state {
+                    let current_state = session_state.window.clone();
+                    self.state.update_window_state(x, y, current_state.width, current_state.height, current_state.maximized);
+
+                    let session_manager = self.session_manager.clone();
+                    return self.wrap_command(Command::perform(
+                        async move {
+                            let result = session_manager.save_session_state(&session_state);
+                            match &result {
+                                Ok(()) => println!("DEBUG: Window state saved after move"),
+                                Err(e) => println!("DEBUG: Failed to save window state: {}", e),
+                            }
+                            result.map_err(|e| format!("Failed to save session: {}", e))
+                        },
+                        Message::SessionSave,
+                    ));
+                }
+            }
+
+            Message::WindowStateChanged(_id, event) => {
+                if matches!(event, window::Event::Focused) {
+                    println!("DEBUG: Window focused");
+                }
+                // Handle other window state changes as needed
+            }
         }
 
         self.wrap_command(Command::none())
@@ -942,6 +1343,15 @@ impl Application for EditorApp {
                     }
                     event::Event::Mouse(mouse::Event::WheelScrolled { delta }) => {
                         Some(Message::MouseWheelScrolled(delta))
+                    }
+                    event::Event::Window(_id, window::Event::Resized { width, height }) => {
+                        Some(Message::WindowChanged(width, height))
+                    }
+                    event::Event::Window(_id, window::Event::Moved { x, y }) => {
+                        Some(Message::WindowMoved(x, y))
+                    }
+                    event::Event::Window(id, event) => {
+                        Some(Message::WindowStateChanged(id, event))
                     }
                     _ => None,
                 }

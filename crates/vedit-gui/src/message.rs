@@ -119,6 +119,20 @@ pub enum Message {
     DebugDotToggle(usize),
     DebugDotsClear,
     GutterClicked(usize), // Line number clicked in gutter
+
+    // Session management messages
+    SessionLoad(Result<crate::session::SessionState, String>),
+    SessionSave(Result<(), String>),
+    WindowStateUpdate(crate::session::WindowState),
+    WorkspaceStateUpdate(crate::session::WorkspaceState),
+    WorkspaceRestoreFromPath(std::path::PathBuf, crate::session::SessionState),
+    FilesRestoreRequested(Vec<std::path::PathBuf>),
+    AdditionalFilesRestoreRequested(Vec<std::path::PathBuf>),
+
+    // Window state tracking messages
+    WindowChanged(u32, u32), // width, height
+    WindowMoved(i32, i32),    // x, y
+    WindowStateChanged(iced::window::Id, iced::window::Event),
 }
 
 #[derive(Clone)]

@@ -98,6 +98,63 @@ pub async fn pick_workspace() -> Result<Option<WorkspaceData>, String> {
     }
 }
 
+pub async fn load_workspace_from_path(path: PathBuf) -> Result<Option<WorkspaceData>, String> {
+    if path.exists() && path.is_dir() {
+        let root_string = path.to_string_lossy().to_string();
+        let mut config = WorkspaceConfig::load_or_default(&path)
+            .map_err(|err| format!("Failed to load workspace config: {}", err))?;
+        let metadata = WorkspaceMetadata::load_or_default(&path)
+            .map_err(|err| format!("Failed to load workspace metadata: {}", err))?;
+        if config.name.is_none() {
+            if let Some(name) = path.file_name().and_then(|name| name.to_str()) {
+                config.name = Some(name.to_string());
+            }
+        }
+        let tree = Editor::build_workspace_tree(&path, Some(&config))
+            .map_err(|err| format!("Failed to read folder: {}", err))?;
+        Ok(Some(WorkspaceData {
+            root: root_string,
+            tree,
+            config,
+            metadata,
+        }))
+    } else {
+        Ok(None)
+    }
+}
+
+pub async fn load_workspace_from_path_with_files(
+    path: PathBuf,
+    session_state: crate::session::SessionState
+) -> Result<Option<WorkspaceData>, String> {
+    if path.exists() && path.is_dir() {
+        println!("DEBUG: Loading workspace from: {}", path.display());
+
+        let root_string = path.to_string_lossy().to_string();
+        let mut config = WorkspaceConfig::load_or_default(&path)
+            .map_err(|err| format!("Failed to load workspace config: {}", err))?;
+        let metadata = WorkspaceMetadata::load_or_default(&path)
+            .map_err(|err| format!("Failed to load workspace metadata: {}", err))?;
+        if config.name.is_none() {
+            if let Some(name) = path.file_name().and_then(|name| name.to_str()) {
+                config.name = Some(name.to_string());
+            }
+        }
+        let tree = Editor::build_workspace_tree(&path, Some(&config))
+            .map_err(|err| format!("Failed to read folder: {}", err))?;
+
+        Ok(Some(WorkspaceData {
+            root: root_string,
+            tree,
+            config,
+            metadata,
+        }))
+    } else {
+        Ok(None)
+    }
+}
+
+
 pub async fn pick_solution() -> Result<Option<WorkspaceData>, String> {
     if let Some(path) = FileDialog::new().pick_file() {
         let tree = Editor::build_solution_tree(&path)

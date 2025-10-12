@@ -12,6 +12,7 @@ mod state;
 mod views;
 mod keyboard;
 mod widgets;
+mod session;
 mod style;
 mod syntax;
 mod utils;

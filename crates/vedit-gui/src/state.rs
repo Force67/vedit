@@ -24,6 +24,7 @@ use vedit_vs::{Solution as VsSolution, VcxProject};
 
 use crate::commands::DebugSession;
 use crate::message::RightRailTab;
+use crate::session::SessionState;
 use vedit_config::WorkspaceMetadata;
 
 const IGNORED_DIRECTORIES: [&str; 4] = ["target", ".git", ".hg", ".svn"];
@@ -184,6 +185,8 @@ pub struct EditorState {
     search_highlight_line: Option<usize>,
     search_highlight_end_time: Option<Instant>,
     debug_dots: Vec<DebugDot>,
+    session_state: Option<SessionState>,
+    pending_files_to_restore: Vec<PathBuf>,
 }
 
 impl Default for EditorState {
@@ -227,6 +230,8 @@ impl Default for EditorState {
             search_highlight_line: None,
             search_highlight_end_time: None,
             debug_dots: Vec::new(),
+            session_state: None,
+            pending_files_to_restore: Vec::new(),
         };
 
         // Set up console state for logging
@@ -892,6 +897,97 @@ impl EditorState {
 
     pub fn get_debug_dots(&self) -> &[DebugDot] {
         &self.debug_dots
+    }
+
+    // Session management methods
+    pub fn set_session_state(&mut self, session_state: SessionState) {
+        self.session_state = Some(session_state);
+    }
+
+    pub fn get_session_state(&self) -> Option<&SessionState> {
+        self.session_state.as_ref()
+    }
+
+    pub fn set_last_workspace_folder(&mut self, folder: PathBuf) {
+        if let Some(session_state) = &mut self.session_state {
+            session_state.workspace.last_folder = Some(folder);
+        }
+    }
+
+    pub fn get_last_workspace_folder(&self) -> Option<&PathBuf> {
+        self.session_state
+            .as_ref()
+            .and_then(|s| s.workspace.last_folder.as_ref())
+    }
+
+    // File tracking methods for session restoration
+    pub fn get_open_file_paths(&self) -> Vec<PathBuf> {
+        let mut paths = Vec::new();
+
+        // Get all documents from the editor
+        for (index, document) in self.editor().open_documents().into_iter().enumerate() {
+            if let Some(path) = &document.path {
+                paths.push(PathBuf::from(path));
+            }
+        }
+
+        paths
+    }
+
+    pub fn get_active_file_index(&self) -> Option<usize> {
+        let active_index = self.editor().active_index();
+        if active_index < self.editor().open_documents().len() {
+            Some(active_index)
+        } else {
+            None
+        }
+    }
+
+    pub fn update_session_open_files(&mut self) {
+        let open_files = self.get_open_file_paths();
+        let active_file_index = self.get_active_file_index();
+
+        println!("DEBUG: Updating session with {} open files", open_files.len());
+        for (i, file) in open_files.iter().enumerate() {
+            println!("DEBUG:   File {}: {}", i, file.display());
+        }
+        if let Some(active) = active_file_index {
+            println!("DEBUG:   Active file index: {}", active);
+        }
+
+        // Ensure session state exists
+        if self.session_state.is_none() {
+            println!("DEBUG: Creating new session state - none existed");
+            self.session_state = Some(SessionState::default());
+        }
+
+        if let Some(session_state) = &mut self.session_state {
+            session_state.workspace.open_files = open_files;
+            session_state.workspace.active_file_index = active_file_index;
+            println!("DEBUG: Session state updated with open files");
+        } else {
+            println!("DEBUG: ERROR - No session state available");
+        }
+    }
+
+    pub fn set_pending_files_to_restore(&mut self, files: Vec<PathBuf>) {
+        self.pending_files_to_restore = files;
+    }
+
+    pub fn take_pending_files_to_restore(&mut self) -> Vec<PathBuf> {
+        std::mem::take(&mut self.pending_files_to_restore)
+    }
+
+    // Window state tracking methods
+    pub fn update_window_state(&mut self, x: i32, y: i32, width: u32, height: u32, maximized: bool) {
+        if let Some(session_state) = &mut self.session_state {
+            session_state.window.x = x;
+            session_state.window.y = y;
+            session_state.window.width = width;
+            session_state.window.height = height;
+            session_state.window.maximized = maximized;
+            println!("DEBUG: Updated window state: {}x{} at ({}, {}), maximized: {}", width, height, x, y, maximized);
+        }
     }
 
     fn perform_search_impl(&mut self) {
