@@ -670,10 +670,11 @@ impl EditorState {
             return Err("Sticky notes require an open workspace".to_string());
         }
 
-        // TODO: iced 0.14 migration - cursor_position API changed to cursor()
-        // For now, use default position
-        let line_number = 1;
-        let column = 1;
+        // Get cursor position from iced text_editor Content
+        let cursor = self.buffer_content.cursor();
+        // iced uses 0-indexed line/column, add 1 for 1-indexed usage
+        let line_number = cursor.position.line + 1;
+        let column = cursor.position.column + 1;
 
         self.app
             .editor_mut()

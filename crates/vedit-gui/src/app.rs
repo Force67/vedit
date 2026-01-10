@@ -395,9 +395,14 @@ impl EditorApp {
                         active_file_index: self.state.get_active_file_index(),
                     };
 
-                    // Also save complete session state
+                    // Also save complete session state - use tracked window state
+                    let window_state = self
+                        .state
+                        .get_session_state()
+                        .map(|s| s.window.clone())
+                        .unwrap_or_default();
                     let session_state = crate::session::SessionState {
-                        window: crate::session::WindowState::default(), // TODO: Track actual window state
+                        window: window_state,
                         workspace: workspace_state.clone(),
                     };
 
@@ -467,9 +472,14 @@ impl EditorApp {
                         active_file_index: self.state.get_active_file_index(),
                     };
 
-                    // Also save complete session state
+                    // Also save complete session state - use tracked window state
+                    let window_state = self
+                        .state
+                        .get_session_state()
+                        .map(|s| s.window.clone())
+                        .unwrap_or_default();
                     let session_state = crate::session::SessionState {
-                        window: crate::session::WindowState::default(), // TODO: Track actual window state
+                        window: window_state,
                         workspace: workspace_state.clone(),
                     };
 
@@ -1082,22 +1092,22 @@ impl EditorApp {
             Message::RightRailTabSelected(tab) => {
                 self.state.set_selected_right_rail_tab(tab);
             }
-            // Wine integration messages
+            // Wine integration messages (WineState currently disabled in state.rs)
+            // These handlers are stubs pending re-enablement of the full Wine widget
             Message::WineCreateEnvironmentDialog => {
-                // TODO: Show create environment dialog
+                // Stub: Wine widget temporarily disabled
             }
-            // TODO: Add remaining Wine message handlers
             Message::WineEnvNameChanged(_name) => {
-                // TODO: Handle environment name input
+                // Stub: Wine widget temporarily disabled
             }
             Message::WineExePathChanged(_path) => {
-                // TODO: Handle executable path input
+                // Stub: Wine widget temporarily disabled
             }
             Message::WineArgsChanged(_args) => {
-                // TODO: Handle arguments input
+                // Stub: Wine widget temporarily disabled
             }
             Message::WineEnvironmentToggled(_env_id) => {
-                // TODO: Handle environment toggle
+                // Stub: Wine widget temporarily disabled
             }
             Message::WineCreateEnvironment => {
                 // Handle environment creation
@@ -1429,7 +1439,7 @@ impl EditorApp {
                     println!("DEBUG: Window focused");
                 }
                 // Handle other window state changes as needed
-            } // TODO: Handle remaining Wine messages when complex widget is re-enabled
+            }
         }
 
         self.wrap_command(Task::none())

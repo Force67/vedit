@@ -632,9 +632,10 @@ where
     pub fn on_action(mut self, on_edit: impl Fn(Action) -> Message + 'a) -> Self {
         let correction = Rc::clone(&self.pointer_correction);
         self.inner = self.inner.on_action(move |action| {
-            // TODO: Add proper invalidation when Action variants are known
-            // For now, we'll rely on other invalidation mechanisms
-            // let _ = increment_buffer_version(); // Enable when Action variants are confirmed
+            // Increment buffer version for content-modifying actions to invalidate caches
+            if matches!(action, Action::Edit(_)) {
+                let _ = increment_buffer_version();
+            }
             let adjusted = adjust_action(action, correction.get());
             on_edit(adjusted)
         });
