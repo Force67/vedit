@@ -3,18 +3,14 @@ use crate::state::{
     EditorState, MakefileEntry, SolutionBrowserEntry, SolutionErrorEntry, SolutionTreeNode,
     VisualStudioProjectEntry, VisualStudioSolutionEntry,
 };
-use crate::style::{document_button, TEXT, MUTED, ERROR, WARNING};
-use iced::widget::{button, column, Space, row, text, Column};
+use crate::style::{ERROR, MUTED, TEXT, WARNING, document_button};
+use iced::widget::{Column, Space, button, column, row, text};
 use iced::{Alignment, Element, Length, Padding};
 
 pub fn render_solutions_tab(state: &EditorState, scale: f32) -> Column<'_, Message> {
-    let mut content = column![
-        text("Solutions")
-            .size((16.0 * scale).max(12.0))
-            .color(TEXT)
-    ]
-    .spacing((6.0 * scale).max(3.0))
-    .padding(Padding::from([8.0, 16.0]));
+    let mut content = column![text("Solutions").size((16.0 * scale).max(12.0)).color(TEXT)]
+        .spacing((6.0 * scale).max(3.0))
+        .padding(Padding::from([8.0, 16.0]));
 
     let entries = state.workspace_solutions();
     if entries.is_empty() {
@@ -63,9 +59,7 @@ fn render_visual_studio_solution(
         content = content.push(
             row![
                 Space::new().width(Length::Fill).width(Length::Fixed(16.0)),
-                text(warning)
-                    .color(WARNING)
-                    .size((12.0 * scale).max(9.0)),
+                text(warning).color(WARNING).size((12.0 * scale).max(9.0)),
             ]
             .spacing(spacing)
             .align_y(Alignment::Center),
@@ -106,9 +100,7 @@ fn render_visual_studio_project(
         column = column.push(
             row![
                 Space::new().width(Length::Fill).width(Length::Fixed(32.0)),
-                text(error)
-                    .color(ERROR)
-                    .size((12.0 * scale).max(9.0)),
+                text(error).color(ERROR).size((12.0 * scale).max(9.0)),
             ]
             .spacing(spacing)
             .align_y(Alignment::Center),
@@ -173,11 +165,11 @@ fn render_solution_node_column<'a>(
     for node in nodes {
         let icon = if node.is_directory { "📁" } else { "📄" };
         let row_content = row![
-            Space::new().width(Length::Fill).width(Length::Fixed(indent)),
+            Space::new()
+                .width(Length::Fill)
+                .width(Length::Fixed(indent)),
             text(icon).size((12.0 * scale).max(9.0)),
-            text(&node.name)
-                .color(TEXT)
-                .size((13.0 * scale).max(9.0)),
+            text(&node.name).color(TEXT).size((13.0 * scale).max(9.0)),
         ]
         .spacing(spacing)
         .align_y(Alignment::Center);
@@ -194,7 +186,11 @@ fn render_solution_node_column<'a>(
         column = column.push(element);
 
         if !node.children.is_empty() {
-            column = column.push(render_solution_node_column(&node.children, indent + 16.0, scale));
+            column = column.push(render_solution_node_column(
+                &node.children,
+                indent + 16.0,
+                scale,
+            ));
         }
     }
 

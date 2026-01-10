@@ -1,10 +1,8 @@
-use iced::widget::{button, Space, row, text, text_input, Column, Row, Scrollable};
-use iced::{Task, Element, Length, Padding, Alignment};
-use iced_font_awesome::fa_icon_solid;
 use crate::style;
+use iced::widget::{Column, Row, Scrollable, Space, button, row, text, text_input};
+use iced::{Alignment, Element, Length, Padding, Task};
+use iced_font_awesome::fa_icon_solid;
 use vedit_core::{FilterState, FsWorkspaceProvider, Node, NodeId, NodeKind, WorkspaceTree};
-
-
 
 #[derive(Debug, Clone)]
 pub enum Message {
@@ -144,11 +142,19 @@ impl FileExplorer {
         }
     }
 
-    fn build_initial_tree(tree: &mut WorkspaceTree, provider: &FsWorkspaceProvider, root_path: &std::path::Path) {
+    fn build_initial_tree(
+        tree: &mut WorkspaceTree,
+        provider: &FsWorkspaceProvider,
+        root_path: &std::path::Path,
+    ) {
         // Add the root node
         let root_id = tree.nodes.insert(Node {
             id: 0,
-            name: root_path.file_name().and_then(|n| n.to_str()).unwrap_or("root").to_string(),
+            name: root_path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("root")
+                .to_string(),
             rel_path: ".".to_string(),
             kind: NodeKind::Folder,
             size: None,
@@ -188,47 +194,47 @@ impl FileExplorer {
                 if self.tree.expanded.contains(&id) {
                     self.tree.expanded.remove(&id);
                 } else {
-                    self.provider.load_children(&mut self.tree, id).unwrap_or(());
+                    self.provider
+                        .load_children(&mut self.tree, id)
+                        .unwrap_or(());
                     self.tree.expanded.insert(id);
                 }
                 self.update_visible_rows();
                 Task::none()
             }
-            Message::TreeSelect(id, kind) => {
-                match kind {
-                    SelectKind::Single => {
+            Message::TreeSelect(id, kind) => match kind {
+                SelectKind::Single => {
+                    self.tree.selection.clear();
+                    self.tree.selection.insert(id);
+                    self.tree.cursor = Some(id);
+                    Task::none()
+                }
+                SelectKind::Range => {
+                    if let Some(cursor) = self.tree.cursor {
                         self.tree.selection.clear();
-                        self.tree.selection.insert(id);
-                        self.tree.cursor = Some(id);
-                        Task::none()
-                    }
-                    SelectKind::Range => {
-                        if let Some(cursor) = self.tree.cursor {
-                            self.tree.selection.clear();
-                            if let Some(cursor_idx) = self.vrows.iter().position(|&i| i == cursor) {
-                                if let Some(id_idx) = self.vrows.iter().position(|&i| i == id) {
-                                    let start = cursor_idx.min(id_idx);
-                                    let end = cursor_idx.max(id_idx);
-                                    for &i in &self.vrows[start..=end] {
-                                        self.tree.selection.insert(i);
-                                    }
-                                    self.tree.cursor = Some(id);
+                        if let Some(cursor_idx) = self.vrows.iter().position(|&i| i == cursor) {
+                            if let Some(id_idx) = self.vrows.iter().position(|&i| i == id) {
+                                let start = cursor_idx.min(id_idx);
+                                let end = cursor_idx.max(id_idx);
+                                for &i in &self.vrows[start..=end] {
+                                    self.tree.selection.insert(i);
                                 }
+                                self.tree.cursor = Some(id);
                             }
                         }
-                        Task::none()
                     }
-                    SelectKind::Toggle => {
-                        if self.tree.selection.contains(&id) {
-                            self.tree.selection.remove(&id);
-                        } else {
-                            self.tree.selection.insert(id);
-                        }
-                        self.tree.cursor = Some(id);
-                        Task::none()
-                    }
+                    Task::none()
                 }
-            }
+                SelectKind::Toggle => {
+                    if self.tree.selection.contains(&id) {
+                        self.tree.selection.remove(&id);
+                    } else {
+                        self.tree.selection.insert(id);
+                    }
+                    self.tree.cursor = Some(id);
+                    Task::none()
+                }
+            },
             Message::Open(id, _kind) => {
                 if let Some(node) = self.tree.nodes.get(id) {
                     if matches!(node.kind, NodeKind::Folder) {
@@ -245,21 +251,29 @@ impl FileExplorer {
             Message::RowClick(id) => {
                 if let Some(node) = self.tree.nodes.get(id) {
                     if matches!(node.kind, NodeKind::File) {
-                        let full_path = self.root_path.join(&node.rel_path).to_string_lossy().to_string();
+                        let full_path = self
+                            .root_path
+                            .join(&node.rel_path)
+                            .to_string_lossy()
+                            .to_string();
                         return Task::perform(async { Message::OpenFile(full_path) }, |msg| msg);
                     }
                 }
                 // For folders or other, handle selection and double click
                 let now = std::time::Instant::now();
                 if let Some((last_id, last_time)) = self.last_click {
-                    if last_id == id && now.duration_since(last_time) < std::time::Duration::from_millis(500) {
+                    if last_id == id
+                        && now.duration_since(last_time) < std::time::Duration::from_millis(500)
+                    {
                         // Double click
                         if let Some(node) = self.tree.nodes.get(id) {
                             if matches!(node.kind, NodeKind::Folder) {
                                 if self.tree.expanded.contains(&id) {
                                     self.tree.expanded.remove(&id);
                                 } else {
-                                    self.provider.load_children(&mut self.tree, id).unwrap_or(());
+                                    self.provider
+                                        .load_children(&mut self.tree, id)
+                                        .unwrap_or(());
                                     self.tree.expanded.insert(id);
                                 }
                                 self.update_visible_rows();
@@ -302,7 +316,7 @@ impl FileExplorer {
                 self.update_visible_rows();
                 Task::none()
             }
-            _ => Task::none()
+            _ => Task::none(),
         }
     }
 
@@ -318,16 +332,14 @@ impl FileExplorer {
         let header = self.header();
         let tree_view = self.tree_view();
 
-        let content = Column::new()
-            .push(header)
-            .push(tree_view);
+        let content = Column::new().push(header).push(tree_view);
 
         content.into()
     }
 
     fn header(&self) -> Element<'_, Message> {
-        let filter_input = text_input("Filter files...", &self.filter_input)
-            .on_input(Message::FilterChanged);
+        let filter_input =
+            text_input("Filter files...", &self.filter_input).on_input(Message::FilterChanged);
 
         let actions = Row::new()
             .push(button(text("New")).style(style::custom_button()))
@@ -346,7 +358,8 @@ impl FileExplorer {
     }
 
     fn tree_view(&self) -> Element<'_, Message> {
-        let rows: Vec<Element<'_, Message>> = self.vrows.iter().map(|&id| self.row_view(id)).collect();
+        let rows: Vec<Element<'_, Message>> =
+            self.vrows.iter().map(|&id| self.row_view(id)).collect();
 
         Scrollable::new(Column::new().extend(rows))
             .style(style::custom_scrollable())
@@ -387,22 +400,34 @@ impl FileExplorer {
 
             let chevron = if matches!(node.kind, NodeKind::Folder) {
                 if self.tree.expanded.contains(&id) {
-                    fa_icon_solid("chevron-down").color(iced::Color::WHITE).size(12.0)
+                    fa_icon_solid("chevron-down")
+                        .color(iced::Color::WHITE)
+                        .size(12.0)
                 } else {
-                    fa_icon_solid("chevron-right").color(iced::Color::WHITE).size(12.0)
+                    fa_icon_solid("chevron-right")
+                        .color(iced::Color::WHITE)
+                        .size(12.0)
                 }
             } else {
-                fa_icon_solid("chevron-right").color(iced::Color::TRANSPARENT).size(12.0)
+                fa_icon_solid("chevron-right")
+                    .color(iced::Color::TRANSPARENT)
+                    .size(12.0)
             };
 
-            let name_button = button(text(&node.name).color(if is_selected { style::PRIMARY } else { style::TEXT }))
-                .style(style::custom_button())
-                .on_press(Message::RowClick(id));
+            let name_button = button(text(&node.name).color(if is_selected {
+                style::PRIMARY
+            } else {
+                style::TEXT
+            }))
+            .style(style::custom_button())
+            .on_press(Message::RowClick(id));
 
             // Create indentation based on depth
             let indent_width = depth * 16; // 16 pixels per level
             let indent = if indent_width > 0 {
-                Space::new().width(Length::Fill).width(Length::Fixed(indent_width as f32))
+                Space::new()
+                    .width(Length::Fill)
+                    .width(Length::Fixed(indent_width as f32))
             } else {
                 Space::new().width(Length::Fill).width(Length::Fixed(0.0))
             };
@@ -413,17 +438,15 @@ impl FileExplorer {
                     .on_press(Message::TreeToggle(id))
                     .into()
             } else {
-                Space::new().width(Length::Fill).width(Length::Fixed(12.0)).into()
+                Space::new()
+                    .width(Length::Fill)
+                    .width(Length::Fixed(12.0))
+                    .into()
             };
 
-            let row = row![
-                indent,
-                chevron_element,
-                icon.size(14.0),
-                name_button,
-            ]
-            .spacing(4)
-            .align_y(Alignment::Center);
+            let row = row![indent, chevron_element, icon.size(14.0), name_button,]
+                .spacing(4)
+                .align_y(Alignment::Center);
 
             row.into()
         } else {

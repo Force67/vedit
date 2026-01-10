@@ -1,4 +1,4 @@
-use iced::widget::{button, container, row, scrollable, text, Column};
+use iced::widget::{Column, button, container, row, scrollable, text};
 use iced::{Alignment, Element, Padding};
 use iced_font_awesome::fa_icon_solid;
 
@@ -75,12 +75,10 @@ impl RecentFiles {
         } else {
             fa_icon_solid("angle-down").color(iced::Color::WHITE)
         };
-        let header = button(row![
-            icon,
-            text("Recent Files").color(crate::style::TEXT)
-        ].spacing(4.0))
-            .style(crate::style::custom_button())
-            .on_press(Message::ToggleRecentFiles);
+        let header =
+            button(row![icon, text("Recent Files").color(crate::style::TEXT)].spacing(4.0))
+                .style(crate::style::custom_button())
+                .on_press(Message::ToggleRecentFiles);
 
         let mut col = Column::new().spacing(4).padding(Padding::from(8));
         col = col.push(header);
@@ -98,4 +96,3 @@ impl RecentFiles {
         container(col).style(style::panel_container()).into()
     }
 }
-

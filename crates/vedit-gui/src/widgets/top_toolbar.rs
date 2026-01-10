@@ -1,4 +1,4 @@
-use iced::widget::{button, container, text, tooltip, Row};
+use iced::widget::{Row, button, container, text, tooltip};
 use iced::{Alignment, Element, Length};
 
 use crate::style;
@@ -23,66 +23,52 @@ impl TopToolbar {
     pub fn view(&self) -> Element<'_, Message> {
         let file_group = Row::new()
             .spacing(8)
-            .push(
-                tooltip(
-                    button(text("New").color(style::TEXT))
-                        .style(style::custom_button())
-                        .on_press(Message::NewFile),
-                    "New File (Ctrl+N)",
-                    tooltip::Position::Bottom,
-                )
-            )
-            .push(
-                tooltip(
-                    button(text("Open").color(style::TEXT))
-                        .style(style::custom_button())
-                        .on_press(Message::OpenFile),
-                    "Open File (Ctrl+O)",
-                    tooltip::Position::Bottom,
-                )
-            )
-            .push(
-                tooltip(
-                    button(text("Save").color(style::TEXT))
-                        .style(style::custom_button())
-                        .on_press(Message::SaveFile),
-                    "Save File (Ctrl+S)",
-                    tooltip::Position::Bottom,
-                )
-            );
+            .push(tooltip(
+                button(text("New").color(style::TEXT))
+                    .style(style::custom_button())
+                    .on_press(Message::NewFile),
+                "New File (Ctrl+N)",
+                tooltip::Position::Bottom,
+            ))
+            .push(tooltip(
+                button(text("Open").color(style::TEXT))
+                    .style(style::custom_button())
+                    .on_press(Message::OpenFile),
+                "Open File (Ctrl+O)",
+                tooltip::Position::Bottom,
+            ))
+            .push(tooltip(
+                button(text("Save").color(style::TEXT))
+                    .style(style::custom_button())
+                    .on_press(Message::SaveFile),
+                "Save File (Ctrl+S)",
+                tooltip::Position::Bottom,
+            ));
 
         let run_group = Row::new()
             .spacing(8)
-            .push(
-                tooltip(
-                    button(text("Run").color(style::TEXT))
-                        .style(style::custom_button())
-                        .on_press(Message::Run),
-                    "Run (F5)",
-                    tooltip::Position::Bottom,
-                )
-            )
-            .push(
-                tooltip(
-                    button(text("Debug").color(style::TEXT))
-                        .style(style::custom_button())
-                        .on_press(Message::Debug),
-                    "Debug (F10)",
-                    tooltip::Position::Bottom,
-                )
-            );
+            .push(tooltip(
+                button(text("Run").color(style::TEXT))
+                    .style(style::custom_button())
+                    .on_press(Message::Run),
+                "Run (F5)",
+                tooltip::Position::Bottom,
+            ))
+            .push(tooltip(
+                button(text("Debug").color(style::TEXT))
+                    .style(style::custom_button())
+                    .on_press(Message::Debug),
+                "Debug (F10)",
+                tooltip::Position::Bottom,
+            ));
 
-        let settings_group = Row::new()
-            .spacing(8)
-            .push(
-                tooltip(
-                    button(text("Settings").color(style::TEXT))
-                        .style(style::custom_button())
-                        .on_press(Message::Settings),
-                    "Settings (Ctrl+,)",
-                    tooltip::Position::Bottom,
-                )
-            );
+        let settings_group = Row::new().spacing(8).push(tooltip(
+            button(text("Settings").color(style::TEXT))
+                .style(style::custom_button())
+                .on_press(Message::Settings),
+            "Settings (Ctrl+,)",
+            tooltip::Position::Bottom,
+        ));
 
         let toolbar = Row::new()
             .spacing(16)

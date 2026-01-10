@@ -1,4 +1,4 @@
-use iced::widget::{container, text, Column};
+use iced::widget::{Column, container, text};
 use iced::{Element, Length};
 
 use crate::style;

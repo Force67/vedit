@@ -1,5 +1,7 @@
-use iced::advanced::text::highlighter::{Format as HighlightFormat, Highlighter as IcedHighlighter};
 use iced::Color;
+use iced::advanced::text::highlighter::{
+    Format as HighlightFormat, Highlighter as IcedHighlighter,
+};
 use std::collections::HashMap;
 use std::fmt;
 use std::ops::Range;
@@ -389,12 +391,10 @@ impl SyntaxTheme {
     fn palette_index(&self, name: &str, _idx: usize) -> usize {
         match name {
             "variable.member" | "variable.other" => return PaletteIndex::PROPERTY,
-            "variable.parameter" | "variable.parameter.builtin" => {
-                return PaletteIndex::PROPERTY
-            }
+            "variable.parameter" | "variable.parameter.builtin" => return PaletteIndex::PROPERTY,
             "variable.special" | "variable.this" => return PaletteIndex::SPECIAL,
             "markup.heading" | "markup.list" | "markup.bold" | "markup.italic" => {
-                return PaletteIndex::SPECIAL
+                return PaletteIndex::SPECIAL;
             }
             _ => {}
         }
@@ -416,20 +416,18 @@ impl SyntaxTheme {
             "parameter" => PaletteIndex::PROPERTY,
             "boolean" => PaletteIndex::BOOLEAN,
             "escape" | "punctuation" => PaletteIndex::SPECIAL,
-            "module" | "embedded" | "label" | "namespace" | "markup" => {
-                PaletteIndex::SPECIAL
-            }
+            "module" | "embedded" | "label" | "namespace" | "markup" => PaletteIndex::SPECIAL,
             _ => PaletteIndex::TEXT,
         }
     }
 
     fn format<Font>(&self, idx: usize) -> HighlightFormat<Font> {
         let mut format = HighlightFormat::default();
-        format.color = self
-            .palette
-            .get(idx)
-            .and_then(|color| *color)
-            .or_else(|| self.palette.get(PaletteIndex::TEXT).and_then(|color| *color));
+        format.color = self.palette.get(idx).and_then(|color| *color).or_else(|| {
+            self.palette
+                .get(PaletteIndex::TEXT)
+                .and_then(|color| *color)
+        });
         format
     }
 }
@@ -528,7 +526,8 @@ impl HighlightStore {
             }
         } else {
             None
-        }.unwrap_or_default();
+        }
+        .unwrap_or_default();
 
         // Cache the result for future scroll operations
         if let Ok(mut scroll_cache) = self.scroll_cache.lock() {
@@ -594,10 +593,7 @@ impl DocumentHighlight {
     }
 
     fn plain(text: &str) -> Self {
-        let lines = line_bounds(text)
-            .into_iter()
-            .map(|_| Vec::new())
-            .collect();
+        let lines = line_bounds(text).into_iter().map(|_| Vec::new()).collect();
         Self { lines }
     }
 }
@@ -640,14 +636,7 @@ fn highlight_document(
                 }
 
                 if let Some(style) = current_style {
-                    distribute_segment(
-                        &mut lines,
-                        &bounds,
-                        &mut line_index,
-                        start,
-                        end,
-                        style,
-                    );
+                    distribute_segment(&mut lines, &bounds, &mut line_index, start, end, style);
                 }
             }
         }
@@ -756,7 +745,10 @@ pub struct SyntaxHighlight {
 
 impl SyntaxHighlight {
     fn new(palette_index: usize, theme: Arc<SyntaxTheme>) -> Self {
-        Self { palette_index, theme }
+        Self {
+            palette_index,
+            theme,
+        }
     }
 
     pub fn to_format<Font>(&self) -> HighlightFormat<Font> {
@@ -764,7 +756,10 @@ impl SyntaxHighlight {
     }
 }
 
-pub fn format_highlight<Font>(highlight: &SyntaxHighlight, _theme: &iced::Theme) -> HighlightFormat<Font> {
+pub fn format_highlight<Font>(
+    highlight: &SyntaxHighlight,
+    _theme: &iced::Theme,
+) -> HighlightFormat<Font> {
     highlight.to_format()
 }
 
@@ -776,7 +771,10 @@ pub struct SyntaxHighlighter {
 impl IcedHighlighter for SyntaxHighlighter {
     type Settings = SyntaxSettings;
     type Highlight = SyntaxHighlight;
-    type Iterator<'a> = SyntaxIterator where Self: 'a;
+    type Iterator<'a>
+        = SyntaxIterator
+    where
+        Self: 'a;
 
     fn new(settings: &Self::Settings) -> Self {
         Self {

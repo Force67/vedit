@@ -354,9 +354,7 @@ pub enum WorkspaceMetadataError {
 }
 
 fn config_path(root: impl AsRef<Path>) -> PathBuf {
-    root.as_ref()
-        .join(WORKSPACE_DIR)
-        .join(WORKSPACE_FILE)
+    root.as_ref().join(WORKSPACE_DIR).join(WORKSPACE_FILE)
 }
 
 fn metadata_path(root: impl AsRef<Path>) -> PathBuf {
@@ -408,10 +406,7 @@ mod tests {
             assert!(config.record_debug_target(&format!("tool{}", idx), &exe));
         }
 
-        assert!(config
-            .recent_debug_targets()
-            .count()
-            <= MAX_RECENT_DEBUG_TARGETS);
+        assert!(config.recent_debug_targets().count() <= MAX_RECENT_DEBUG_TARGETS);
         let first = config.recent_debug_targets().next().unwrap();
         assert_eq!(first.name, "tool9");
 

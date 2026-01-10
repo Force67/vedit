@@ -2,7 +2,7 @@ use crate::message::Message;
 use crate::state::EditorState;
 use crate::style::status_container;
 use iced::widget::{container, row, text};
-use iced::{alignment::Vertical, Alignment, Color, Element, Length};
+use iced::{Alignment, Color, Element, Length, alignment::Vertical};
 
 pub fn render_status_bar(
     state: &EditorState,
@@ -39,20 +39,17 @@ pub fn render_status_bar(
             .size((14.0 * scale).max(10.0)),
             text(state.format_scale_factor()).size((14.0 * scale).max(10.0)),
             text(state.format_code_font_zoom()).size((14.0 * scale).max(10.0)),
-            text(format!(
-                "FPS: {:.0}",
-                state.fps_counter().fps()
-            ))
-            .size((18.0 * scale).max(12.0)) // Bigger font for FPS
-            .color(if state.fps_counter().fps() >= 120.0 {
-                Color::from_rgb(0.0, 1.0, 0.0) // Green for 144Hz+ target
-            } else if state.fps_counter().fps() >= 90.0 {
-                Color::from_rgb(0.2, 0.8, 0.2) // Light green for good FPS
-            } else if state.fps_counter().fps() >= 60.0 {
-                Color::from_rgb(1.0, 1.0, 0.0) // Yellow for acceptable FPS
-            } else {
-                Color::from_rgb(1.0, 0.0, 0.0) // Red for low FPS
-            }),
+            text(format!("FPS: {:.0}", state.fps_counter().fps()))
+                .size((18.0 * scale).max(12.0)) // Bigger font for FPS
+                .color(if state.fps_counter().fps() >= 120.0 {
+                    Color::from_rgb(0.0, 1.0, 0.0) // Green for 144Hz+ target
+                } else if state.fps_counter().fps() >= 90.0 {
+                    Color::from_rgb(0.2, 0.8, 0.2) // Light green for good FPS
+                } else if state.fps_counter().fps() >= 60.0 {
+                    Color::from_rgb(1.0, 1.0, 0.0) // Yellow for acceptable FPS
+                } else {
+                    Color::from_rgb(1.0, 0.0, 0.0) // Red for low FPS
+                }),
             match (state.error(), state.workspace_notice()) {
                 (Some(err), _) => text(format!("Error: {}", err)).size((14.0 * scale).max(10.0)),
                 (None, Some(notice)) => text(notice)

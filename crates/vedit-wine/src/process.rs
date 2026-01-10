@@ -1,12 +1,12 @@
 //! Wine process management
 
-use crate::error::{WineError, WineResult};
 use crate::environment::WineEnvironment;
-use serde::{Deserialize, Serialize, Serializer, Deserializer};
+use crate::error::{WineError, WineResult};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use tokio::process::{Child, Command};
-use tokio::time::{timeout, Duration};
+use tokio::time::{Duration, timeout};
 use uuid::Uuid;
 
 /// Configuration for spawning a Wine process
@@ -139,7 +139,9 @@ impl WineProcess {
         config: WineProcessConfig,
     ) -> WineResult<Self> {
         if !exe_path.exists() {
-            return Err(WineError::ExecutableNotFound(exe_path.to_string_lossy().to_string()));
+            return Err(WineError::ExecutableNotFound(
+                exe_path.to_string_lossy().to_string(),
+            ));
         }
 
         let process_id = Uuid::new_v4();
@@ -196,7 +198,11 @@ impl WineProcess {
             cmd.stderr(Stdio::piped());
         }
 
-        tracing::info!("Spawning Wine process: {:?} with args: {:?}", exe_path, args);
+        tracing::info!(
+            "Spawning Wine process: {:?} with args: {:?}",
+            exe_path,
+            args
+        );
 
         let child = cmd.spawn().map_err(|e| {
             WineError::ProcessSpawnFailed(format!("Failed to spawn wine process: {}", e))
@@ -223,7 +229,13 @@ impl WineProcess {
             RemoteDesktopType::Vnc => {
                 // Set up VNC server
                 cmd.env("VEDIT_VNC_PORT", remote_config.port.to_string());
-                cmd.env("VEDIT_VNC_RESOLUTION", format!("{}x{}", remote_config.resolution.0, remote_config.resolution.1));
+                cmd.env(
+                    "VEDIT_VNC_RESOLUTION",
+                    format!(
+                        "{}x{}",
+                        remote_config.resolution.0, remote_config.resolution.1
+                    ),
+                );
                 if let Some(password) = &remote_config.password {
                     cmd.env("VEDIT_VNC_PASSWORD", password);
                 }
@@ -231,7 +243,13 @@ impl WineProcess {
             RemoteDesktopType::Rdp => {
                 // Set up RDP server
                 cmd.env("VEDIT_RDP_PORT", remote_config.port.to_string());
-                cmd.env("VEDIT_RDP_RESOLUTION", format!("{}x{}", remote_config.resolution.0, remote_config.resolution.1));
+                cmd.env(
+                    "VEDIT_RDP_RESOLUTION",
+                    format!(
+                        "{}x{}",
+                        remote_config.resolution.0, remote_config.resolution.1
+                    ),
+                );
             }
             RemoteDesktopType::X11 => {
                 // Set up X11 forwarding
@@ -243,13 +261,17 @@ impl WineProcess {
 
     /// Wait for the process to complete
     pub async fn wait(&mut self) -> WineResult<i32> {
-        let child = self.child.as_mut().ok_or_else(|| {
-            WineError::ProcessNotFound(self.id)
-        })?;
+        let child = self
+            .child
+            .as_mut()
+            .ok_or_else(|| WineError::ProcessNotFound(self.id))?;
 
-        let status = timeout(self.config.startup_timeout, child.wait()).await
+        let status = timeout(self.config.startup_timeout, child.wait())
+            .await
             .map_err(|_| WineError::ProcessSpawnFailed("Process startup timed out".to_string()))?
-            .map_err(|e| WineError::ProcessSpawnFailed(format!("Failed to wait for process: {}", e)))?;
+            .map_err(|e| {
+                WineError::ProcessSpawnFailed(format!("Failed to wait for process: {}", e))
+            })?;
 
         let exit_code = status.code().unwrap_or(-1);
 
@@ -266,8 +288,9 @@ impl WineProcess {
     /// Kill the process
     pub async fn kill(&mut self) -> WineResult<()> {
         if let Some(child) = &mut self.child {
-            child.kill().await
-                .map_err(|e| WineError::ProcessSpawnFailed(format!("Failed to kill process: {}", e)))?;
+            child.kill().await.map_err(|e| {
+                WineError::ProcessSpawnFailed(format!("Failed to kill process: {}", e))
+            })?;
             self.status = ProcessStatus::Killed;
             self.child = None;
         }
@@ -283,7 +306,10 @@ impl WineProcess {
                     if status.success() {
                         self.status = ProcessStatus::Finished;
                     } else {
-                        self.status = ProcessStatus::Failed(format!("Process exited with code {}", status.code().unwrap_or(-1)));
+                        self.status = ProcessStatus::Failed(format!(
+                            "Process exited with code {}",
+                            status.code().unwrap_or(-1)
+                        ));
                     }
                     self.child = None;
                     false
@@ -297,7 +323,8 @@ impl WineProcess {
                 }
                 Err(_) => {
                     // Error checking status, assume not running
-                    self.status = ProcessStatus::Failed("Error checking process status".to_string());
+                    self.status =
+                        ProcessStatus::Failed("Error checking process status".to_string());
                     self.child = None;
                     false
                 }
@@ -412,7 +439,7 @@ fn deserialize_instant<'de, D>(deserializer: D) -> Result<std::time::Instant, D:
 where
     D: Deserializer<'de>,
 {
-    use std::time::{SystemTime, Instant};
+    use std::time::{Instant, SystemTime};
 
     let duration = std::time::Duration::deserialize(deserializer)?;
 

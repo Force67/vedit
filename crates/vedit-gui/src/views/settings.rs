@@ -1,9 +1,9 @@
 use crate::message::Message;
 use crate::state::EditorState;
 use crate::style::{active_document_button, document_button, panel_container};
-use vedit_application::{SettingsCategory, SETTINGS_CATEGORIES};
-use iced::widget::{button, column, container, Space, row, text, text_input};
+use iced::widget::{Space, button, column, container, row, text, text_input};
 use iced::{Alignment, Color, Element, Length, Padding};
+use vedit_application::{SETTINGS_CATEGORIES, SettingsCategory};
 
 pub fn render_settings(
     state: &EditorState,
@@ -12,8 +12,8 @@ pub fn render_settings(
     spacing_medium: f32,
     spacing_small: f32,
 ) -> Element<'_, Message> {
-    let mut categories_list = column![text("Categories").size((16.0 * scale).max(12.0))]
-        .spacing(spacing_small);
+    let mut categories_list =
+        column![text("Categories").size((16.0 * scale).max(12.0))].spacing(spacing_small);
 
     for category in SETTINGS_CATEGORIES.iter().copied() {
         let label = category.label();
@@ -35,8 +35,9 @@ pub fn render_settings(
         .style(panel_container());
 
     let detail: Element<'_, Message> = match state.settings().selected_category() {
-        SettingsCategory::Keybindings =>
-            render_keybindings_settings(state, scale, spacing_large, spacing_medium, spacing_small),
+        SettingsCategory::Keybindings => {
+            render_keybindings_settings(state, scale, spacing_large, spacing_medium, spacing_small)
+        }
     };
 
     row![categories_panel, detail]

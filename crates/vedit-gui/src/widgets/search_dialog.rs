@@ -1,8 +1,8 @@
-use iced::widget::{button, checkbox, container, row, text, text_input, column, Space};
-use iced::{Element, Color, Length, Alignment};
-use iced_font_awesome::fa_icon_solid;
 use crate::message::Message;
 use crate::style::panel_container;
+use iced::widget::{Space, button, checkbox, column, container, row, text, text_input};
+use iced::{Alignment, Color, Element, Length};
+use iced_font_awesome::fa_icon_solid;
 
 #[derive(Debug, Clone)]
 pub struct SearchDialog {
@@ -145,18 +145,22 @@ impl SearchDialog {
         let search_row = row![
             text("Find:").size(14.0 * scale),
             search_input,
-            button(fa_icon_solid("chevron-up")
-                .size(14.0 * scale)
-                .color(Color::from_rgb8(180, 180, 180)))
-                .on_press(Message::SearchPrevious)
-                .padding(4.0 * scale)
-                .width(Length::Fixed(30.0 * scale)),
-            button(fa_icon_solid("chevron-down")
-                .size(14.0 * scale)
-                .color(Color::from_rgb8(180, 180, 180)))
-                .on_press(Message::SearchNext)
-                .padding(4.0 * scale)
-                .width(Length::Fixed(30.0 * scale)),
+            button(
+                fa_icon_solid("chevron-up")
+                    .size(14.0 * scale)
+                    .color(Color::from_rgb8(180, 180, 180))
+            )
+            .on_press(Message::SearchPrevious)
+            .padding(4.0 * scale)
+            .width(Length::Fixed(30.0 * scale)),
+            button(
+                fa_icon_solid("chevron-down")
+                    .size(14.0 * scale)
+                    .color(Color::from_rgb8(180, 180, 180))
+            )
+            .on_press(Message::SearchNext)
+            .padding(4.0 * scale)
+            .width(Length::Fixed(30.0 * scale)),
         ]
         .spacing(spacing)
         .align_y(Alignment::Center);
@@ -169,28 +173,38 @@ impl SearchDialog {
                 .size(14.0 * scale)
                 .padding(4.0 * scale);
 
-            Some(row![
-                text("Replace:").size(14.0 * scale),
-                replace_input,
-                button(row![
-                    fa_icon_solid("file")
-                        .size(12.0 * scale)
-                        .color(Color::from_rgb8(180, 180, 180)),
-                    text("Replace").size(12.0 * scale)
-                ].spacing(4.0 * scale).align_y(Alignment::Center))
+            Some(
+                row![
+                    text("Replace:").size(14.0 * scale),
+                    replace_input,
+                    button(
+                        row![
+                            fa_icon_solid("file")
+                                .size(12.0 * scale)
+                                .color(Color::from_rgb8(180, 180, 180)),
+                            text("Replace").size(12.0 * scale)
+                        ]
+                        .spacing(4.0 * scale)
+                        .align_y(Alignment::Center)
+                    )
                     .on_press(Message::ReplaceOne)
                     .padding(4.0 * scale),
-                button(row![
-                    fa_icon_solid("file")
-                        .size(12.0 * scale)
-                        .color(Color::from_rgb8(180, 180, 180)),
-                    text("All").size(12.0 * scale)
-                ].spacing(4.0 * scale).align_y(Alignment::Center))
+                    button(
+                        row![
+                            fa_icon_solid("file")
+                                .size(12.0 * scale)
+                                .color(Color::from_rgb8(180, 180, 180)),
+                            text("All").size(12.0 * scale)
+                        ]
+                        .spacing(4.0 * scale)
+                        .align_y(Alignment::Center)
+                    )
                     .on_press(Message::ReplaceAll)
                     .padding(4.0 * scale),
-            ]
-            .spacing(spacing)
-            .align_y(Alignment::Center))
+                ]
+                .spacing(spacing)
+                .align_y(Alignment::Center),
+            )
         } else {
             None
         };
@@ -249,24 +263,24 @@ impl SearchDialog {
         };
 
         let results_color = match self.search_state {
-            SearchState::Searching => Color::from_rgb8(100, 150, 255),     // Blue
-            SearchState::Complete => Color::from_rgb8(100, 200, 100),      // Green
-            SearchState::NoMatches => Color::from_rgb8(255, 100, 100),      // Red
-            SearchState::Idle => Color::from_rgb8(160, 160, 160),     // Lighter gray
+            SearchState::Searching => Color::from_rgb8(100, 150, 255), // Blue
+            SearchState::Complete => Color::from_rgb8(100, 200, 100),  // Green
+            SearchState::NoMatches => Color::from_rgb8(255, 100, 100), // Red
+            SearchState::Idle => Color::from_rgb8(160, 160, 160),      // Lighter gray
         };
 
-        let results_label = text(results_text)
-            .size(12.0 * scale)
-            .color(results_color);
+        let results_label = text(results_text).size(12.0 * scale).color(results_color);
 
         // Close button
-        let close_button = button(fa_icon_solid("xmark")
+        let close_button = button(
+            fa_icon_solid("xmark")
                 .size(14.0 * scale)
-                .color(Color::from_rgb8(180, 180, 180)))
-            .on_press(Message::SearchClose)
-            .padding(4.0 * scale)
-            .width(Length::Fixed(24.0 * scale))
-            .height(Length::Fixed(24.0 * scale));
+                .color(Color::from_rgb8(180, 180, 180)),
+        )
+        .on_press(Message::SearchClose)
+        .padding(4.0 * scale)
+        .width(Length::Fixed(24.0 * scale))
+        .height(Length::Fixed(24.0 * scale));
 
         // Header row with title and close button
         let header_row = row![
@@ -277,14 +291,9 @@ impl SearchDialog {
         .align_y(Alignment::Center);
 
         // Main content column
-        let mut content = column![
-            header_row,
-            search_row,
-            options_row,
-            results_label,
-        ]
-        .spacing(spacing)
-        .width(Length::Fill);
+        let mut content = column![header_row, search_row, options_row, results_label,]
+            .spacing(spacing)
+            .width(Length::Fill);
 
         // Add replace row if in replace mode
         if let Some(replace_row) = replace_row {
@@ -293,14 +302,18 @@ impl SearchDialog {
 
         // Action buttons row
         let mut action_buttons = row![
-            button(row![
-                fa_icon_solid("gear")
-                    .size(12.0 * scale)
-                    .color(Color::from_rgb8(180, 180, 180)),
-                text("Toggle Replace").size(12.0 * scale)
-            ].spacing(4.0 * scale).align_y(Alignment::Center))
-                .on_press(Message::SearchToggleReplace)
-                .padding(6.0 * scale),
+            button(
+                row![
+                    fa_icon_solid("gear")
+                        .size(12.0 * scale)
+                        .color(Color::from_rgb8(180, 180, 180)),
+                    text("Toggle Replace").size(12.0 * scale)
+                ]
+                .spacing(4.0 * scale)
+                .align_y(Alignment::Center)
+            )
+            .on_press(Message::SearchToggleReplace)
+            .padding(6.0 * scale),
         ]
         .spacing(spacing)
         .align_y(Alignment::Center);
@@ -308,26 +321,34 @@ impl SearchDialog {
         // Add Next Match button if there are multiple matches
         if self.search_state == SearchState::Complete && self.total_matches > 1 {
             action_buttons = action_buttons.push(
-                button(row![
-                    fa_icon_solid("angle-down")
-                        .size(12.0 * scale)
-                        .color(Color::from_rgb8(180, 180, 180)),
-                    text("Next Match").size(12.0 * scale)
-                ].spacing(4.0 * scale).align_y(Alignment::Center))
-                    .on_press(Message::SearchNext)
-                    .padding(6.0 * scale)
+                button(
+                    row![
+                        fa_icon_solid("angle-down")
+                            .size(12.0 * scale)
+                            .color(Color::from_rgb8(180, 180, 180)),
+                        text("Next Match").size(12.0 * scale)
+                    ]
+                    .spacing(4.0 * scale)
+                    .align_y(Alignment::Center),
+                )
+                .on_press(Message::SearchNext)
+                .padding(6.0 * scale),
             );
         }
 
         action_buttons = action_buttons.push(
-            button(row![
-                fa_icon_solid("xmark")
-                    .size(12.0 * scale)
-                    .color(Color::from_rgb8(180, 180, 180)),
-                text("Close").size(12.0 * scale)
-            ].spacing(4.0 * scale).align_y(Alignment::Center))
-                .on_press(Message::SearchClose)
-                .padding(6.0 * scale)
+            button(
+                row![
+                    fa_icon_solid("xmark")
+                        .size(12.0 * scale)
+                        .color(Color::from_rgb8(180, 180, 180)),
+                    text("Close").size(12.0 * scale)
+                ]
+                .spacing(4.0 * scale)
+                .align_y(Alignment::Center),
+            )
+            .on_press(Message::SearchClose)
+            .padding(6.0 * scale),
         );
 
         content = content.push(action_buttons);

@@ -1,6 +1,6 @@
+use memmap2::Mmap;
 use std::collections::HashMap;
 use std::ops::Range;
-use memmap2::Mmap;
 
 /// Line index for fast byte offset -> line number mapping
 #[derive(Debug, Clone)]
@@ -39,7 +39,7 @@ impl LineIndex {
         }
 
         let total_lines = if mmap.is_empty() {
-            0  // Empty file has 0 lines
+            0 // Empty file has 0 lines
         } else if mmap[mmap.len() - 1] == b'\n' {
             // File ends with newline, don't count empty line after it
             line_num - 1
@@ -70,7 +70,7 @@ impl LineIndex {
                 } else {
                     line
                 }
-            },
+            }
             Err(insert_pos) => {
                 let result = insert_pos.saturating_sub(1);
                 // If result is beyond the last valid line, return the last line
@@ -79,7 +79,7 @@ impl LineIndex {
                 } else {
                     result
                 }
-            },
+            }
         }
     }
 
@@ -103,7 +103,7 @@ mod tests {
     use super::*;
     use memmap2::MmapOptions;
     use std::fs::File;
-    use std::io::{Write, BufWriter};
+    use std::io::{BufWriter, Write};
     use tempfile::tempdir;
 
     fn create_test_mmap(content: &str) -> Mmap {
@@ -150,17 +150,17 @@ mod tests {
         assert_eq!(index.total_lines(), 3);
 
         // Test line to offset mappings
-        assert_eq!(index.line_to_offset(0), 0);  // "Line 1"
-        assert_eq!(index.line_to_offset(1), 7);  // "Line 2"
+        assert_eq!(index.line_to_offset(0), 0); // "Line 1"
+        assert_eq!(index.line_to_offset(1), 7); // "Line 2"
         assert_eq!(index.line_to_offset(2), 14); // "Line 3"
 
         // Test offset to line mappings
-        assert_eq!(index.offset_to_line(0), 0);   // Start of line 1
-        assert_eq!(index.offset_to_line(5), 0);   // Middle of line 1
-        assert_eq!(index.offset_to_line(6), 0);   // Before newline of line 1
-        assert_eq!(index.offset_to_line(7), 1);   // Start of line 2
-        assert_eq!(index.offset_to_line(10), 1);  // Middle of line 2
-        assert_eq!(index.offset_to_line(20), 2);  // Line 3
+        assert_eq!(index.offset_to_line(0), 0); // Start of line 1
+        assert_eq!(index.offset_to_line(5), 0); // Middle of line 1
+        assert_eq!(index.offset_to_line(6), 0); // Before newline of line 1
+        assert_eq!(index.offset_to_line(7), 1); // Start of line 2
+        assert_eq!(index.offset_to_line(10), 1); // Middle of line 2
+        assert_eq!(index.offset_to_line(20), 2); // Line 3
     }
 
     #[test]
@@ -174,7 +174,11 @@ mod tests {
         for line_num in [0, 100, 1000, 5000, 9999] {
             let offset = index.line_to_offset(line_num);
             let computed_line = index.offset_to_line(offset);
-            assert_eq!(computed_line, line_num, "Line mapping failed for {}", line_num);
+            assert_eq!(
+                computed_line, line_num,
+                "Line mapping failed for {}",
+                line_num
+            );
         }
 
         // Test that offsets within lines map to correct line
@@ -188,8 +192,13 @@ mod tests {
 
             // Test various offsets within the line
             for offset in line_start..next_line_start.min(line_start + 10) {
-                assert_eq!(index.offset_to_line(offset), line_num,
-                         "Offset {} should map to line {}", offset, line_num);
+                assert_eq!(
+                    index.offset_to_line(offset),
+                    line_num,
+                    "Offset {} should map to line {}",
+                    offset,
+                    line_num
+                );
             }
         }
     }
@@ -201,8 +210,8 @@ mod tests {
 
         // Test normal range
         let range = index.line_range(1, 4); // Lines 2-4
-        assert_eq!(range.start, 7);  // Start of "Line 2"
-        assert_eq!(range.end, 28);   // Start of "Line 5"
+        assert_eq!(range.start, 7); // Start of "Line 2"
+        assert_eq!(range.end, 28); // Start of "Line 5"
 
         // Test single line range
         let single_range = index.line_range(2, 3); // Line 3 only
@@ -228,8 +237,11 @@ mod tests {
         let creation_time = start.elapsed();
 
         // Index creation should be fast even for large files
-        assert!(creation_time.as_millis() < 100,
-                "LineIndex creation took {}ms for 50k lines", creation_time.as_millis());
+        assert!(
+            creation_time.as_millis() < 100,
+            "LineIndex creation took {}ms for 50k lines",
+            creation_time.as_millis()
+        );
 
         // Random lookups should be fast
         let start = std::time::Instant::now();
@@ -240,8 +252,11 @@ mod tests {
         }
         let lookup_time = start.elapsed();
 
-        assert!(lookup_time.as_millis() < 50,
-                "1000 lookups took {}ms", lookup_time.as_millis());
+        assert!(
+            lookup_time.as_millis() < 50,
+            "1000 lookups took {}ms",
+            lookup_time.as_millis()
+        );
     }
 
     #[test]
@@ -251,12 +266,16 @@ mod tests {
 
         // Index should use reasonable memory
         let index_size = std::mem::size_of::<LineIndex>();
-        let estimated_overhead = index.line_to_offset.len() * std::mem::size_of::<usize>() +
-                               index.offset_to_line.len() * (std::mem::size_of::<usize>() + std::mem::size_of::<usize>());
+        let estimated_overhead = index.line_to_offset.len() * std::mem::size_of::<usize>()
+            + index.offset_to_line.len()
+                * (std::mem::size_of::<usize>() + std::mem::size_of::<usize>());
 
         // Should be less than 1MB for 10k lines
-        assert!(index_size + estimated_overhead < 1024 * 1024,
-                "LineIndex memory usage: {} bytes", index_size + estimated_overhead);
+        assert!(
+            index_size + estimated_overhead < 1024 * 1024,
+            "LineIndex memory usage: {} bytes",
+            index_size + estimated_overhead
+        );
     }
 
     #[test]
@@ -290,7 +309,6 @@ mod tests {
 
         assert_eq!(index.total_lines(), 3);
 
-        
         // Test that byte offsets work correctly with UTF-8
         let line2_offset = index.line_to_offset(1);
         assert_eq!(line2_offset, 14);
@@ -312,8 +330,12 @@ mod tests {
         // Test offset at exact line boundaries
         for line_num in 0..999 {
             let offset = index.line_to_offset(line_num);
-            assert_eq!(index.offset_to_line(offset), line_num,
-                     "Boundary condition failed for line {}", line_num);
+            assert_eq!(
+                index.offset_to_line(offset),
+                line_num,
+                "Boundary condition failed for line {}",
+                line_num
+            );
         }
 
         // Test offset beyond file end
@@ -325,7 +347,11 @@ mod tests {
         // Test invalid line numbers
         let offset_1000 = index.line_to_offset(1000); // Line 1000 exists (empty line)
         let invalid_offset = index.line_to_offset(10000); // Should default to 0
-        println!("Line 1000 offset: {}, Total lines: {}", offset_1000, index.total_lines());
+        println!(
+            "Line 1000 offset: {}, Total lines: {}",
+            offset_1000,
+            index.total_lines()
+        );
         assert_eq!(invalid_offset, 0);
         // Line 1000 should exist as empty line after the last newline
         if index.total_lines() > 1000 {
@@ -342,17 +368,20 @@ mod tests {
         assert_eq!(index.total_lines(), 4);
 
         // Verify each line offset
-        assert_eq!(index.line_to_offset(0), 0);   // "Short"
-        assert_eq!(index.line_to_offset(1), 6);   // "This is..."
-        assert_eq!(index.line_to_offset(2), 49);  // "" (empty line)
-        assert_eq!(index.line_to_offset(3), 50);  // "Medium..."
+        assert_eq!(index.line_to_offset(0), 0); // "Short"
+        assert_eq!(index.line_to_offset(1), 6); // "This is..."
+        assert_eq!(index.line_to_offset(2), 49); // "" (empty line)
+        assert_eq!(index.line_to_offset(3), 50); // "Medium..."
 
         // Test that ranges are accurate
         for line_num in 0..4 {
             let offset = index.line_to_offset(line_num);
             let computed_line = index.offset_to_line(offset);
-            assert_eq!(computed_line, line_num,
-                     "Accuracy test failed for line {} with offset {}", line_num, offset);
+            assert_eq!(
+                computed_line, line_num,
+                "Accuracy test failed for line {} with offset {}",
+                line_num, offset
+            );
         }
     }
 }

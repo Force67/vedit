@@ -3,24 +3,21 @@ pub mod console_panel;
 pub mod editor_content;
 pub mod notifications;
 pub mod open_files;
+pub mod scrollbar_style;
 pub mod settings;
 pub mod solutions;
 pub mod status_bar;
 pub mod title_bar;
-pub mod scrollbar_style;
 
 use crate::message::Message;
 use crate::state::EditorState;
 use crate::style::root_container;
-use crate::widgets::debugger;
 use crate::views::{
-    command_palette::render_command_palette_contents,
-    editor_content::render_editor_content,
-    notifications::render_notifications,
-    settings::render_settings,
-    status_bar::render_status_bar,
+    command_palette::render_command_palette_contents, editor_content::render_editor_content,
+    notifications::render_notifications, settings::render_settings, status_bar::render_status_bar,
     title_bar::render_title_bar,
 };
+use crate::widgets::debugger;
 use iced::widget::{column, container, stack};
 use iced::{Alignment, Element, Length};
 
@@ -45,7 +42,13 @@ pub fn view(state: &EditorState) -> Element<'_, Message> {
     }
 
     let mut main_element = if state.settings().is_open() {
-        layout.push(render_settings(state, scale, spacing_large, spacing_medium, spacing_small))
+        layout.push(render_settings(
+            state,
+            scale,
+            spacing_large,
+            spacing_medium,
+            spacing_small,
+        ))
     } else {
         layout
             .push(render_editor_content(
@@ -55,11 +58,21 @@ pub fn view(state: &EditorState) -> Element<'_, Message> {
                 spacing_medium,
                 spacing_small,
             ))
-            .push(render_status_bar(state, scale, spacing_small, spacing_large))
+            .push(render_status_bar(
+                state,
+                scale,
+                spacing_small,
+                spacing_large,
+            ))
     };
 
     if state.has_notifications() {
-        main_element = main_element.push(render_notifications(state, scale, spacing_large, spacing_medium));
+        main_element = main_element.push(render_notifications(
+            state,
+            scale,
+            spacing_large,
+            spacing_medium,
+        ));
     }
 
     let main_content = container(

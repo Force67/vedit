@@ -1,5 +1,7 @@
 use crate::console::{ConsoleKind, ConsoleLineKind, ConsoleState};
-use crate::debugger::{DebugLaunchPlan, DebuggerConsoleEntry, DebuggerState, DebuggerUiEvent, DebugTarget};
+use crate::debugger::{
+    DebugLaunchPlan, DebugTarget, DebuggerConsoleEntry, DebuggerState, DebuggerUiEvent,
+};
 use crate::editor_log::{init_logger, set_console_state};
 use crate::notifications::{Notification, NotificationCenter, NotificationRequest};
 use crate::scaling;
@@ -8,7 +10,7 @@ use crate::widgets::file_explorer::FileExplorer;
 use crate::widgets::fps_counter::FpsCounter;
 use crate::widgets::search_dialog::SearchDialog;
 // use crate::widgets::wine::WineState; // Temporarily disabled
-use crate::widgets::text_editor::{buffer_scroll_metrics, scroll_to, ScrollMetrics, DebugDot};
+use crate::widgets::text_editor::{DebugDot, ScrollMetrics, buffer_scroll_metrics, scroll_to};
 use iced::keyboard;
 use iced::widget::text_editor::{Action as TextEditorAction, Content};
 use std::cmp::Ordering;
@@ -18,8 +20,10 @@ use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
-use vedit_application::{AppState, CommandPaletteState, QuickCommand, QuickCommandId, SettingsState};
-use vedit_core::{Editor, FileNode, KeyEvent, Language, StickyNote, WorkspaceConfig, TextBuffer};
+use vedit_application::{
+    AppState, CommandPaletteState, QuickCommand, QuickCommandId, SettingsState,
+};
+use vedit_core::{Editor, FileNode, KeyEvent, Language, StickyNote, TextBuffer, WorkspaceConfig};
 use vedit_make::Makefile;
 use vedit_vs::{Solution as VsSolution, VcxProject};
 
@@ -150,7 +154,9 @@ impl ZoomConfig {
 }
 
 fn read_env_f64(name: &str) -> Option<f64> {
-    env::var(name).ok().and_then(|value| value.parse::<f64>().ok())
+    env::var(name)
+        .ok()
+        .and_then(|value| value.parse::<f64>().ok())
 }
 
 #[derive(Debug)]
@@ -276,9 +282,7 @@ impl EditorState {
 
         let metrics = buffer_scroll_metrics(&self.buffer_content);
         let max_scroll = metrics.max_scroll() as f32;
-        let target = position
-            .clamp(0.0, max_scroll)
-            .round() as usize;
+        let target = position.clamp(0.0, max_scroll).round() as usize;
         scroll_to(&mut self.buffer_content, target);
     }
 
@@ -382,7 +386,12 @@ impl EditorState {
         let mut makefile_paths = Vec::new();
         let mut warnings = Vec::new();
 
-        scan_workspace_artifacts(&root_path, &mut solution_paths, &mut makefile_paths, &mut warnings);
+        scan_workspace_artifacts(
+            &root_path,
+            &mut solution_paths,
+            &mut makefile_paths,
+            &mut warnings,
+        );
 
         solution_paths.sort();
         solution_paths.dedup();
@@ -401,7 +410,9 @@ impl EditorState {
         for path in solution_paths {
             match VsSolution::from_path(&path) {
                 Ok(solution) => {
-                    entries.push(SolutionBrowserEntry::VisualStudio(convert_solution(solution)));
+                    entries.push(SolutionBrowserEntry::VisualStudio(convert_solution(
+                        solution,
+                    )));
                 }
                 Err(err) => {
                     entries.push(SolutionBrowserEntry::Error(SolutionErrorEntry {
@@ -429,9 +440,7 @@ impl EditorState {
         entries.sort_by(|a, b| {
             let (order_a, name_a) = solution_entry_sort_key(a);
             let (order_b, name_b) = solution_entry_sort_key(b);
-            order_a
-                .cmp(&order_b)
-                .then_with(|| name_a.cmp(&name_b))
+            order_a.cmp(&order_b).then_with(|| name_a.cmp(&name_b))
         });
 
         self.solution_browser = entries;
@@ -605,8 +614,7 @@ impl EditorState {
         config: WorkspaceConfig,
         metadata: WorkspaceMetadata,
     ) {
-        self.app
-            .install_workspace(root, tree, config, metadata);
+        self.app.install_workspace(root, tree, config, metadata);
         let recent_targets = self.app.workspace_recent_debug_targets();
         let last_target = self.app.workspace_last_debug_target();
         self.debugger
@@ -667,8 +675,7 @@ impl EditorState {
         let line_number = 1;
         let column = 1;
 
-        self
-            .app
+        self.app
             .editor_mut()
             .add_sticky_note(line_number, column, String::new())
             .map(|_| ())
@@ -695,10 +702,7 @@ impl EditorState {
         self.app.clear_binding_error(id);
     }
 
-    pub fn apply_quick_command_binding(
-        &mut self,
-        id: QuickCommandId,
-    ) -> Result<(), String> {
+    pub fn apply_quick_command_binding(&mut self, id: QuickCommandId) -> Result<(), String> {
         self.app.apply_quick_command_binding(id)
     }
 
@@ -803,14 +807,15 @@ impl EditorState {
     }
 
     /*
-pub fn wine(&self) -> &WineState {
-        &self.wine
-    }
+    pub fn wine(&self) -> &WineState {
+            &self.wine
+        }
 
-    pub fn wine_mut(&mut self) -> &mut WineState {
-        &mut self.wine
-    }
-*/ // Temporarily disabled
+        pub fn wine_mut(&mut self) -> &mut WineState {
+            &mut self.wine
+        }
+    */
+ // Temporarily disabled
 
     pub fn search_dialog_mut(&mut self) -> &mut SearchDialog {
         &mut self.search_dialog
@@ -824,7 +829,8 @@ pub fn wine(&self) -> &WineState {
 
     pub fn execute_search(&mut self) {
         if self.search_dialog.search_query.is_empty() {
-            self.search_dialog.set_search_state(crate::widgets::search_dialog::SearchState::Idle);
+            self.search_dialog
+                .set_search_state(crate::widgets::search_dialog::SearchState::Idle);
             self.search_dialog.set_matches(None, 0);
             return;
         }
@@ -837,7 +843,8 @@ pub fn wine(&self) -> &WineState {
         if let Some(debounce_time) = self.search_debounce_time {
             if Instant::now() >= debounce_time {
                 self.search_debounce_time = None;
-                if self.search_dialog.pending_search && !self.search_dialog.search_query.is_empty() {
+                if self.search_dialog.pending_search && !self.search_dialog.search_query.is_empty()
+                {
                     self.execute_search();
                     return true;
                 }
@@ -867,8 +874,10 @@ pub fn wine(&self) -> &WineState {
     }
 
     pub fn is_search_highlight_active(&self) -> bool {
-        self.search_highlight_line.is_some() &&
-        self.search_highlight_end_time.map_or(false, |end_time| Instant::now() < end_time)
+        self.search_highlight_line.is_some()
+            && self
+                .search_highlight_end_time
+                .map_or(false, |end_time| Instant::now() < end_time)
     }
 
     pub fn get_search_highlight_line(&self) -> Option<usize> {
@@ -881,8 +890,15 @@ pub fn wine(&self) -> &WineState {
 
     // Debug dot management methods
     pub fn add_debug_dot(&mut self, line_number: usize) {
-        if !self.debug_dots.iter().any(|dot| dot.line_number == line_number) {
-            self.debug_dots.push(DebugDot { line_number, enabled: true });
+        if !self
+            .debug_dots
+            .iter()
+            .any(|dot| dot.line_number == line_number)
+        {
+            self.debug_dots.push(DebugDot {
+                line_number,
+                enabled: true,
+            });
         }
     }
 
@@ -891,10 +907,17 @@ pub fn wine(&self) -> &WineState {
     }
 
     pub fn toggle_debug_dot(&mut self, line_number: usize) {
-        if let Some(dot) = self.debug_dots.iter_mut().find(|dot| dot.line_number == line_number) {
+        if let Some(dot) = self
+            .debug_dots
+            .iter_mut()
+            .find(|dot| dot.line_number == line_number)
+        {
             dot.enabled = !dot.enabled;
         } else {
-            self.debug_dots.push(DebugDot { line_number, enabled: true });
+            self.debug_dots.push(DebugDot {
+                line_number,
+                enabled: true,
+            });
         }
     }
 
@@ -954,7 +977,10 @@ pub fn wine(&self) -> &WineState {
         let open_files = self.get_open_file_paths();
         let active_file_index = self.get_active_file_index();
 
-        println!("DEBUG: Updating session with {} open files", open_files.len());
+        println!(
+            "DEBUG: Updating session with {} open files",
+            open_files.len()
+        );
         for (i, file) in open_files.iter().enumerate() {
             println!("DEBUG:   File {}: {}", i, file.display());
         }
@@ -986,14 +1012,24 @@ pub fn wine(&self) -> &WineState {
     }
 
     // Window state tracking methods
-    pub fn update_window_state(&mut self, x: i32, y: i32, width: u32, height: u32, maximized: bool) {
+    pub fn update_window_state(
+        &mut self,
+        x: i32,
+        y: i32,
+        width: u32,
+        height: u32,
+        maximized: bool,
+    ) {
         if let Some(session_state) = &mut self.session_state {
             session_state.window.x = x;
             session_state.window.y = y;
             session_state.window.width = width;
             session_state.window.height = height;
             session_state.window.maximized = maximized;
-            println!("DEBUG: Updated window state: {}x{} at ({}, {}), maximized: {}", width, height, x, y, maximized);
+            println!(
+                "DEBUG: Updated window state: {}x{} at ({}, {}), maximized: {}",
+                width, height, x, y, maximized
+            );
         }
     }
 
@@ -1103,8 +1139,12 @@ pub fn wine(&self) -> &WineState {
         if let Some(&(start, end)) = matches.get(current) {
             // Perform replacement - convert char positions to byte positions
             let byte_start = content.char_indices().nth(start).map_or(0, |(i, _)| i);
-            let byte_end = content.char_indices().nth(end).map_or(content.len(), |(i, _)| i);
-            let new_content = content[..byte_start].to_string() + &replace_text + &content[byte_end..];
+            let byte_end = content
+                .char_indices()
+                .nth(end)
+                .map_or(content.len(), |(i, _)| i);
+            let new_content =
+                content[..byte_start].to_string() + &replace_text + &content[byte_end..];
             self.set_document_content(&new_content);
 
             // Re-search to update matches
@@ -1128,8 +1168,12 @@ pub fn wine(&self) -> &WineState {
         for &(start, end) in matches.iter().rev() {
             // Convert char positions to byte positions for safe slicing
             let byte_start = new_content.char_indices().nth(start).map_or(0, |(i, _)| i);
-            let byte_end = new_content.char_indices().nth(end).map_or(new_content.len(), |(i, _)| i);
-            new_content = new_content[..byte_start].to_string() + &replace_text + &new_content[byte_end..];
+            let byte_end = new_content
+                .char_indices()
+                .nth(end)
+                .map_or(new_content.len(), |(i, _)| i);
+            new_content =
+                new_content[..byte_start].to_string() + &replace_text + &new_content[byte_end..];
         }
 
         self.set_document_content(&new_content);
@@ -1188,7 +1232,8 @@ pub fn wine(&self) -> &WineState {
             if self.search_dialog.whole_word {
                 let content_chars: Vec<char> = search_content.chars().collect();
                 let before_ok = char_start == 0 || !content_chars[char_start - 1].is_alphanumeric();
-                let after_ok = char_end >= content_chars.len() || !content_chars[char_end].is_alphanumeric();
+                let after_ok =
+                    char_end >= content_chars.len() || !content_chars[char_end].is_alphanumeric();
 
                 if before_ok && after_ok {
                     matches.push((char_start, char_end));
@@ -1209,9 +1254,10 @@ pub fn wine(&self) -> &WineState {
 
         // Scroll the GUI buffer to the line containing the match
         let target_scroll = line_num.saturating_sub(5) as i32;
-        self.buffer_content.perform(iced::widget::text_editor::Action::Scroll {
-            lines: target_scroll
-        });
+        self.buffer_content
+            .perform(iced::widget::text_editor::Action::Scroll {
+                lines: target_scroll,
+            });
     }
 
     pub fn refresh_debug_targets(&mut self) -> Result<(), String> {
@@ -1476,7 +1522,6 @@ pub fn wine(&self) -> &WineState {
             editor.mark_workspace_metadata_dirty();
         }
     }
-
 }
 
 fn solution_entry_sort_key(entry: &SolutionBrowserEntry) -> (u8, String) {
@@ -1581,10 +1626,7 @@ fn convert_solution(solution: VsSolution) -> VisualStudioSolutionEntry {
     let mut projects = Vec::new();
 
     for project in solution.projects {
-        let path = project
-            .absolute_path
-            .to_string_lossy()
-            .to_string();
+        let path = project.absolute_path.to_string_lossy().to_string();
         let load_error = project.load_error.clone();
 
         if let Some(ref err) = load_error {
@@ -1615,12 +1657,12 @@ fn convert_solution(solution: VsSolution) -> VisualStudioSolutionEntry {
 }
 
 fn convert_makefile(makefile: Makefile) -> MakefileEntry {
-    let mut files = build_tree_from_paths(
-        makefile
-            .files
-            .iter()
-            .map(|item| (item.include.clone(), item.full_path.to_string_lossy().to_string())),
-    );
+    let mut files = build_tree_from_paths(makefile.files.iter().map(|item| {
+        (
+            item.include.clone(),
+            item.full_path.to_string_lossy().to_string(),
+        )
+    }));
     sort_solution_nodes(&mut files);
 
     MakefileEntry {
@@ -1631,12 +1673,12 @@ fn convert_makefile(makefile: Makefile) -> MakefileEntry {
 }
 
 fn build_vcx_tree(project: &VcxProject) -> Vec<SolutionTreeNode> {
-    let mut nodes = build_tree_from_paths(
-        project
-            .files
-            .iter()
-            .map(|item| (item.include.clone(), item.full_path.to_string_lossy().to_string())),
-    );
+    let mut nodes = build_tree_from_paths(project.files.iter().map(|item| {
+        (
+            item.include.clone(),
+            item.full_path.to_string_lossy().to_string(),
+        )
+    }));
     sort_solution_nodes(&mut nodes);
     nodes
 }
@@ -1675,7 +1717,11 @@ where
     roots
 }
 
-fn insert_tree_node(nodes: &mut Vec<SolutionTreeNode>, components: &[String], path: Option<String>) {
+fn insert_tree_node(
+    nodes: &mut Vec<SolutionTreeNode>,
+    components: &[String],
+    path: Option<String>,
+) {
     if components.is_empty() {
         return;
     }
@@ -1683,9 +1729,7 @@ fn insert_tree_node(nodes: &mut Vec<SolutionTreeNode>, components: &[String], pa
     let name = &components[0];
     let is_last = components.len() == 1;
 
-    let mut node = nodes
-        .iter_mut()
-        .find(|candidate| candidate.name == *name);
+    let mut node = nodes.iter_mut().find(|candidate| candidate.name == *name);
 
     if node.is_none() {
         nodes.push(SolutionTreeNode {

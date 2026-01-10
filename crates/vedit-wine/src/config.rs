@@ -1,7 +1,7 @@
 //! Configuration management for Wine integration
 
+use crate::environment::{Runtime, WindowsVersion, WineArchitecture};
 use crate::error::{WineError, WineResult};
-use crate::environment::{Runtime, WineArchitecture, WindowsVersion};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -83,8 +83,9 @@ impl WineConfig {
     /// Save configuration to a file
     pub fn save_to_file(&self, path: &PathBuf) -> WineResult<()> {
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)
-                .map_err(|e| WineError::ConfigError(format!("Failed to create config directory: {}", e)))?;
+            std::fs::create_dir_all(parent).map_err(|e| {
+                WineError::ConfigError(format!("Failed to create config directory: {}", e))
+            })?;
         }
 
         let content = serde_json::to_string_pretty(self)
@@ -206,17 +207,22 @@ impl Default for BuildSystemConfig {
         toolchains.insert("msvc".to_string(), ToolchainConfig::msvc());
 
         let mut build_commands = std::collections::HashMap::new();
-        build_commands.insert("rust".to_string(), vec![
-            "cargo build --target x86_64-pc-windows-gnu".to_string(),
-        ]);
-        build_commands.insert("cpp".to_string(), vec![
-            "mkdir -p build-windows".to_string(),
-            "cd build-windows && x86_64-w64-mingw32-cmake ..".to_string(),
-            "cd build-windows && make -j$(nproc)".to_string(),
-        ]);
-        build_commands.insert("csharp".to_string(), vec![
-            "dotnet build --configuration Release --runtime win-x64".to_string(),
-        ]);
+        build_commands.insert(
+            "rust".to_string(),
+            vec!["cargo build --target x86_64-pc-windows-gnu".to_string()],
+        );
+        build_commands.insert(
+            "cpp".to_string(),
+            vec![
+                "mkdir -p build-windows".to_string(),
+                "cd build-windows && x86_64-w64-mingw32-cmake ..".to_string(),
+                "cd build-windows && make -j$(nproc)".to_string(),
+            ],
+        );
+        build_commands.insert(
+            "csharp".to_string(),
+            vec!["dotnet build --configuration Release --runtime win-x64".to_string()],
+        );
 
         Self {
             toolchains,
@@ -253,8 +259,14 @@ impl ToolchainConfig {
     /// Create MinGW-w64 toolchain configuration
     pub fn mingw_w64() -> Self {
         let mut tools = std::collections::HashMap::new();
-        tools.insert("windres".to_string(), PathBuf::from("x86_64-w64-mingw32-windres"));
-        tools.insert("dlltool".to_string(), PathBuf::from("x86_64-w64-mingw32-dlltool"));
+        tools.insert(
+            "windres".to_string(),
+            PathBuf::from("x86_64-w64-mingw32-windres"),
+        );
+        tools.insert(
+            "dlltool".to_string(),
+            PathBuf::from("x86_64-w64-mingw32-dlltool"),
+        );
 
         Self {
             name: "mingw-w64".to_string(),
@@ -262,7 +274,10 @@ impl ToolchainConfig {
             linker: Some(PathBuf::from("x86_64-w64-mingw32-gcc")),
             tools,
             env_vars: std::collections::HashMap::new(),
-            build_flags: vec!["-static-libgcc".to_string(), "-static-libstdc++".to_string()],
+            build_flags: vec![
+                "-static-libgcc".to_string(),
+                "-static-libstdc++".to_string(),
+            ],
         }
     }
 

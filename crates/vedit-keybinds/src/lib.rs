@@ -351,8 +351,10 @@ impl Keymap {
         let mut bindings = HashMap::new();
 
         for (action, spec) in parsed.bindings.into_iter() {
-            let combination = KeyCombination::parse(&spec)
-                .map_err(|err| KeymapError::Parse { action: action.clone(), source: err })?;
+            let combination = KeyCombination::parse(&spec).map_err(|err| KeymapError::Parse {
+                action: action.clone(),
+                source: err,
+            })?;
             bindings.insert(action, combination);
         }
 
@@ -383,7 +385,10 @@ impl Default for RawKeymap {
 pub enum KeymapError {
     Io(io::Error),
     Toml(toml::de::Error),
-    Parse { action: String, source: ParseKeyCombinationError },
+    Parse {
+        action: String,
+        source: ParseKeyCombinationError,
+    },
 }
 
 impl fmt::Display for KeymapError {
@@ -391,7 +396,9 @@ impl fmt::Display for KeymapError {
         match self {
             Self::Io(err) => write!(f, "Failed to read keymap: {}", err),
             Self::Toml(err) => write!(f, "Failed to parse keymap TOML: {}", err),
-            Self::Parse { action, source } => write!(f, "Invalid binding for '{}': {}", action, source),
+            Self::Parse { action, source } => {
+                write!(f, "Invalid binding for '{}': {}", action, source)
+            }
         }
     }
 }
@@ -714,7 +721,10 @@ mod tests {
     #[test]
     fn keymap_toml_serialization() {
         let mut keymap = Keymap::default();
-        keymap.set_binding("test.action", Some(KeyCombination::parse("ctrl+x").unwrap()));
+        keymap.set_binding(
+            "test.action",
+            Some(KeyCombination::parse("ctrl+x").unwrap()),
+        );
 
         let toml_str = keymap.to_toml_string().unwrap();
         assert!(toml_str.contains("test.action"));
@@ -747,8 +757,8 @@ bindings = { "test.action" = "invalid+key+combination" }
 
     #[test]
     fn keymap_file_operations() {
-        use std::fs;
         use std::env::temp_dir;
+        use std::fs;
 
         let mut keymap = Keymap::default();
         keymap.set_binding("file.test", Some(KeyCombination::parse("ctrl+t").unwrap()));
@@ -807,9 +817,30 @@ bindings = { "test.action" = "invalid+key+combination" }
     fn complex_combination_parsing() {
         // Test complex but valid combinations
         let combos = vec![
-            ("ctrl+shift+alt+cmd+f1", true, true, true, true, Key::Function(1)),
-            ("control+option+super+delete", true, false, true, true, Key::Delete),
-            ("ctrl+meta+backspace", true, false, false, true, Key::Backspace),
+            (
+                "ctrl+shift+alt+cmd+f1",
+                true,
+                true,
+                true,
+                true,
+                Key::Function(1),
+            ),
+            (
+                "control+option+super+delete",
+                true,
+                false,
+                true,
+                true,
+                Key::Delete,
+            ),
+            (
+                "ctrl+meta+backspace",
+                true,
+                false,
+                false,
+                true,
+                Key::Backspace,
+            ),
         ];
 
         for (combo_str, ctrl, shift, alt, cmd, key) in combos {

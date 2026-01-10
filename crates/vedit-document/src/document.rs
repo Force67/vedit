@@ -1,14 +1,14 @@
+use crate::mapped::count_lines_in_mmap;
+use crate::mapped::load_viewport_content;
+use memmap2::MmapOptions;
 use std::cmp;
 use std::fs;
 use std::hash::{Hash, Hasher};
 use std::io;
 use std::path::{Path, PathBuf};
-use memmap2::MmapOptions;
 use vedit_config::{StickyNote, StickyNoteRecord};
-use vedit_text::TextBuffer;
 use vedit_syntax::Language;
-use crate::mapped::load_viewport_content;
-use crate::mapped::count_lines_in_mmap;
+use vedit_text::TextBuffer;
 
 /// Core document structure representing a file or buffer
 #[derive(Debug, Clone)]
@@ -80,9 +80,12 @@ impl Document {
         let contents = fs::read(&path_buf)?;
 
         // Try to decode as UTF-8, handling invalid UTF-8 sequences gracefully
-        let contents = String::from_utf8(contents)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData,
-                format!("File contains invalid UTF-8: {}", e)))?;
+        let contents = String::from_utf8(contents).map_err(|e| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("File contains invalid UTF-8: {}", e),
+            )
+        })?;
 
         Ok(Self::new(
             Some(path_buf.to_string_lossy().to_string()),
@@ -134,7 +137,11 @@ impl Document {
 
         // For small files, extract from current buffer
         let content = self.content();
-        let lines: Vec<&str> = content.lines().skip(start_line).take(visible_lines).collect();
+        let lines: Vec<&str> = content
+            .lines()
+            .skip(start_line)
+            .take(visible_lines)
+            .collect();
         Some(lines.join("\n"))
     }
 
@@ -237,11 +244,7 @@ impl Document {
         }
     }
 
-    pub fn set_sticky_notes_from_records(
-        &mut self,
-        records: &[StickyNoteRecord],
-        contents: &str,
-    ) {
+    pub fn set_sticky_notes_from_records(&mut self, records: &[StickyNoteRecord], contents: &str) {
         self.sticky_notes.clear();
         for record in records {
             let offset = Self::offset_for_line_column(contents, record.line, record.column);
@@ -471,17 +474,22 @@ fn detect_language_from_path(path: &str) -> Language {
 mod tests {
     use super::*;
     use std::fs::File;
-    use std::io::{Write, BufWriter};
+    use std::io::{BufWriter, Write};
     use std::path::PathBuf;
-    use tempfile::tempdir;
     use std::time::Instant;
+    use tempfile::tempdir;
 
     fn create_test_file(path: &str, lines: usize) -> std::io::Result<()> {
         let file = File::create(path)?;
         let mut writer = BufWriter::new(file);
 
         for i in 0..lines {
-            writeln!(writer, "Line {}: This is a test line with some content to simulate a real file. Line number {} contains some sample text.", i + 1, i + 1)?;
+            writeln!(
+                writer,
+                "Line {}: This is a test line with some content to simulate a real file. Line number {} contains some sample text.",
+                i + 1,
+                i + 1
+            )?;
         }
 
         writer.flush()?;
@@ -548,7 +556,11 @@ mod tests {
 
         // Initial buffer should contain only ~1000 lines, not entire file
         let loaded_lines = doc.content().lines().count();
-        assert!(loaded_lines <= 1000, "Loaded {} lines, expected <= 1000", loaded_lines);
+        assert!(
+            loaded_lines <= 1000,
+            "Loaded {} lines, expected <= 1000",
+            loaded_lines
+        );
     }
 
     #[test]
@@ -572,7 +584,11 @@ mod tests {
 
         // Verify we're not loading the entire file
         let estimated_usage = estimate_memory_usage(&viewport_content);
-        assert!(estimated_usage < 1024 * 1024, "Memory usage {} exceeds 1MB", estimated_usage);
+        assert!(
+            estimated_usage < 1024 * 1024,
+            "Memory usage {} exceeds 1MB",
+            estimated_usage
+        );
     }
 
     #[test]
@@ -688,7 +704,11 @@ mod tests {
         }
 
         // Memory usage should stay bounded (not grow with each viewport change)
-        assert!(max_memory < 500 * 1024, "Max memory {} exceeded 500KB", max_memory);
+        assert!(
+            max_memory < 500 * 1024,
+            "Max memory {} exceeded 500KB",
+            max_memory
+        );
     }
 
     #[test]
@@ -704,7 +724,11 @@ mod tests {
         let elapsed = start.elapsed();
 
         // Large file initialization should be fast (< 2s)
-        assert!(elapsed.as_millis() < 2000, "Initialization took {}ms, expected < 2000ms", elapsed.as_millis());
+        assert!(
+            elapsed.as_millis() < 2000,
+            "Initialization took {}ms, expected < 2000ms",
+            elapsed.as_millis()
+        );
     }
 
     #[test]
@@ -798,13 +822,16 @@ mod tests {
 
         // Verify Unicode character counting works
         let emoji_line = lines.iter().find(|line| line.contains("Emojis")).unwrap();
-        let emoji_count = emoji_line.chars().filter(|c| {
-            let cp = *c as u32;
-            (cp >= 0x1F600 && cp <= 0x1F64F) || // Emoticons
+        let emoji_count = emoji_line
+            .chars()
+            .filter(|c| {
+                let cp = *c as u32;
+                (cp >= 0x1F600 && cp <= 0x1F64F) || // Emoticons
             (cp >= 0x1F300 && cp <= 0x1F5FF) || // Misc Symbols
             (cp >= 0x1F680 && cp <= 0x1F6FF) || // Transport
-            (cp >= 0x1F1E0 && cp <= 0x1F1FF)    // Flags
-        }).count();
+            (cp >= 0x1F1E0 && cp <= 0x1F1FF) // Flags
+            })
+            .count();
         assert!(emoji_count >= 6); // Should have at least 6 emojis
     }
 
@@ -829,7 +856,11 @@ mod tests {
         assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
         // Check for the actual error message from String::from_utf8
         let error_msg = error.to_string();
-        assert!(error_msg.contains("utf8") || error_msg.contains("UTF-8") || error_msg.contains("invalid utf8"));
+        assert!(
+            error_msg.contains("utf8")
+                || error_msg.contains("UTF-8")
+                || error_msg.contains("invalid utf8")
+        );
         println!("Error message: {}", error_msg);
     }
 }

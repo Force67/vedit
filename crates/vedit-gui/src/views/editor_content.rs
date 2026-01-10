@@ -1,10 +1,10 @@
 use crate::message::Message;
 use crate::state::EditorState;
 use crate::style::panel_container;
-use crate::syntax::{format_highlight, SyntaxHighlighter};
-use crate::widgets::text_editor::TextEditor as EditorWidget;
-use crate::views::scrollbar_style::editor_scrollbar_style;
+use crate::syntax::{SyntaxHighlighter, format_highlight};
 use crate::views::console_panel;
+use crate::views::scrollbar_style::editor_scrollbar_style;
+use crate::widgets::text_editor::TextEditor as EditorWidget;
 use iced::widget::{column, container, row, text, vertical_slider};
 use iced::{Alignment, Color, Element, Font, Length, Pixels};
 
@@ -26,7 +26,7 @@ pub fn render_editor_content(
         slider_position,
         move |value| Message::BufferScrollChanged(max_scroll - value),
     )
-    .step(0.5_f32)  // Smaller steps for smoother scrolling
+    .step(0.5_f32) // Smaller steps for smoother scrolling
     .width(scrollbar_width)
     .height(Length::Fill)
     .style(editor_scrollbar_style());
@@ -57,14 +57,11 @@ pub fn render_editor_content(
         .center_x(Length::Fill)
         .into();
 
-    let buffer_content = row![
-        buffer_panel,
-        scrollbar_track,
-    ]
-    .spacing((6.0 * scale).max(3.0))
-    .align_y(Alignment::Start)
-    .width(Length::Fill)
-    .height(Length::Fill);
+    let buffer_content = row![buffer_panel, scrollbar_track,]
+        .spacing((6.0 * scale).max(3.0))
+        .align_y(Alignment::Start)
+        .width(Length::Fill)
+        .height(Length::Fill);
 
     let editor_panel = column![
         text("Active Buffer").size((16.0 * scale).max(12.0)),
@@ -85,11 +82,8 @@ pub fn render_editor_content(
         sidebar_width,
     );
 
-    let workspace_panel = crate::widgets::right_rail::render_right_rail(
-        state,
-        scale,
-        sidebar_width,
-    );
+    let workspace_panel =
+        crate::widgets::right_rail::render_right_rail(state, scale, sidebar_width);
 
     let content_row = row![open_panel, editor_panel, workspace_panel]
         .spacing(spacing_large)
@@ -111,7 +105,7 @@ pub fn render_editor_content(
                 spacing_small,
             ))
             .width(Length::Fill)
-            .height(Length::Fixed(300.0))
+            .height(Length::Fixed(300.0)),
         );
     }
 

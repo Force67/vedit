@@ -138,8 +138,15 @@ mod tests {
         use std::collections::HashSet;
 
         let languages = [
-            Language::Rust, Language::Python, Language::JavaScript, Language::TypeScript,
-            Language::CSharp, Language::Java, Language::Go, Language::Kotlin, Language::Swift,
+            Language::Rust,
+            Language::Python,
+            Language::JavaScript,
+            Language::TypeScript,
+            Language::CSharp,
+            Language::Java,
+            Language::Go,
+            Language::Kotlin,
+            Language::Swift,
         ];
 
         let mut set = HashSet::new();

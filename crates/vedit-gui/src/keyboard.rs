@@ -1,4 +1,4 @@
-use iced::keyboard::{key, Event, Key as IcedKey};
+use iced::keyboard::{Event, Key as IcedKey, key};
 use vedit_core::{Key, KeyEvent};
 
 pub fn key_event_from_iced(event: &Event) -> Option<KeyEvent> {
@@ -18,7 +18,10 @@ pub fn key_event_from_iced(event: &Event) -> Option<KeyEvent> {
 
 fn map_key(key: IcedKey) -> Option<Key> {
     match key {
-        IcedKey::Character(value) => value.chars().next().map(|ch| Key::Character(ch.to_ascii_uppercase())),
+        IcedKey::Character(value) => value
+            .chars()
+            .next()
+            .map(|ch| Key::Character(ch.to_ascii_uppercase())),
         IcedKey::Named(named) => match named {
             key::Named::ArrowDown => Some(Key::ArrowDown),
             key::Named::ArrowUp => Some(Key::ArrowUp),

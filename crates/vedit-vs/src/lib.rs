@@ -105,17 +105,15 @@ impl Solution {
                 continue;
             }
 
-            let entry = parse_project_line(trimmed).map_err(|message| VisualStudioError::SolutionParse {
-                path: path.to_path_buf(),
-                line: line_number + 1,
-                message,
+            let entry = parse_project_line(trimmed).map_err(|message| {
+                VisualStudioError::SolutionParse {
+                    path: path.to_path_buf(),
+                    line: line_number + 1,
+                    message,
+                }
             })?;
 
-            let normalized_rel = entry
-                .relative_path
-                .replace('\\', "/")
-                .trim()
-                .to_string();
+            let normalized_rel = entry.relative_path.replace('\\', "/").trim().to_string();
             let relative_path = PathBuf::from(&normalized_rel);
             let absolute_path = resolve_path(&base_dir, &relative_path);
 
@@ -296,9 +294,7 @@ fn trim_guid(value: &str) -> std::result::Result<Option<String>, String> {
     if trimmed.is_empty() {
         return Ok(None);
     }
-    let stripped = if let Some(inner) = trimmed
-        .strip_prefix('"')
-        .and_then(|v| v.strip_suffix('"'))
+    let stripped = if let Some(inner) = trimmed.strip_prefix('"').and_then(|v| v.strip_suffix('"'))
     {
         inner
     } else {
@@ -401,8 +397,10 @@ mod tests {
         assert!(project.project.is_some());
         let files = &project.project.as_ref().unwrap().files;
         assert_eq!(files.len(), 2);
-        assert!(files
-            .iter()
-            .any(|item| item.include.to_string_lossy() == "src/main.cpp"));
+        assert!(
+            files
+                .iter()
+                .any(|item| item.include.to_string_lossy() == "src/main.cpp")
+        );
     }
 }

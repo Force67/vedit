@@ -1,10 +1,10 @@
+use crate::line_index::LineIndex;
+use crate::viewport::Viewport;
+use memmap2::Mmap;
+use memmap2::MmapOptions;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
-use memmap2::Mmap;
-use memmap2::MmapOptions;
-use crate::line_index::LineIndex;
-use crate::viewport::Viewport;
 
 /// Memory-mapped document for large files
 #[derive(Debug)]
@@ -137,9 +137,9 @@ pub fn count_lines_in_mmap(mmap: &Mmap) -> usize {
     }
     let newline_count = mmap.iter().filter(|&&byte| byte == b'\n').count();
     if mmap[mmap.len() - 1] == b'\n' {
-        newline_count  // Don't count empty line after final newline
+        newline_count // Don't count empty line after final newline
     } else {
-        newline_count + 1  // Count the last line if no trailing newline
+        newline_count + 1 // Count the last line if no trailing newline
     }
 }
 
@@ -147,7 +147,7 @@ pub fn count_lines_in_mmap(mmap: &Mmap) -> usize {
 mod tests {
     use super::*;
     use std::fs::File;
-    use std::io::{Write, BufWriter};
+    use std::io::{BufWriter, Write};
     use tempfile::tempdir;
 
     fn create_test_mmap_file(path: &str, lines: usize) -> io::Result<Mmap> {
@@ -314,7 +314,11 @@ mod tests {
         let doc = MappedDocument::from_path(path_str).unwrap();
 
         // Document creation should be fast with memory mapping
-        assert!(creation_time.as_millis() < 1000, "Creation took {}ms", creation_time.as_millis());
+        assert!(
+            creation_time.as_millis() < 1000,
+            "Creation took {}ms",
+            creation_time.as_millis()
+        );
 
         // Random access should be fast
         let start = std::time::Instant::now();
@@ -325,7 +329,11 @@ mod tests {
         }
         let access_time = start.elapsed();
 
-        assert!(access_time.as_millis() < 100, "Random access took {}ms", access_time.as_millis());
+        assert!(
+            access_time.as_millis() < 100,
+            "Random access took {}ms",
+            access_time.as_millis()
+        );
     }
 
     #[test]
@@ -392,7 +400,11 @@ mod tests {
         };
         let content = doc.get_viewport_content(&viewport);
 
-        assert!(content.len() < 100 * 1024, "Viewport content size: {} bytes", content.len());
+        assert!(
+            content.len() < 100 * 1024,
+            "Viewport content size: {} bytes",
+            content.len()
+        );
 
         // Memory usage should not scale with file size
         let file_size_mb = doc.file_size() as f64 / (1024.0 * 1024.0);
@@ -415,7 +427,11 @@ mod tests {
         for line_num in [0, 100, 500, 999] {
             let offset = doc.line_to_offset(line_num);
             let computed_line = doc.offset_to_line(offset);
-            assert_eq!(computed_line, line_num, "Line index mismatch for line {}", line_num);
+            assert_eq!(
+                computed_line, line_num,
+                "Line index mismatch for line {}",
+                line_num
+            );
         }
 
         // Test that line ranges are correct

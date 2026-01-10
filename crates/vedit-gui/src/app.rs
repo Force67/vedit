@@ -2,29 +2,28 @@ use crate::commands::{
     self, DebugSessionBreakpoint, DebugSessionRequest, SaveDocumentRequest, SaveKeymapRequest,
     WorkspaceData,
 };
-use std::path::PathBuf;
 use crate::debugger::{DebugLaunchPlan, DebuggerType, DebuggerUiEvent};
 use crate::keyboard;
 use crate::message::Message;
+use crate::notifications::{NotificationKind, NotificationRequest};
 use crate::session::{SessionManager, SessionState};
 use crate::state::EditorState;
 use crate::views;
-use crate::notifications::{NotificationKind, NotificationRequest};
 use iced::Subscription;
-use iced::{event, mouse, window, Element, Theme, time, Task};
+use iced::{Element, Task, Theme, event, mouse, time, window};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use vedit_core::{Document, Key, QUICK_COMMAND_MENU_ACTION, SAVE_ACTION};
 use vedit_application::QuickCommandId;
+use vedit_core::{Document, Key, QUICK_COMMAND_MENU_ACTION, SAVE_ACTION};
 
 // Global refresh rate configuration
-pub static REFRESH_RATE_CONFIG: std::sync::LazyLock<RefreshRateConfig> = std::sync::LazyLock::new(|| {
-    RefreshRateConfig::new()
-});
+pub static REFRESH_RATE_CONFIG: std::sync::LazyLock<RefreshRateConfig> =
+    std::sync::LazyLock::new(|| RefreshRateConfig::new());
 
 #[derive(Debug, Clone)]
 pub struct RefreshRateConfig {
-    pub highest_refresh_rate: Arc<Mutex<f32>>, // in Hz
+    pub highest_refresh_rate: Arc<Mutex<f32>>,    // in Hz
     pub current_monitor_refresh: Arc<Mutex<f32>>, // in Hz
 }
 
@@ -55,13 +54,12 @@ impl RefreshRateConfig {
 
 pub fn run() -> iced::Result {
     // Load session state first to get window settings
-    let session_manager = SessionManager::new()
-        .unwrap_or_else(|e| {
-            eprintln!("Failed to initialize session manager: {}", e);
-            let temp_dir = std::env::temp_dir().join("vedit");
-            std::fs::create_dir_all(&temp_dir).ok();
-            SessionManager::with_config_dir(temp_dir)
-        });
+    let session_manager = SessionManager::new().unwrap_or_else(|e| {
+        eprintln!("Failed to initialize session manager: {}", e);
+        let temp_dir = std::env::temp_dir().join("vedit");
+        std::fs::create_dir_all(&temp_dir).ok();
+        SessionManager::with_config_dir(temp_dir)
+    });
 
     let session_state = match session_manager.load_session_state() {
         Ok(state) => {
@@ -69,22 +67,32 @@ pub fn run() -> iced::Result {
             state
         }
         Err(e) => {
-            println!("DEBUG: Failed to load session for window config: {}, using defaults", e);
+            println!(
+                "DEBUG: Failed to load session for window config: {}, using defaults",
+                e
+            );
             SessionState::default()
         }
     };
 
     let window_state = &session_state.window;
-    println!("DEBUG: Restoring window to {}x{} at ({}, {}), maximized: {}",
-        window_state.width, window_state.height,
-        window_state.x, window_state.y,
-        window_state.maximized);
+    println!(
+        "DEBUG: Restoring window to {}x{} at ({}, {}), maximized: {}",
+        window_state.width,
+        window_state.height,
+        window_state.x,
+        window_state.y,
+        window_state.maximized
+    );
 
     iced::application(EditorApp::new, EditorApp::update, EditorApp::view)
         .title("vedit")
         .subscription(EditorApp::subscription)
         .theme(EditorApp::theme)
-        .window_size(iced::Size::new(window_state.width as f32, window_state.height as f32))
+        .window_size(iced::Size::new(
+            window_state.width as f32,
+            window_state.height as f32,
+        ))
         .centered()
         .resizable(true)
         .decorations(false)
@@ -100,17 +108,19 @@ struct EditorApp {
 
 impl Default for EditorApp {
     fn default() -> Self {
-        let session_manager = SessionManager::new()
-            .unwrap_or_else(|e| {
-                eprintln!("Failed to initialize session manager: {}", e);
-                // Create a fallback session manager that uses temp directory
-                let temp_dir = std::env::temp_dir().join("vedit");
-                std::fs::create_dir_all(&temp_dir).ok();
-                println!("DEBUG: Using fallback session dir: {}", temp_dir.display());
-                SessionManager::with_config_dir(temp_dir)
-            });
+        let session_manager = SessionManager::new().unwrap_or_else(|e| {
+            eprintln!("Failed to initialize session manager: {}", e);
+            // Create a fallback session manager that uses temp directory
+            let temp_dir = std::env::temp_dir().join("vedit");
+            std::fs::create_dir_all(&temp_dir).ok();
+            println!("DEBUG: Using fallback session dir: {}", temp_dir.display());
+            SessionManager::with_config_dir(temp_dir)
+        });
 
-        println!("DEBUG: Session manager initialized with config dir: {}", session_manager.config_dir.display());
+        println!(
+            "DEBUG: Session manager initialized with config dir: {}",
+            session_manager.config_dir.display()
+        );
 
         Self {
             state: EditorState::default(),
@@ -152,8 +162,7 @@ impl EditorApp {
         }
 
         // Method 3: Check for known high refresh rate indicators
-        if std::env::var("GDK_REFRESH_RATE").is_ok() ||
-           std::env::var("QT_SCALE_FACTOR").is_ok() {
+        if std::env::var("GDK_REFRESH_RATE").is_ok() || std::env::var("QT_SCALE_FACTOR").is_ok() {
             // Likely a modern system that supports high refresh rates
             highest_refresh = highest_refresh.max(144.0);
         }
@@ -165,17 +174,17 @@ impl EditorApp {
         // Try to parse refresh rate from xrandr output
         use std::process::Command;
 
-        let output = Command::new("xrandr")
-            .arg("--query")
-            .output()?;
+        let output = Command::new("xrandr").arg("--query").output()?;
 
         let output_str = String::from_utf8_lossy(&output.stdout);
 
         for line in output_str.lines() {
             if line.contains("connected") && line.contains(display) {
                 // Look for refresh rate pattern like "144.00Hz" or "144Hz"
-                if let Some(rate_str) = line.split_whitespace()
-                    .find(|s| s.ends_with("Hz") || s.ends_with("hz")) {
+                if let Some(rate_str) = line
+                    .split_whitespace()
+                    .find(|s| s.ends_with("Hz") || s.ends_with("hz"))
+                {
                     let rate_num = rate_str.trim_end_matches("Hz").trim_end_matches("hz");
                     if let Ok(rate) = rate_num.parse::<f32>() {
                         return Ok(rate);
@@ -186,10 +195,18 @@ impl EditorApp {
 
         // Fallback: try to get current mode
         for line in output_str.lines() {
-            if line.contains("*") && (line.contains("144") || line.contains("165") || line.contains("240")) {
-                if let Some(rate_str) = line.split_whitespace()
-                    .find(|s| s.contains("Hz") || s.contains("hz")) {
-                    let rate_num_clean = rate_str.replace("Hz", "").replace("hz", "").trim().to_string();
+            if line.contains("*")
+                && (line.contains("144") || line.contains("165") || line.contains("240"))
+            {
+                if let Some(rate_str) = line
+                    .split_whitespace()
+                    .find(|s| s.contains("Hz") || s.contains("hz"))
+                {
+                    let rate_num_clean = rate_str
+                        .replace("Hz", "")
+                        .replace("hz", "")
+                        .trim()
+                        .to_string();
                     if let Ok(rate) = rate_num_clean.parse::<f32>() {
                         return Ok(rate);
                     }
@@ -212,7 +229,10 @@ impl EditorApp {
     fn update_timing_for_refresh_rate(&self, refresh_rate: f32) {
         // This will be used to dynamically update the application timing
         // The actual implementation will update the subscription timing
-        println!("Detected refresh rate: {:.0} Hz - Optimizing timing", refresh_rate);
+        println!(
+            "Detected refresh rate: {:.0} Hz - Optimizing timing",
+            refresh_rate
+        );
     }
 }
 
@@ -225,7 +245,10 @@ impl EditorApp {
         let config_dir = session_manager.config_dir.clone();
         let load_command = Task::perform(
             async move {
-                println!("DEBUG: Attempting to load session from: {}", config_dir.display());
+                println!(
+                    "DEBUG: Attempting to load session from: {}",
+                    config_dir.display()
+                );
                 let result = session_manager.load_session_state();
                 match &result {
                     Ok(_) => println!("DEBUG: Session loaded successfully"),
@@ -256,7 +279,10 @@ impl EditorApp {
             }
             Message::FileLoaded(result) => match result {
                 Ok(Some(document)) => {
-                    let file_path = document.path.clone().unwrap_or_else(|| "unnamed".to_string());
+                    let file_path = document
+                        .path
+                        .clone()
+                        .unwrap_or_else(|| "unnamed".to_string());
                     println!("DEBUG: File loaded successfully: {}", file_path);
                     self.state.editor_mut().open_document(document);
                     self.state.clear_error();
@@ -274,7 +300,10 @@ impl EditorApp {
                                 let result = session_manager.save_session_state(&session_state);
                                 match &result {
                                     Ok(()) => println!("DEBUG: Session saved after file open"),
-                                    Err(e) => println!("DEBUG: Failed to save session after file open: {}", e),
+                                    Err(e) => println!(
+                                        "DEBUG: Failed to save session after file open: {}",
+                                        e
+                                    ),
                                 }
                                 result.map_err(|e| format!("Failed to save session: {}", e))
                             },
@@ -293,10 +322,10 @@ impl EditorApp {
                     }
 
                     if let Some((root, config)) = self.state.record_recent_workspace_file() {
-                return self.wrap_command(Task::perform(
-                    commands::save_workspace_config(root, config),
-                    Message::WorkspaceConfigSaved,
-                ));
+                        return self.wrap_command(Task::perform(
+                            commands::save_workspace_config(root, config),
+                            Message::WorkspaceConfigSaved,
+                        ));
                     }
                 }
                 Ok(None) => {
@@ -348,7 +377,10 @@ impl EditorApp {
                     // Trigger file restoration if we have pending files
                     let pending_files = self.state.take_pending_files_to_restore();
                     if !pending_files.is_empty() {
-                        println!("DEBUG: Triggering restoration of {} pending files", pending_files.len());
+                        println!(
+                            "DEBUG: Triggering restoration of {} pending files",
+                            pending_files.len()
+                        );
                         return self.wrap_command(Task::perform(
                             async move { pending_files },
                             Message::FilesRestoreRequested,
@@ -374,7 +406,8 @@ impl EditorApp {
                     return self.wrap_command(Task::perform(
                         async move {
                             // Save both workspace state and complete session
-                            let workspace_result = session_manager.save_workspace_state(&workspace_state);
+                            let workspace_result =
+                                session_manager.save_workspace_state(&workspace_state);
                             let session_result = session_manager.save_session_state(&session_state);
 
                             match &workspace_result {
@@ -416,7 +449,10 @@ impl EditorApp {
                     // Trigger file restoration if we have pending files
                     let pending_files = self.state.take_pending_files_to_restore();
                     if !pending_files.is_empty() {
-                        println!("DEBUG: Triggering restoration of {} pending files", pending_files.len());
+                        println!(
+                            "DEBUG: Triggering restoration of {} pending files",
+                            pending_files.len()
+                        );
                         return self.wrap_command(Task::perform(
                             async move { pending_files },
                             Message::FilesRestoreRequested,
@@ -442,7 +478,8 @@ impl EditorApp {
                     return self.wrap_command(Task::perform(
                         async move {
                             // Save both workspace state and complete session
-                            let workspace_result = session_manager.save_workspace_state(&workspace_state);
+                            let workspace_result =
+                                session_manager.save_workspace_state(&workspace_state);
                             let session_result = session_manager.save_session_state(&session_state);
 
                             match &workspace_result {
@@ -497,9 +534,7 @@ impl EditorApp {
                 Ok(Some(path)) => {
                     self.state.handle_document_saved(Some(path));
                     self.state.clear_error();
-                    if let Some((root, metadata)) =
-                        self.state.take_workspace_metadata_payload()
-                    {
+                    if let Some((root, metadata)) = self.state.take_workspace_metadata_payload() {
                         return self.wrap_command(Task::perform(
                             commands::save_workspace_metadata(root, metadata),
                             Message::WorkspaceMetadataSaved,
@@ -552,10 +587,10 @@ impl EditorApp {
             Message::StickyNoteDeleted(id) => {
                 self.state.remove_sticky_note(id);
                 if let Some((root, metadata)) = self.state.take_workspace_metadata_payload() {
-                        return self.wrap_command(Task::perform(
-                            commands::save_workspace_metadata(root, metadata),
-                            Message::WorkspaceMetadataSaved,
-                        ));
+                    return self.wrap_command(Task::perform(
+                        commands::save_workspace_metadata(root, metadata),
+                        Message::WorkspaceMetadataSaved,
+                    ));
                 }
             }
             Message::SettingsOpened => {
@@ -580,20 +615,18 @@ impl EditorApp {
                     self.state.clear_error();
                 }
             }
-            Message::SettingsBindingsSaveRequested => {
-                match self.state.keymap_save_payload() {
-                    Ok((path, contents)) => {
-                        let request = SaveKeymapRequest { path, contents };
-                return self.wrap_command(Task::perform(
-                    commands::save_keymap(request),
-                    Message::SettingsBindingsSaved,
-                ));
-                    }
-                    Err(err) => {
-                        self.state.set_error(Some(err));
-                    }
+            Message::SettingsBindingsSaveRequested => match self.state.keymap_save_payload() {
+                Ok((path, contents)) => {
+                    let request = SaveKeymapRequest { path, contents };
+                    return self.wrap_command(Task::perform(
+                        commands::save_keymap(request),
+                        Message::SettingsBindingsSaved,
+                    ));
                 }
-            }
+                Err(err) => {
+                    self.state.set_error(Some(err));
+                }
+            },
             Message::SettingsBindingsSaved(result) => match result {
                 Ok(path) => {
                     self.state.mark_keymap_saved(path);
@@ -647,7 +680,10 @@ impl EditorApp {
                             self.state.clear_error();
                             self.state.close_debugger_menu();
                             let save_payload = self.state.begin_debug_launch(&plan.target);
-                            let request = session_request_from_plan(plan, self.state.debugger().debugger_type());
+                            let request = session_request_from_plan(
+                                plan,
+                                self.state.debugger().debugger_type(),
+                            );
                             let mut commands_list = vec![Task::perform(
                                 commands::start_debug_session(request),
                                 Message::DebuggerSessionStarted,
@@ -660,7 +696,8 @@ impl EditorApp {
                             }
                             return self.wrap_command(Task::batch(commands_list));
                         } else {
-                            self.state.set_error(Some("No debug targets selected".to_string()));
+                            self.state
+                                .set_error(Some("No debug targets selected".to_string()));
                         }
                     }
                     Err(err) => {
@@ -699,14 +736,10 @@ impl EditorApp {
                 self.state.set_breakpoint_condition(id, value);
             }
             Message::DebuggerBreakpointDraftFileChanged(value) => {
-                self.state
-                    .debugger_mut()
-                    .set_breakpoint_draft_file(value);
+                self.state.debugger_mut().set_breakpoint_draft_file(value);
             }
             Message::DebuggerBreakpointDraftLineChanged(value) => {
-                self.state
-                    .debugger_mut()
-                    .set_breakpoint_draft_line(value);
+                self.state.debugger_mut().set_breakpoint_draft_line(value);
             }
             Message::DebuggerBreakpointDraftConditionChanged(value) => {
                 self.state
@@ -720,9 +753,7 @@ impl EditorApp {
                 }
             }
             Message::DebuggerManualTargetNameChanged(value) => {
-                self.state
-                    .debugger_mut()
-                    .set_manual_target_name(value);
+                self.state.debugger_mut().set_manual_target_name(value);
             }
             Message::DebuggerManualTargetExecutableChanged(value) => {
                 self.state
@@ -735,16 +766,12 @@ impl EditorApp {
                     .set_manual_target_working_directory(value);
             }
             Message::DebuggerManualTargetArgumentsChanged(value) => {
-                self.state
-                    .debugger_mut()
-                    .set_manual_target_arguments(value);
+                self.state.debugger_mut().set_manual_target_arguments(value);
             }
-            Message::DebuggerManualTargetSaved => {
-                match self.state.commit_manual_debug_target() {
-                    Ok(()) => self.state.clear_error(),
-                    Err(err) => self.state.set_error(Some(err)),
-                }
-            }
+            Message::DebuggerManualTargetSaved => match self.state.commit_manual_debug_target() {
+                Ok(()) => self.state.clear_error(),
+                Err(err) => self.state.set_error(Some(err)),
+            },
             Message::DebuggerLaunchScriptChanged(value) => {
                 self.state.debugger_mut().set_launch_script(value);
             }
@@ -762,8 +789,9 @@ impl EditorApp {
 
                 if let Some(core_event) = keyboard::key_event_from_iced(&key_event) {
                     // Handle Ctrl+F for search (high priority)
-                    if core_event.key == Key::Character('F') &&
-                       (core_event.ctrl || core_event.command) {
+                    if core_event.key == Key::Character('F')
+                        && (core_event.ctrl || core_event.command)
+                    {
                         self.state.search_dialog_mut().toggle();
                         return self.wrap_command(Task::none());
                     }
@@ -786,7 +814,10 @@ impl EditorApp {
                         }
                     }
 
-                    if self.state.matches_action(QUICK_COMMAND_MENU_ACTION, &core_event) {
+                    if self
+                        .state
+                        .matches_action(QUICK_COMMAND_MENU_ACTION, &core_event)
+                    {
                         if self.state.command_palette().is_open() {
                             self.state.close_command_palette();
                         } else {
@@ -837,32 +868,47 @@ impl EditorApp {
                     }
 
                     // Handle file explorer keyboard shortcuts when workspace tab is active
-                    if self.state.selected_right_rail_tab() == crate::message::RightRailTab::Workspace {
+                    if self.state.selected_right_rail_tab()
+                        == crate::message::RightRailTab::Workspace
+                    {
                         if let Some(explorer) = self.state.file_explorer_mut() {
                             match core_event.key {
                                 Key::ArrowDown => {
-                                    let _ = explorer.update(crate::widgets::file_explorer::Message::FocusNext);
+                                    let _ = explorer
+                                        .update(crate::widgets::file_explorer::Message::FocusNext);
                                     return self.wrap_command(Task::none());
                                 }
                                 Key::ArrowUp => {
-                                    let _ = explorer.update(crate::widgets::file_explorer::Message::FocusPrev);
+                                    let _ = explorer
+                                        .update(crate::widgets::file_explorer::Message::FocusPrev);
                                     return self.wrap_command(Task::none());
                                 }
                                 Key::Enter => {
                                     if let Some(cursor) = explorer.cursor() {
-                                        let _ = explorer.update(crate::widgets::file_explorer::Message::Open(cursor, crate::widgets::file_explorer::OpenKind::InEditor));
+                                        let _ = explorer.update(
+                                            crate::widgets::file_explorer::Message::Open(
+                                                cursor,
+                                                crate::widgets::file_explorer::OpenKind::InEditor,
+                                            ),
+                                        );
                                     }
                                     return self.wrap_command(Task::none());
                                 }
                                 Key::Function(2) => {
                                     if let Some(cursor) = explorer.cursor() {
-                                        let _ = explorer.update(crate::widgets::file_explorer::Message::StartRename(cursor));
+                                        let _ = explorer.update(
+                                            crate::widgets::file_explorer::Message::StartRename(
+                                                cursor,
+                                            ),
+                                        );
                                     }
                                     return self.wrap_command(Task::none());
                                 }
                                 Key::Delete => {
                                     if let Some(cursor) = explorer.cursor() {
-                                        let _ = explorer.update(crate::widgets::file_explorer::Message::Delete(cursor));
+                                        let _ = explorer.update(
+                                            crate::widgets::file_explorer::Message::Delete(cursor),
+                                        );
                                     }
                                     return self.wrap_command(Task::none());
                                 }
@@ -978,14 +1024,38 @@ impl EditorApp {
                 if right || bottom {
                     self.state.resize_start_pos = Some(pos);
                     self.state.resize_start_size = Some(size);
-                    self.state.resize_direction = Some(if right && bottom { crate::state::ResizeDirection::Both } else if right { crate::state::ResizeDirection::Right } else { crate::state::ResizeDirection::Bottom });
+                    self.state.resize_direction = Some(if right && bottom {
+                        crate::state::ResizeDirection::Both
+                    } else if right {
+                        crate::state::ResizeDirection::Right
+                    } else {
+                        crate::state::ResizeDirection::Bottom
+                    });
                 }
             }
             Message::WindowResizeMove(pos) => {
-                if let (Some(start_pos), Some(start_size), Some(dir)) = (self.state.resize_start_pos, self.state.resize_start_size, self.state.resize_direction) {
+                if let (Some(start_pos), Some(start_size), Some(dir)) = (
+                    self.state.resize_start_pos,
+                    self.state.resize_start_size,
+                    self.state.resize_direction,
+                ) {
                     let delta = pos - start_pos;
-                    let new_width = if matches!(dir, crate::state::ResizeDirection::Right | crate::state::ResizeDirection::Both) { (start_size.width + delta.x).max(200.0) } else { start_size.width };
-                    let new_height = if matches!(dir, crate::state::ResizeDirection::Bottom | crate::state::ResizeDirection::Both) { (start_size.height + delta.y).max(100.0) } else { start_size.height };
+                    let new_width = if matches!(
+                        dir,
+                        crate::state::ResizeDirection::Right | crate::state::ResizeDirection::Both
+                    ) {
+                        (start_size.width + delta.x).max(200.0)
+                    } else {
+                        start_size.width
+                    };
+                    let new_height = if matches!(
+                        dir,
+                        crate::state::ResizeDirection::Bottom | crate::state::ResizeDirection::Both
+                    ) {
+                        (start_size.height + delta.y).max(100.0)
+                    } else {
+                        start_size.height
+                    };
                     let new_size = iced::Size::new(new_width, new_height);
                     self.state.current_window_size = new_size;
                     return window::resize(self.main_window_id, new_size);
@@ -1006,8 +1076,7 @@ impl EditorApp {
 
                 if let Some(explorer) = self.state.file_explorer_mut() {
                     let command = explorer.update(msg);
-                    return self
-                        .wrap_command(command.map(Message::FileExplorer));
+                    return self.wrap_command(command.map(Message::FileExplorer));
                 }
             }
             Message::RightRailTabSelected(tab) => {
@@ -1068,7 +1137,9 @@ impl EditorApp {
                 self.state.search_previous();
             }
             Message::SearchCaseSensitive(case_sensitive) => {
-                self.state.search_dialog_mut().set_case_sensitive(case_sensitive);
+                self.state
+                    .search_dialog_mut()
+                    .set_case_sensitive(case_sensitive);
                 self.state.execute_search();
             }
             Message::SearchWholeWord(whole_word) => {
@@ -1133,13 +1204,20 @@ impl EditorApp {
                 }
 
                 // Log window state in session
-                println!("DEBUG: Window state in session: {}x{} at ({}, {}), maximized: {}",
-                    session_state.window.width, session_state.window.height,
-                    session_state.window.x, session_state.window.y,
-                    session_state.window.maximized);
+                println!(
+                    "DEBUG: Window state in session: {}x{} at ({}, {}), maximized: {}",
+                    session_state.window.width,
+                    session_state.window.height,
+                    session_state.window.x,
+                    session_state.window.y,
+                    session_state.window.maximized
+                );
 
                 // Log open files in session
-                println!("DEBUG: Open files in session: {}", session_state.workspace.open_files.len());
+                println!(
+                    "DEBUG: Open files in session: {}",
+                    session_state.workspace.open_files.len()
+                );
                 for (i, file_path) in session_state.workspace.open_files.iter().enumerate() {
                     println!("DEBUG:   File {}: {}", i, file_path.display());
                 }
@@ -1150,11 +1228,17 @@ impl EditorApp {
                 }
 
                 // Restore workspace if we have a saved workspace root or last folder
-                let workspace_to_restore = session_state.workspace.workspace_root.clone()
+                let workspace_to_restore = session_state
+                    .workspace
+                    .workspace_root
+                    .clone()
                     .or(session_state.workspace.last_folder.clone());
 
                 if let Some(workspace_path) = workspace_to_restore {
-                    println!("DEBUG: Attempting to restore workspace: {}", workspace_path.display());
+                    println!(
+                        "DEBUG: Attempting to restore workspace: {}",
+                        workspace_path.display()
+                    );
                     if workspace_path.exists() {
                         println!("DEBUG: Workspace exists, triggering restore");
                         // Attempt to restore the workspace
@@ -1163,7 +1247,10 @@ impl EditorApp {
                             |(path, state)| Message::WorkspaceRestoreFromPath(path, state),
                         ));
                     } else {
-                        println!("DEBUG: Workspace path does not exist: {}", workspace_path.display());
+                        println!(
+                            "DEBUG: Workspace path does not exist: {}",
+                            workspace_path.display()
+                        );
                     }
                 } else {
                     println!("DEBUG: No workspace to restore");
@@ -1188,7 +1275,8 @@ impl EditorApp {
                 let session_manager = self.session_manager.clone();
                 return self.wrap_command(Task::perform(
                     async move {
-                        session_manager.save_window_state(&window_state)
+                        session_manager
+                            .save_window_state(&window_state)
                             .map_err(|e| format!("Failed to save window state: {}", e))
                     },
                     Message::SessionSave,
@@ -1200,7 +1288,8 @@ impl EditorApp {
                 let session_manager = self.session_manager.clone();
                 return self.wrap_command(Task::perform(
                     async move {
-                        session_manager.save_workspace_state(&workspace_state)
+                        session_manager
+                            .save_workspace_state(&workspace_state)
                             .map_err(|e| format!("Failed to save workspace state: {}", e))
                     },
                     Message::SessionSave,
@@ -1209,15 +1298,22 @@ impl EditorApp {
 
             Message::WorkspaceRestoreFromPath(path, session_state) => {
                 // Attempt to restore workspace from saved path
-                println!("DEBUG: Restoring workspace and files from path: {}", path.display());
+                println!(
+                    "DEBUG: Restoring workspace and files from path: {}",
+                    path.display()
+                );
 
                 // Store files to restore in state
-                let files_to_restore: Vec<PathBuf> = session_state.workspace.open_files.iter()
+                let files_to_restore: Vec<PathBuf> = session_state
+                    .workspace
+                    .open_files
+                    .iter()
                     .filter(|p| p.exists())
                     .cloned()
                     .collect();
 
-                self.state.set_pending_files_to_restore(files_to_restore.clone());
+                self.state
+                    .set_pending_files_to_restore(files_to_restore.clone());
 
                 return self.wrap_command(Task::perform(
                     commands::load_workspace_from_path_with_files(path, session_state),
@@ -1235,9 +1331,15 @@ impl EditorApp {
                 let first_file = file_paths[0].clone();
                 let additional_files: Vec<PathBuf> = file_paths.into_iter().skip(1).collect();
 
-                println!("DEBUG: Loading first restored file: {}", first_file.display());
+                println!(
+                    "DEBUG: Loading first restored file: {}",
+                    first_file.display()
+                );
                 if !additional_files.is_empty() {
-                    println!("DEBUG: Storing {} additional files for later loading", additional_files.len());
+                    println!(
+                        "DEBUG: Storing {} additional files for later loading",
+                        additional_files.len()
+                    );
                     self.state.set_pending_files_to_restore(additional_files);
                 }
 
@@ -1258,7 +1360,8 @@ impl EditorApp {
                 let remaining_files: Vec<PathBuf> = file_paths.into_iter().skip(1).collect();
 
                 // Store remaining files for later
-                self.state.set_pending_files_to_restore(remaining_files.clone());
+                self.state
+                    .set_pending_files_to_restore(remaining_files.clone());
 
                 println!("DEBUG: Loading additional file: {}", first_file.display());
                 return self.wrap_command(Task::perform(
@@ -1298,7 +1401,13 @@ impl EditorApp {
                 let session_state = self.state.get_session_state().cloned();
                 if let Some(session_state) = session_state {
                     let current_state = session_state.window.clone();
-                    self.state.update_window_state(x, y, current_state.width, current_state.height, current_state.maximized);
+                    self.state.update_window_state(
+                        x,
+                        y,
+                        current_state.width,
+                        current_state.height,
+                        current_state.maximized,
+                    );
 
                     let session_manager = self.session_manager.clone();
                     return self.wrap_command(Task::perform(
@@ -1320,8 +1429,7 @@ impl EditorApp {
                     println!("DEBUG: Window focused");
                 }
                 // Handle other window state changes as needed
-            }
-            // TODO: Handle remaining Wine messages when complex widget is re-enabled
+            } // TODO: Handle remaining Wine messages when complex widget is re-enabled
         }
 
         self.wrap_command(Task::none())
@@ -1336,50 +1444,49 @@ impl EditorApp {
     }
 
     fn subscription(&self) -> Subscription<Message> {
-        let input = event::listen_with(|event, _status, _id| {
-            unsafe {
-                static mut CURSOR_POS: iced::Point = iced::Point::ORIGIN;
-                match event {
-                    event::Event::Keyboard(key_event) => Some(Message::Keyboard(key_event)),
-                    event::Event::Mouse(mouse::Event::CursorMoved { position }) => {
-                        CURSOR_POS = position;
-                        Some(Message::WindowResizeMove(position))
-                    }
-                    event::Event::Mouse(mouse::Event::ButtonPressed(button)) => {
-                        if button == mouse::Button::Left {
-                            Some(Message::WindowResizeStart(CURSOR_POS))
-                        } else {
-                            None
-                        }
-                    }
-                    event::Event::Mouse(mouse::Event::ButtonReleased(button)) => {
-                        if button == mouse::Button::Left {
-                            Some(Message::WindowResizeEnd)
-                        } else {
-                            None
-                        }
-                    }
-                    event::Event::Mouse(mouse::Event::WheelScrolled { delta }) => {
-                        Some(Message::MouseWheelScrolled(delta))
-                    }
-                    event::Event::Window(window::Event::Resized(size)) => {
-                        Some(Message::WindowChanged(size.width as u32, size.height as u32))
-                    }
-                    event::Event::Window(window::Event::Moved(pos)) => {
-                        Some(Message::WindowMoved(pos.x as i32, pos.y as i32))
-                    }
-                    event::Event::Window(event) => {
-                        Some(Message::WindowEvent(event))
-                    }
-                    _ => None,
+        let input = event::listen_with(|event, _status, _id| unsafe {
+            static mut CURSOR_POS: iced::Point = iced::Point::ORIGIN;
+            match event {
+                event::Event::Keyboard(key_event) => Some(Message::Keyboard(key_event)),
+                event::Event::Mouse(mouse::Event::CursorMoved { position }) => {
+                    CURSOR_POS = position;
+                    Some(Message::WindowResizeMove(position))
                 }
+                event::Event::Mouse(mouse::Event::ButtonPressed(button)) => {
+                    if button == mouse::Button::Left {
+                        Some(Message::WindowResizeStart(CURSOR_POS))
+                    } else {
+                        None
+                    }
+                }
+                event::Event::Mouse(mouse::Event::ButtonReleased(button)) => {
+                    if button == mouse::Button::Left {
+                        Some(Message::WindowResizeEnd)
+                    } else {
+                        None
+                    }
+                }
+                event::Event::Mouse(mouse::Event::WheelScrolled { delta }) => {
+                    Some(Message::MouseWheelScrolled(delta))
+                }
+                event::Event::Window(window::Event::Resized(size)) => Some(Message::WindowChanged(
+                    size.width as u32,
+                    size.height as u32,
+                )),
+                event::Event::Window(window::Event::Moved(pos)) => {
+                    Some(Message::WindowMoved(pos.x as i32, pos.y as i32))
+                }
+                event::Event::Window(event) => Some(Message::WindowEvent(event)),
+                _ => None,
             }
         });
 
         let tick = time::every(Duration::from_millis(200)).map(|_| Message::DebuggerTick);
         let fps_tick = time::every(Duration::from_millis(8)).map(|_| Message::FpsUpdate); // ~120 FPS for 144Hz monitors
-        let debounce_tick = time::every(Duration::from_millis(50)).map(|_| Message::SearchDebounceTick); // Check debounce every 50ms
-        let highlight_tick = time::every(Duration::from_millis(100)).map(|_| Message::SearchHighlightTick); // Check highlight expiry every 100ms
+        let debounce_tick =
+            time::every(Duration::from_millis(50)).map(|_| Message::SearchDebounceTick); // Check debounce every 50ms
+        let highlight_tick =
+            time::every(Duration::from_millis(100)).map(|_| Message::SearchHighlightTick); // Check highlight expiry every 100ms
 
         Subscription::batch(vec![input, tick, fps_tick, debounce_tick, highlight_tick])
     }
@@ -1389,14 +1496,13 @@ impl EditorApp {
     }
 }
 
-fn session_request_from_plan(plan: &DebugLaunchPlan, debugger_type: DebuggerType) -> DebugSessionRequest {
+fn session_request_from_plan(
+    plan: &DebugLaunchPlan,
+    debugger_type: DebuggerType,
+) -> DebugSessionRequest {
     DebugSessionRequest {
         executable: plan.target.executable.to_string_lossy().to_string(),
-        working_directory: plan
-            .target
-            .working_directory
-            .to_string_lossy()
-            .to_string(),
+        working_directory: plan.target.working_directory.to_string_lossy().to_string(),
         arguments: plan.target.args.clone(),
         breakpoints: plan
             .breakpoints

@@ -1,7 +1,7 @@
-use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io;
+use std::path::PathBuf;
 
 /// Application configuration directory following XDG Base Directory Specification
 pub fn get_app_config_dir() -> Option<PathBuf> {
@@ -10,8 +10,9 @@ pub fn get_app_config_dir() -> Option<PathBuf> {
 
 /// Ensure the config directory exists
 pub fn ensure_config_dir() -> io::Result<PathBuf> {
-    let config_dir = get_app_config_dir()
-        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "Could not find config directory"))?;
+    let config_dir = get_app_config_dir().ok_or_else(|| {
+        io::Error::new(io::ErrorKind::NotFound, "Could not find config directory")
+    })?;
 
     if !config_dir.exists() {
         fs::create_dir_all(&config_dir)?;
@@ -128,8 +129,7 @@ impl SessionManager {
         }
 
         let content = fs::read_to_string(path)?;
-        toml::from_str(&content)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
+        toml::from_str(&content).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
     }
 
     /// Save workspace state
@@ -147,8 +147,7 @@ impl SessionManager {
         }
 
         let content = fs::read_to_string(path)?;
-        toml::from_str(&content)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
+        toml::from_str(&content).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
     }
 
     /// Save complete session state
@@ -166,8 +165,7 @@ impl SessionManager {
         }
 
         let content = fs::read_to_string(path)?;
-        toml::from_str(&content)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
+        toml::from_str(&content).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
     }
 
     /// Clear all session data

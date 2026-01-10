@@ -1,4 +1,4 @@
-use crossbeam_channel::{unbounded, Receiver, Sender};
+use crossbeam_channel::{Receiver, Sender, unbounded};
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{ChildStdin, Command, Stdio};
@@ -7,8 +7,7 @@ use std::thread;
 use std::time::Duration;
 use thiserror::Error;
 
-static SESSION_COUNTER: std::sync::atomic::AtomicU64 =
-    std::sync::atomic::AtomicU64::new(1);
+static SESSION_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
 #[derive(Debug, Error)]
 pub enum DebuggerError {
@@ -195,26 +194,19 @@ fn initialise_session(
     config: &LaunchConfig,
 ) {
     let mut failures = Vec::new();
-    if let Err(err) = send_line(stdin, &format!(
-        "file {}",
-        quote_path(&config.executable)
-    )) {
+    if let Err(err) = send_line(stdin, &format!("file {}", quote_path(&config.executable))) {
         failures.push(err.to_string());
     }
 
-    if let Err(err) = send_line(stdin, &format!(
-        "cd {}",
-        quote_path(&config.working_directory)
-    )) {
+    if let Err(err) = send_line(
+        stdin,
+        &format!("cd {}", quote_path(&config.working_directory)),
+    ) {
         failures.push(err.to_string());
     }
 
     for breakpoint in &config.breakpoints {
-        let mut command = format!(
-            "break {}:{}",
-            quote_path(&breakpoint.file),
-            breakpoint.line
-        );
+        let mut command = format!("break {}:{}", quote_path(&breakpoint.file), breakpoint.line);
         if let Some(condition) = &breakpoint.condition {
             if !condition.trim().is_empty() {
                 command.push_str(" if ");
@@ -273,7 +265,10 @@ fn send_line(stdin: &Arc<Mutex<ChildStdin>>, line: &str) -> Result<(), std::io::
 
 fn quote_path(path: impl AsRef<Path>) -> String {
     let text = path.as_ref().to_string_lossy();
-    if text.chars().all(|c| c.is_alphanumeric() || ".-_/".contains(c)) {
+    if text
+        .chars()
+        .all(|c| c.is_alphanumeric() || ".-_/".contains(c))
+    {
         text.to_string()
     } else {
         format!("\"{}\"", text.replace('"', "\\\""))

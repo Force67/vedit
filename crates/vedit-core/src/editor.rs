@@ -1,10 +1,13 @@
-use vedit_document::Document;
-use vedit_config::StickyNote;
-use vedit_text::TextBuffer;
-use vedit_workspace::{self, FileNode, build_tree, build_tree_with_ignored, build_solution_tree, find_node_mut, load_directory_children};
 use std::io;
 use std::sync::Arc;
+use vedit_config::StickyNote;
 use vedit_config::{WorkspaceConfig, WorkspaceMetadata};
+use vedit_document::Document;
+use vedit_text::TextBuffer;
+use vedit_workspace::{
+    self, FileNode, build_solution_tree, build_tree, build_tree_with_ignored, find_node_mut,
+    load_directory_children,
+};
 
 /// High-level editor session managing open documents and workspace state.
 #[derive(Debug)]
@@ -114,12 +117,7 @@ impl Editor {
         }
     }
 
-    pub fn add_sticky_note(
-        &mut self,
-        line: usize,
-        column: usize,
-        content: String,
-    ) -> Option<u64> {
+    pub fn add_sticky_note(&mut self, line: usize, column: usize, content: String) -> Option<u64> {
         let id = self.workspace_metadata.as_ref()?.next_sticky_id();
         let (path, records) = {
             let doc = self.active_document_mut()?;
@@ -307,10 +305,7 @@ impl Editor {
 
     pub fn workspace_snapshot(&self) -> Option<(u64, Arc<Vec<FileNode>>)> {
         if self.workspace_root.is_some() {
-            Some((
-                self.workspace_generation,
-                Arc::clone(&self.workspace_tree),
-            ))
+            Some((self.workspace_generation, Arc::clone(&self.workspace_tree)))
         } else {
             None
         }
@@ -381,14 +376,14 @@ impl Editor {
                 .ignored_directories()
                 .map(|entry| entry.to_string())
                 .collect();
-  build_tree_with_ignored(root, &ignored)
+            build_tree_with_ignored(root, &ignored)
         } else {
-  build_tree(root)
+            build_tree(root)
         }
     }
 
     pub fn build_solution_tree(path: impl AsRef<std::path::Path>) -> io::Result<Vec<FileNode>> {
-  build_solution_tree(path)
+        build_solution_tree(path)
             .map_err(|err| io::Error::new(io::ErrorKind::Other, err.to_string()))
     }
 
@@ -489,8 +484,7 @@ impl TextChange {
         let mut suffix = 0usize;
         let max_suffix = old_bytes.len().min(new_bytes.len()).saturating_sub(prefix);
         while suffix < max_suffix
-            && old_bytes[old_bytes.len() - 1 - suffix]
-                == new_bytes[new_bytes.len() - 1 - suffix]
+            && old_bytes[old_bytes.len() - 1 - suffix] == new_bytes[new_bytes.len() - 1 - suffix]
         {
             suffix += 1;
         }
@@ -552,7 +546,9 @@ impl TextChange {
     }
 
     fn deletion_range(&self) -> Option<(usize, usize)> {
-        self.delete.as_ref().map(|deletion| (deletion.start, deletion.len))
+        self.delete
+            .as_ref()
+            .map(|deletion| (deletion.start, deletion.len))
     }
 
     fn insertion_range(&self) -> Option<(usize, usize)> {
@@ -561,7 +557,6 @@ impl TextChange {
             .map(|insert| (insert.start, insert.text.len()))
     }
 }
-
 
 #[cfg(test)]
 mod tests {

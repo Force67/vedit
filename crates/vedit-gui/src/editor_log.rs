@@ -1,8 +1,9 @@
+use crate::console::{ConsoleLineKind, ConsoleState};
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
-use crate::console::{ConsoleLineKind, ConsoleState};
 
-static EDITOR_LOGGER: std::sync::OnceLock<std::sync::Arc<Mutex<Option<EditorLogger>>>> = std::sync::OnceLock::new();
+static EDITOR_LOGGER: std::sync::OnceLock<std::sync::Arc<Mutex<Option<EditorLogger>>>> =
+    std::sync::OnceLock::new();
 static mut CONSOLE_STATE: Option<*mut ConsoleState> = None;
 
 #[derive(Debug, Clone)]
@@ -70,7 +71,8 @@ impl EditorLogger {
         // Add to in-memory log
         self.log_entries.push(entry.clone());
         if self.log_entries.len() > self.max_entries {
-            self.log_entries.drain(0..self.log_entries.len() - self.max_entries);
+            self.log_entries
+                .drain(0..self.log_entries.len() - self.max_entries);
         }
 
         // Send to console if available
@@ -89,7 +91,13 @@ impl EditorLogger {
             .map(|dt| dt.format("%H:%M:%S").to_string())
             .unwrap_or_else(|| "??:??:??".to_string());
 
-        format!("[{} {}:{}] {}", time_str, entry.level.as_str(), entry.category, entry.message)
+        format!(
+            "[{} {}:{}] {}",
+            time_str,
+            entry.level.as_str(),
+            entry.category,
+            entry.message
+        )
     }
 
     pub fn get_recent_logs(&self, limit: Option<usize>) -> &[LogEntry] {

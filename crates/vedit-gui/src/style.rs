@@ -1,4 +1,4 @@
-use iced::widget::{button, container, scrollable, text_input, rule};
+use iced::widget::{button, container, rule, scrollable, text_input};
 use iced::{Background, Border, Color, Shadow, Theme, Vector};
 
 const fn rgb(r: u8, g: u8, b: u8) -> Color {
@@ -194,7 +194,7 @@ pub fn active_document_button() -> impl Fn(&Theme, button::Status) -> button::St
         text_color: TEXT,
         border: Border::default(),
         shadow: Default::default(),
-            snap: true,
+        snap: true,
     }
 }
 
@@ -294,8 +294,7 @@ pub fn custom_scrollable() -> impl Fn(&Theme, scrollable::Status) -> scrollable:
     |_theme, status| {
         let scroller_color = match status {
             scrollable::Status::Active { .. } => MUTED,
-            scrollable::Status::Hovered { .. } |
-            scrollable::Status::Dragged { .. } => PRIMARY,
+            scrollable::Status::Hovered { .. } | scrollable::Status::Dragged { .. } => PRIMARY,
         };
 
         let rail = scrollable::Rail {

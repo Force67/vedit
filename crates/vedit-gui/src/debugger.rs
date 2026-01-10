@@ -6,11 +6,11 @@ use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use vedit_make::Makefile;
-use vedit_debugger_gdb::{DebuggerCommand as GdbCommand, DebuggerEvent as GdbEvent, GdbSession};
-use vedit_debugger::{DebuggerCommand as VeditCommand, DebuggerEvent as VeditEvent, VeditSession};
-use vedit_vs::{Solution, VcxProject};
 use vedit_config::{DebugTargetRecord, MAX_RECENT_DEBUG_TARGETS};
+use vedit_debugger::{DebuggerCommand as VeditCommand, DebuggerEvent as VeditEvent, VeditSession};
+use vedit_debugger_gdb::{DebuggerCommand as GdbCommand, DebuggerEvent as GdbEvent, GdbSession};
+use vedit_make::Makefile;
+use vedit_vs::{Solution, VcxProject};
 
 const IGNORED_DIRECTORIES: [&str; 4] = ["target", ".git", ".hg", ".svn"];
 const MAX_CONSOLE_ENTRIES: usize = 200;
@@ -362,10 +362,7 @@ impl DebuggerState {
         self.targets
             .iter()
             .filter(|target| {
-                target
-                    .name
-                    .to_ascii_lowercase()
-                    .contains(&filter)
+                target.name.to_ascii_lowercase().contains(&filter)
                     || target
                         .executable
                         .to_string_lossy()
@@ -376,8 +373,7 @@ impl DebuggerState {
     }
 
     pub fn selected_targets(&self) -> Vec<&DebugTarget> {
-        self
-            .selected_targets
+        self.selected_targets
             .iter()
             .filter_map(|id| self.targets.iter().find(|target| target.id == *id))
             .collect()
@@ -456,7 +452,8 @@ impl DebuggerState {
         } else {
             self.recent_target_history.insert(0, identity.clone());
             if self.recent_target_history.len() > MAX_RECENT_DEBUG_TARGETS {
-                self.recent_target_history.truncate(MAX_RECENT_DEBUG_TARGETS);
+                self.recent_target_history
+                    .truncate(MAX_RECENT_DEBUG_TARGETS);
             }
         }
 
@@ -537,7 +534,12 @@ impl DebuggerState {
         let mut vcx_projects = BTreeSet::new();
         let mut makefiles = BTreeSet::new();
         let mut warnings = Vec::new();
-        scan_workspace(&workspace_root, &mut vcx_projects, &mut makefiles, &mut warnings);
+        scan_workspace(
+            &workspace_root,
+            &mut vcx_projects,
+            &mut makefiles,
+            &mut warnings,
+        );
 
         for warning in warnings {
             self.push_console(DebuggerConsoleEntry::error(warning));
@@ -604,7 +606,10 @@ impl DebuggerState {
                         source: DebugTargetSource::Makefile {
                             path: makefile.path.clone(),
                         },
-                        notes: Some("Executable path guessed from Makefile. Update before launching.".to_string()),
+                        notes: Some(
+                            "Executable path guessed from Makefile. Update before launching."
+                                .to_string(),
+                        ),
                     };
                     self.targets.push(target);
                 }
@@ -626,11 +631,7 @@ impl DebuggerState {
     }
 
     pub fn commit_manual_target(&mut self) -> Result<(), String> {
-        let name = self
-            .manual_target
-            .name
-            .trim()
-            .to_string();
+        let name = self.manual_target.name.trim().to_string();
         if name.is_empty() {
             return Err("Enter a name for the target".to_string());
         }
@@ -782,7 +783,10 @@ impl DebuggerState {
             DebuggerType::Gdb => "(gdb)",
             DebuggerType::Vedit => "(vedit)",
         };
-        self.push_console(DebuggerConsoleEntry::command(format!("{} {}", prefix, trimmed)));
+        self.push_console(DebuggerConsoleEntry::command(format!(
+            "{} {}",
+            prefix, trimmed
+        )));
         self.command_input.clear();
         if let Some(runtime) = &self.runtime {
             match self.debugger_type {
@@ -899,7 +903,10 @@ impl DebuggerState {
                         DebuggerType::Gdb => "gdb",
                         DebuggerType::Vedit => "vedit",
                     };
-                    self.push_console(DebuggerConsoleEntry::info(format!("{} session started", debugger_name)));
+                    self.push_console(DebuggerConsoleEntry::info(format!(
+                        "{} session started",
+                        debugger_name
+                    )));
                     ui_events.push(DebuggerUiEvent::SessionStarted {
                         target: self.active_target_name.clone(),
                     });
@@ -1002,18 +1009,32 @@ impl DebuggerRuntime {
         match self {
             Self::Gdb { events, .. } => events.try_recv().ok().map(|event| match event {
                 GdbEvent::Started => DebuggerUiEvent::SessionStarted { target: None },
-                GdbEvent::Stdout(line) => DebuggerUiEvent::SessionError { message: format!("stdout: {}", line) },
-                GdbEvent::Stderr(line) => DebuggerUiEvent::SessionError { message: format!("stderr: {}", line) },
-                GdbEvent::Exited(code) => DebuggerUiEvent::SessionError { message: format!("exited with code {}", code) },
+                GdbEvent::Stdout(line) => DebuggerUiEvent::SessionError {
+                    message: format!("stdout: {}", line),
+                },
+                GdbEvent::Stderr(line) => DebuggerUiEvent::SessionError {
+                    message: format!("stderr: {}", line),
+                },
+                GdbEvent::Exited(code) => DebuggerUiEvent::SessionError {
+                    message: format!("exited with code {}", code),
+                },
                 GdbEvent::Error(err) => DebuggerUiEvent::SessionError { message: err },
             }),
             Self::Vedit { events, .. } => events.try_recv().ok().map(|event| match event {
                 VeditEvent::Started => DebuggerUiEvent::SessionStarted { target: None },
-                VeditEvent::Stopped { reason } => DebuggerUiEvent::SessionError { message: format!("stopped: {:?}", reason) },
-                VeditEvent::Exited(code) => DebuggerUiEvent::SessionError { message: format!("exited with code {}", code) },
+                VeditEvent::Stopped { reason } => DebuggerUiEvent::SessionError {
+                    message: format!("stopped: {:?}", reason),
+                },
+                VeditEvent::Exited(code) => DebuggerUiEvent::SessionError {
+                    message: format!("exited with code {}", code),
+                },
                 VeditEvent::Error(err) => DebuggerUiEvent::SessionError { message: err },
-                VeditEvent::MemoryRead(_) => DebuggerUiEvent::SessionError { message: "memory read".to_string() },
-                VeditEvent::Disassembly(_) => DebuggerUiEvent::SessionError { message: "disassembly".to_string() },
+                VeditEvent::MemoryRead(_) => DebuggerUiEvent::SessionError {
+                    message: "memory read".to_string(),
+                },
+                VeditEvent::Disassembly(_) => DebuggerUiEvent::SessionError {
+                    message: "disassembly".to_string(),
+                },
             }),
         }
     }
@@ -1028,11 +1049,7 @@ fn scan_workspace(
     let read_dir = match fs::read_dir(root) {
         Ok(read_dir) => read_dir,
         Err(err) => {
-            warnings.push(format!(
-                "Unable to read {}: {}",
-                root.display(),
-                err
-            ));
+            warnings.push(format!("Unable to read {}: {}", root.display(), err));
             return;
         }
     };
@@ -1118,13 +1135,10 @@ fn is_vcxproj(path: &Path) -> bool {
 }
 
 fn is_makefile(path: &Path) -> bool {
-    path.file_name()
-        .and_then(OsStr::to_str)
-        .map(|name| {
-            let lowercase = name.to_ascii_lowercase();
-            lowercase == "makefile" || lowercase.ends_with(".mk") || lowercase == "gnu makefile"
-        })
-        == Some(true)
+    path.file_name().and_then(OsStr::to_str).map(|name| {
+        let lowercase = name.to_ascii_lowercase();
+        lowercase == "makefile" || lowercase.ends_with(".mk") || lowercase == "gnu makefile"
+    }) == Some(true)
 }
 
 fn guess_vcx_executable(project_path: &Path, project_name: &str) -> PathBuf {

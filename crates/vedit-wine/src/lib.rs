@@ -4,21 +4,23 @@
 //! including environment management, process control, and remote desktop
 //! capabilities for running Windows applications within vedit.
 
-pub mod environment;
-pub mod process;
-pub mod nix_integration;
-pub mod remote_desktop;
 pub mod config;
+pub mod environment;
 pub mod error;
 pub mod gui_integration;
+pub mod nix_integration;
+pub mod process;
+pub mod remote_desktop;
 
+pub use config::{RuntimeConfig, WineConfig};
 pub use environment::{WineEnvironment, WineEnvironmentConfig};
-pub use process::{WineProcess, WineProcessConfig};
-pub use nix_integration::{NixWineManager, NixEnvironment};
-pub use remote_desktop::{RemoteDesktop, DesktopType};
-pub use config::{WineConfig, RuntimeConfig};
 pub use error::{WineError, WineResult};
-pub use gui_integration::{WineGuiMessage, WineGuiState, WineSystemStatus, DefaultConfigs, WineGuiUtils};
+pub use gui_integration::{
+    DefaultConfigs, WineGuiMessage, WineGuiState, WineGuiUtils, WineSystemStatus,
+};
+pub use nix_integration::{NixEnvironment, NixWineManager};
+pub use process::{WineProcess, WineProcessConfig};
+pub use remote_desktop::{DesktopType, RemoteDesktop};
 
 /// Main Wine manager that coordinates all Wine-related functionality
 pub struct WineManager {
@@ -59,7 +61,9 @@ impl WineManager {
 
         #[cfg(feature = "nix-support")]
         let environment = if let Some(nix_manager) = &self.nix_manager {
-            nix_manager.create_wine_environment(project_path, &env_id, config).await?
+            nix_manager
+                .create_wine_environment(project_path, &env_id, config)
+                .await?
         } else {
             WineEnvironment::create(project_path, &env_id, config).await?
         };
@@ -79,7 +83,9 @@ impl WineManager {
         args: &[String],
         config: WineProcessConfig,
     ) -> WineResult<uuid::Uuid> {
-        let environment = self.environments.get_mut(env_id)
+        let environment = self
+            .environments
+            .get_mut(env_id)
             .ok_or_else(|| WineError::EnvironmentNotFound(env_id.to_string()))?;
 
         let process = environment.spawn_process(exe_path, args, config).await?;

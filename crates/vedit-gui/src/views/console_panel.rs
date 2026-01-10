@@ -2,7 +2,7 @@ use crate::console::{ConsoleKind, ConsoleLineKind, ConsoleStatus};
 use crate::message::Message;
 use crate::state::EditorState;
 use crate::style::panel_container;
-use iced::widget::{button, column, container, Space, row, scrollable, text, text_input};
+use iced::widget::{Space, button, column, container, row, scrollable, text, text_input};
 use iced::{Alignment, Color, Element, Font, Length};
 
 pub fn render_console_panel(

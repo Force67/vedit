@@ -1,8 +1,8 @@
-use crate::quick_commands::{list as quick_commands_list, QuickCommand, QuickCommandId};
+use crate::quick_commands::{QuickCommand, QuickCommandId, list as quick_commands_list};
 use crate::settings::SettingsState;
 use std::env;
 use std::path::{Path, PathBuf};
-use vedit_config::{WorkspaceConfig, WorkspaceMetadata, DebugTargetRecord};
+use vedit_config::{DebugTargetRecord, WorkspaceConfig, WorkspaceMetadata};
 use vedit_core::{Editor, FileNode, KeyCombination, KeyEvent, Keymap, KeymapError, StickyNote};
 
 /// Core application state that owns the editor session, keymap, and workspace logic.
@@ -31,7 +31,9 @@ impl AppState {
         let quick_commands = quick_commands_list();
         let keymap = Keymap::default();
         let settings = SettingsState::new(quick_commands, &keymap);
-        let keymap_path = env::current_dir().ok().map(|dir| dir.join("keybindings.toml"));
+        let keymap_path = env::current_dir()
+            .ok()
+            .map(|dir| dir.join("keybindings.toml"));
 
         let mut state = Self {
             editor: Editor::new(),
@@ -161,7 +163,12 @@ impl AppState {
     pub fn workspace_recent_files(&self) -> Vec<String> {
         self.editor
             .workspace_config()
-            .map(|config| config.recent_files().map(|entry| entry.to_string()).collect())
+            .map(|config| {
+                config
+                    .recent_files()
+                    .map(|entry| entry.to_string())
+                    .collect()
+            })
             .unwrap_or_default()
     }
 
@@ -230,8 +237,7 @@ impl AppState {
         config: WorkspaceConfig,
         metadata: WorkspaceMetadata,
     ) {
-        self.editor
-            .set_workspace(root, tree, config, metadata);
+        self.editor.set_workspace(root, tree, config, metadata);
         self.workspace_notice = None;
     }
 
@@ -297,14 +303,14 @@ impl AppState {
                 self.settings.set_binding_input(id, display);
                 self.settings.set_binding_error(id, None);
                 self.settings_error = None;
-                self.settings_notice = Some("Binding updated. Save to persist changes.".to_string());
+                self.settings_notice =
+                    Some("Binding updated. Save to persist changes.".to_string());
                 self.settings_dirty = true;
                 Ok(())
             }
             Err(err) => {
                 let message = err.to_string();
-                self.settings
-                    .set_binding_error(id, Some(message.clone()));
+                self.settings.set_binding_error(id, Some(message.clone()));
                 self.settings_error = Some(message.clone());
                 self.settings_notice = None;
                 Err(message)

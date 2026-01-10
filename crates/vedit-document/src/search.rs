@@ -1,11 +1,10 @@
 //! Boyer-Moore search implementation for document text searching
 
-
 /// Boyer-Moore searcher for efficient string searching
 pub struct BoyerMooreSearcher {
     pattern: Vec<u8>,
     bc_skips: [usize; 256], // Bad character table
-    gs_skips: Vec<usize>,    // Good suffix table
+    gs_skips: Vec<usize>,   // Good suffix table
 }
 
 impl BoyerMooreSearcher {

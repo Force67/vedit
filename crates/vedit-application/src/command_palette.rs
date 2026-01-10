@@ -48,14 +48,8 @@ impl CommandPaletteState {
                 if query.is_empty() {
                     true
                 } else {
-                    command
-                        .title
-                        .to_ascii_lowercase()
-                        .contains(&query)
-                        || command
-                            .description
-                            .to_ascii_lowercase()
-                            .contains(&query)
+                    command.title.to_ascii_lowercase().contains(&query)
+                        || command.description.to_ascii_lowercase().contains(&query)
                 }
             })
             .map(|(index, _)| index)

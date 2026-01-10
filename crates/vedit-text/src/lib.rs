@@ -57,8 +57,6 @@ impl Default for TextBuffer {
     }
 }
 
-
-
 impl TextBuffer {
     /// Creates an empty [`TextBuffer`].
     pub fn new() -> Self {
@@ -298,11 +296,8 @@ impl TextBuffer {
             }
 
             // Removal occurs strictly inside the current piece; split into two pieces.
-            let right_piece = Piece::new(
-                piece.source,
-                piece.start + local_end,
-                piece_len - local_end,
-            );
+            let right_piece =
+                Piece::new(piece.source, piece.start + local_end, piece_len - local_end);
             self.pieces[index].len = local_start;
             self.pieces.insert(index + 1, right_piece);
 
@@ -476,7 +471,6 @@ mod tests {
         assert_eq!(buffer.to_string(), "hello world");
     }
 
-    
     #[test]
     fn replace_and_slice() {
         let mut buffer = TextBuffer::from_text("lorem ipsum dolor");

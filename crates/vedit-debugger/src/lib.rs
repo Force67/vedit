@@ -1,4 +1,9 @@
-use crossbeam_channel::{unbounded, Receiver, Sender};
+use crossbeam_channel::{Receiver, Sender, unbounded};
+use iced_x86::{Decoder, DecoderOptions, Formatter, Instruction, NasmFormatter};
+use nix::sys::ptrace;
+use nix::sys::signal::{Signal, kill};
+use nix::sys::wait::{WaitPidFlag, WaitStatus, waitpid};
+use nix::unistd::{ForkResult, Pid, fork};
 use std::collections::HashMap;
 use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
@@ -6,14 +11,8 @@ use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use thiserror::Error;
-use nix::sys::ptrace;
-use nix::sys::signal::{kill, Signal};
-use nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
-use nix::unistd::{fork, ForkResult, Pid};
-use iced_x86::{Decoder, DecoderOptions, Formatter, Instruction, NasmFormatter};
 
-static SESSION_COUNTER: std::sync::atomic::AtomicU64 =
-    std::sync::atomic::AtomicU64::new(1);
+static SESSION_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
 #[derive(Debug, Error)]
 pub enum DebuggerError {
@@ -47,7 +46,7 @@ pub enum DebuggerCommand {
     Continue,
     Step,
     Kill,
-    ReadMemory(u64, usize), // address, size
+    ReadMemory(u64, usize),  // address, size
     Disassemble(u64, usize), // address, instruction count
 }
 
@@ -134,11 +133,14 @@ pub fn spawn_session(config: LaunchConfig) -> Result<VeditSession, DebuggerError
     // Set up breakpoints
     for addr in &config.breakpoints {
         if let Ok(original) = set_breakpoint(child_pid, *addr) {
-            breakpoints.lock().unwrap().insert(*addr, Breakpoint {
-                address: *addr,
-                original_byte: original,
-                enabled: true,
-            });
+            breakpoints.lock().unwrap().insert(
+                *addr,
+                Breakpoint {
+                    address: *addr,
+                    original_byte: original,
+                    enabled: true,
+                },
+            );
         }
     }
 
@@ -177,17 +179,20 @@ pub fn spawn_session(config: LaunchConfig) -> Result<VeditSession, DebuggerError
                             let _ = command_event_sender.send(DebuggerEvent::MemoryRead(data));
                         }
                         Err(err) => {
-                            let _ = command_event_sender.send(DebuggerEvent::Error(err.to_string()));
+                            let _ =
+                                command_event_sender.send(DebuggerEvent::Error(err.to_string()));
                         }
                     }
                 }
                 DebuggerCommand::Disassemble(addr, count) => {
                     match disassemble_memory(child_pid, addr, count) {
                         Ok(instructions) => {
-                            let _ = command_event_sender.send(DebuggerEvent::Disassembly(instructions));
+                            let _ =
+                                command_event_sender.send(DebuggerEvent::Disassembly(instructions));
                         }
                         Err(err) => {
-                            let _ = command_event_sender.send(DebuggerEvent::Error(err.to_string()));
+                            let _ =
+                                command_event_sender.send(DebuggerEvent::Error(err.to_string()));
                         }
                     }
                 }
@@ -209,20 +214,28 @@ pub fn spawn_session(config: LaunchConfig) -> Result<VeditSession, DebuggerError
                         Signal::SIGTRAP => {
                             // Check if we hit a breakpoint
                             if let Ok(pc) = get_program_counter(child_pid) {
-                                if let Some(bp) = breakpoints_for_wait.lock().unwrap().get(&(pc - 1)) {
+                                if let Some(bp) =
+                                    breakpoints_for_wait.lock().unwrap().get(&(pc - 1))
+                                {
                                     // Restore original byte and step back
                                     if let Err(_) = restore_breakpoint(child_pid, bp) {
-                                        let _ = wait_sender.send(DebuggerEvent::Error("Failed to restore breakpoint".to_string()));
+                                        let _ = wait_sender.send(DebuggerEvent::Error(
+                                            "Failed to restore breakpoint".to_string(),
+                                        ));
                                         break;
                                     }
                                     // Step to execute the original instruction
                                     if let Err(_) = ptrace::step(child_pid, None) {
-                                        let _ = wait_sender.send(DebuggerEvent::Error("Failed to step".to_string()));
+                                        let _ = wait_sender.send(DebuggerEvent::Error(
+                                            "Failed to step".to_string(),
+                                        ));
                                         break;
                                     }
                                     // Re-set the breakpoint
                                     if let Err(_) = set_breakpoint(child_pid, bp.address) {
-                                        let _ = wait_sender.send(DebuggerEvent::Error("Failed to re-set breakpoint".to_string()));
+                                        let _ = wait_sender.send(DebuggerEvent::Error(
+                                            "Failed to re-set breakpoint".to_string(),
+                                        ));
                                         break;
                                     }
                                     StopReason::Breakpoint

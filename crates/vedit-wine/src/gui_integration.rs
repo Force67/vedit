@@ -1,9 +1,9 @@
 //! GUI integration for vedit-wine
 
+use crate::environment::{Runtime, WindowsVersion, WineArchitecture, WineEnvironmentConfig};
 use crate::error::WineError;
-use crate::environment::{WineEnvironmentConfig, WindowsVersion, WineArchitecture, Runtime};
-use crate::process::{WineProcessConfig, ProcessMode};
-use crate::remote_desktop::{RemoteDesktopConfig, DesktopType};
+use crate::process::{ProcessMode, WineProcessConfig};
+use crate::remote_desktop::{DesktopType, RemoteDesktopConfig};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -26,10 +26,7 @@ pub enum WineGuiMessage {
     },
 
     /// Failed to create environment
-    EnvironmentCreationFailed {
-        name: String,
-        error: String,
-    },
+    EnvironmentCreationFailed { name: String, error: String },
 
     /// Spawn a Windows application
     SpawnApp {
@@ -46,10 +43,7 @@ pub enum WineGuiMessage {
     },
 
     /// Failed to spawn process
-    ProcessSpawnFailed {
-        exe_path: PathBuf,
-        error: String,
-    },
+    ProcessSpawnFailed { exe_path: PathBuf, error: String },
 
     /// Create remote desktop session
     CreateRemoteDesktop {
@@ -65,9 +59,7 @@ pub enum WineGuiMessage {
     },
 
     /// Failed to create remote desktop
-    RemoteDesktopCreationFailed {
-        error: String,
-    },
+    RemoteDesktopCreationFailed { error: String },
 
     /// Update process status
     ProcessStatusUpdate {
@@ -76,14 +68,10 @@ pub enum WineGuiMessage {
     },
 
     /// Close process
-    CloseProcess {
-        process_id: Uuid,
-    },
+    CloseProcess { process_id: Uuid },
 
     /// Close remote desktop session
-    CloseRemoteDesktop {
-        session_id: Uuid,
-    },
+    CloseRemoteDesktop { session_id: Uuid },
 
     /// List environments
     ListEnvironments,
@@ -92,14 +80,10 @@ pub enum WineGuiMessage {
     ListProcesses,
 
     /// Get environment details
-    GetEnvironmentDetails {
-        env_id: String,
-    },
+    GetEnvironmentDetails { env_id: String },
 
     /// Get process details
-    GetProcessDetails {
-        process_id: Uuid,
-    },
+    GetProcessDetails { process_id: Uuid },
 }
 
 /// GUI state for Wine integration
@@ -160,11 +144,7 @@ impl Default for WineSystemStatus {
                 Runtime::DirectX9,
                 Runtime::DirectX11,
             ],
-            available_desktop_types: vec![
-                DesktopType::Vnc,
-                DesktopType::Rdp,
-                DesktopType::X11,
-            ],
+            available_desktop_types: vec![DesktopType::Vnc, DesktopType::Rdp, DesktopType::X11],
         }
     }
 }
@@ -225,7 +205,11 @@ impl WineGuiState {
     }
 
     /// Add environment
-    pub fn add_environment(&mut self, env_id: String, info: crate::environment::WineEnvironmentInfo) {
+    pub fn add_environment(
+        &mut self,
+        env_id: String,
+        info: crate::environment::WineEnvironmentInfo,
+    ) {
         self.environments.insert(env_id, info);
     }
 
@@ -240,7 +224,11 @@ impl WineGuiState {
     }
 
     /// Update process status
-    pub fn update_process_status(&mut self, process_id: Uuid, status: crate::process::ProcessStatus) {
+    pub fn update_process_status(
+        &mut self,
+        process_id: Uuid,
+        status: crate::process::ProcessStatus,
+    ) {
         if let Some(process) = self.processes.get_mut(&process_id) {
             process.status = status;
         }
@@ -252,7 +240,11 @@ impl WineGuiState {
     }
 
     /// Add remote desktop session
-    pub fn add_remote_desktop_session(&mut self, session_id: Uuid, info: crate::remote_desktop::ConnectionInfo) {
+    pub fn add_remote_desktop_session(
+        &mut self,
+        session_id: Uuid,
+        info: crate::remote_desktop::ConnectionInfo,
+    ) {
         self.remote_desktop_sessions.insert(session_id, info);
     }
 
@@ -281,20 +273,33 @@ impl WineGuiState {
     }
 
     /// Get environments for current project
-    pub fn project_environments(&self) -> impl Iterator<Item = (&String, &crate::environment::WineEnvironmentInfo)> {
+    pub fn project_environments(
+        &self,
+    ) -> impl Iterator<Item = (&String, &crate::environment::WineEnvironmentInfo)> {
         self.environments.iter()
     }
 
     /// Get running processes
-    pub fn running_processes(&self) -> impl Iterator<Item = (&Uuid, &crate::process::WineProcessInfo)> {
+    pub fn running_processes(
+        &self,
+    ) -> impl Iterator<Item = (&Uuid, &crate::process::WineProcessInfo)> {
         self.processes.iter().filter(|(_, info)| {
-            matches!(info.status, crate::process::ProcessStatus::Starting | crate::process::ProcessStatus::Running)
+            matches!(
+                info.status,
+                crate::process::ProcessStatus::Starting | crate::process::ProcessStatus::Running
+            )
         })
     }
 
     /// Get processes for a specific environment
-    pub fn processes_for_environment(&self, env_id: &str) -> Vec<(&Uuid, &crate::process::WineProcessInfo)> {
-        self.processes.iter().filter(|(_, info)| info.environment_id == env_id).collect()
+    pub fn processes_for_environment(
+        &self,
+        env_id: &str,
+    ) -> Vec<(&Uuid, &crate::process::WineProcessInfo)> {
+        self.processes
+            .iter()
+            .filter(|(_, info)| info.environment_id == env_id)
+            .collect()
     }
 }
 
@@ -309,8 +314,14 @@ impl DefaultConfigs {
             windows_version: WindowsVersion::Windows10,
             dll_overrides: {
                 let mut overrides = HashMap::new();
-                overrides.insert("mscoree".to_string(), crate::environment::DllOverride::Disable);
-                overrides.insert("mshtml".to_string(), crate::environment::DllOverride::Disable);
+                overrides.insert(
+                    "mscoree".to_string(),
+                    crate::environment::DllOverride::Disable,
+                );
+                overrides.insert(
+                    "mshtml".to_string(),
+                    crate::environment::DllOverride::Disable,
+                );
                 overrides
             },
             runtimes: vec![Runtime::Vc2015_2022],
@@ -341,25 +352,22 @@ impl DefaultConfigs {
     /// Get common runtime presets
     pub fn runtime_presets() -> Vec<(String, Vec<Runtime>)> {
         vec![
-            ("Development".to_string(), vec![
-                Runtime::Vc2015_2022,
-                Runtime::DotNet48,
-            ]),
-            ("Gaming".to_string(), vec![
-                Runtime::DirectX9,
-                Runtime::DirectX11,
-                Runtime::Vc2015_2022,
-            ]),
-            ("Modern .NET".to_string(), vec![
-                Runtime::DotNet60,
-                Runtime::DotNet80,
-                Runtime::Vc2015_2022,
-            ]),
-            ("Legacy".to_string(), vec![
-                Runtime::DotNet20,
-                Runtime::DotNet35,
-                Runtime::Vc2008,
-            ]),
+            (
+                "Development".to_string(),
+                vec![Runtime::Vc2015_2022, Runtime::DotNet48],
+            ),
+            (
+                "Gaming".to_string(),
+                vec![Runtime::DirectX9, Runtime::DirectX11, Runtime::Vc2015_2022],
+            ),
+            (
+                "Modern .NET".to_string(),
+                vec![Runtime::DotNet60, Runtime::DotNet80, Runtime::Vc2015_2022],
+            ),
+            (
+                "Legacy".to_string(),
+                vec![Runtime::DotNet20, Runtime::DotNet35, Runtime::Vc2008],
+            ),
         ]
     }
 }
@@ -427,9 +435,7 @@ impl WineGuiUtils {
             return Err("Path is not a file".to_string());
         }
 
-        let extension = path.extension()
-            .and_then(|ext| ext.to_str())
-            .unwrap_or("");
+        let extension = path.extension().and_then(|ext| ext.to_str()).unwrap_or("");
 
         if !["exe", "com", "bat", "cmd"].contains(&extension.to_lowercase().as_str()) {
             return Err("File does not appear to be a Windows executable".to_string());

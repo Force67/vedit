@@ -1,7 +1,7 @@
 use crate::message::Message;
 use crate::state::EditorState;
 use crate::style::{floating_panel_container, panel_container};
-use iced::widget::{button, column, container, Space, row, scrollable, text, text_input};
+use iced::widget::{Space, button, column, container, row, scrollable, text, text_input};
 use iced::{Alignment, Element, Length};
 use iced_font_awesome::fa_icon_solid;
 
@@ -28,9 +28,7 @@ pub fn render_command_palette_contents(state: &EditorState) -> Element<'_, Messa
         .size((16.0 * scale).max(12.0))
         .width(Length::Fill);
 
-    let mut command_list = column![]
-        .spacing(spacing_small)
-        .width(Length::Fill);
+    let mut command_list = column![].spacing(spacing_small).width(Length::Fill);
 
     if filtered.is_empty() {
         command_list = command_list.push(
@@ -80,9 +78,13 @@ pub fn render_command_palette_contents(state: &EditorState) -> Element<'_, Messa
     let header = row![
         text("Command Prompt").size((18.0 * scale).max(14.0)),
         Space::new().width(Length::Fill).width(Length::Fill),
-        button(fa_icon_solid("xmark").size((16.0 * scale).max(12.0)).color(iced::Color::WHITE))
-            .style(iced::widget::button::text)
-            .on_press(Message::CommandPaletteClosed),
+        button(
+            fa_icon_solid("xmark")
+                .size((16.0 * scale).max(12.0))
+                .color(iced::Color::WHITE)
+        )
+        .style(iced::widget::button::text)
+        .on_press(Message::CommandPaletteClosed),
     ]
     .spacing(spacing_small)
     .align_y(Alignment::Center);
@@ -98,14 +100,14 @@ pub fn render_command_palette_contents(state: &EditorState) -> Element<'_, Messa
     .width(Length::Fill);
 
     let scale = state.scale_factor() as f32;
-      let spacing_large = (16.0 * scale).max(8.0);
-      let drop_width = (600.0 * scale).clamp(400.0, 800.0);
+    let spacing_large = (16.0 * scale).max(8.0);
+    let drop_width = (600.0 * scale).clamp(400.0, 800.0);
 
-      let dropdown = container(palette_column)
-          .padding(spacing_large)
-          .width(Length::Fixed(drop_width))
-          .style(floating_panel_container());
+    let dropdown = container(palette_column)
+        .padding(spacing_large)
+        .width(Length::Fixed(drop_width))
+        .style(floating_panel_container());
 
-      // return only the dropdown; no Fill×Fill wrapper here
-      dropdown.into()
+    // return only the dropdown; no Fill×Fill wrapper here
+    dropdown.into()
 }

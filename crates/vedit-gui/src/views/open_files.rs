@@ -1,7 +1,7 @@
 use crate::message::Message;
 use crate::state::EditorState;
-use crate::style::{panel_container, TEXT, MUTED};
-use iced::widget::{button, column, container, row, scrollable, text, Column};
+use crate::style::{MUTED, TEXT, panel_container};
+use iced::widget::{Column, button, column, container, row, scrollable, text};
 use iced::{Alignment, Element, Length};
 
 pub fn render_open_files_panel(

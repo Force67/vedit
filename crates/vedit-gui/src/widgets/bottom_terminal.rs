@@ -1,4 +1,4 @@
-use iced::widget::{button, container, pick_list, row, scrollable, text, Column, Row};
+use iced::widget::{Column, Row, button, container, pick_list, row, scrollable, text};
 use iced::{Alignment, Element, Length};
 use iced_font_awesome::fa_icon_solid;
 
@@ -41,7 +41,10 @@ impl BottomTerminal {
             selected_terminal: "Terminal".to_string(),
             logs: vec![
                 ("Application started".to_string(), LogLevel::Info),
-                ("Warning: deprecated function".to_string(), LogLevel::Warning),
+                (
+                    "Warning: deprecated function".to_string(),
+                    LogLevel::Warning,
+                ),
                 ("Error: file not found".to_string(), LogLevel::Error),
             ],
         }
@@ -49,12 +52,15 @@ impl BottomTerminal {
 
     pub fn view(&self) -> Element<'_, Message> {
         if self.collapsed {
-            let header = button(row![
-                fa_icon_solid("angle-right").color(iced::Color::WHITE),
-                text("Terminal").color(style::TEXT)
-            ].spacing(4.0))
-                .style(style::custom_button())
-                .on_press(Message::ToggleCollapse);
+            let header = button(
+                row![
+                    fa_icon_solid("angle-right").color(iced::Color::WHITE),
+                    text("Terminal").color(style::TEXT)
+                ]
+                .spacing(4.0),
+            )
+            .style(style::custom_button())
+            .on_press(Message::ToggleCollapse);
 
             container(header)
                 .style(style::status_container())
@@ -64,33 +70,35 @@ impl BottomTerminal {
         } else {
             let header = Row::new()
                 .spacing(8)
-                .push(
-                    pick_list(
-                        vec!["Terminal".to_string(), "Debug".to_string(), "Output".to_string()],
-                        Some(self.selected_terminal.clone()),
-                        Message::SelectTerminal,
-                    )
-                )
+                .push(pick_list(
+                    vec![
+                        "Terminal".to_string(),
+                        "Debug".to_string(),
+                        "Output".to_string(),
+                    ],
+                    Some(self.selected_terminal.clone()),
+                    Message::SelectTerminal,
+                ))
                 .push(
                     button(fa_icon_solid("angle-down").color(iced::Color::WHITE))
                         .style(style::custom_button())
-                        .on_press(Message::ToggleCollapse)
+                        .on_press(Message::ToggleCollapse),
                 )
                 .align_y(Alignment::Center);
 
             let log_view = scrollable(
                 Column::new()
                     .spacing(4)
-                    .extend(self.logs.iter().map(|(msg, level)| {
-                        text(msg).color(level.color()).into()
-                    }))
-                    .padding(8)
+                    .extend(
+                        self.logs
+                            .iter()
+                            .map(|(msg, level)| text(msg).color(level.color()).into()),
+                    )
+                    .padding(8),
             )
             .style(style::custom_scrollable());
 
-            let content = Column::new()
-                .push(header)
-                .push(log_view);
+            let content = Column::new().push(header).push(log_view);
 
             container(content)
                 .style(style::status_container())

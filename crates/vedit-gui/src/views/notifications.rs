@@ -1,10 +1,10 @@
 use crate::message::Message;
 use crate::notifications::{Notification, NotificationKind};
 use crate::state::EditorState;
-use crate::style::notification_container;
-use iced::widget::{button, column, container, Space, text, row};
-use iced::{Alignment, Color, Element, Length, Padding};
 use crate::style::NotificationTone;
+use crate::style::notification_container;
+use iced::widget::{Space, button, column, container, row, text};
+use iced::{Alignment, Color, Element, Length, Padding};
 
 pub fn render_notifications(
     state: &EditorState,
@@ -13,9 +13,7 @@ pub fn render_notifications(
     spacing_medium: f32,
 ) -> Element<'_, Message> {
     let bubble_spacing = (spacing_medium * 0.6).max(6.0);
-    let mut stack = column![]
-        .spacing(bubble_spacing)
-        .align_x(Alignment::End);
+    let mut stack = column![].spacing(bubble_spacing).align_x(Alignment::End);
 
     for notification in state.notifications() {
         stack = stack.push(render_notification_card(notification, scale));
@@ -28,7 +26,12 @@ pub fn render_notifications(
     container(overlay)
         .width(Length::Fill)
         .height(Length::Shrink)
-        .padding(Padding::new(0.0).right(spacing_large).bottom(spacing_large).left(spacing_large))
+        .padding(
+            Padding::new(0.0)
+                .right(spacing_large)
+                .bottom(spacing_large)
+                .left(spacing_large),
+        )
         .align_y(iced::alignment::Vertical::Bottom)
         .into()
 }
@@ -41,9 +44,9 @@ fn render_notification_card(notification: &Notification, scale: f32) -> Element<
     let icon_size = (14.0 * scale).max(10.0);
 
     let icon = container(text("●").size(icon_size).color(accent))
-    .width(Length::Fixed((icon_size + 4.0).max(12.0)))
-    .center_x(Length::Fill)
-    .center_y(Length::Fill);
+        .width(Length::Fixed((icon_size + 4.0).max(12.0)))
+        .center_x(Length::Fill)
+        .center_y(Length::Fill);
 
     let mut body = column![
         text(&notification.title)

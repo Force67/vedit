@@ -1,5 +1,5 @@
-use crossbeam_channel::{unbounded, Receiver};
-use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+use crossbeam_channel::{Receiver, unbounded};
+use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -61,8 +61,7 @@ impl ConsoleState {
     }
 
     pub fn shell_tab_count(&self) -> usize {
-        self
-            .tabs
+        self.tabs
             .iter()
             .filter(|tab| tab.kind == ConsoleKind::Shell)
             .count()
@@ -413,10 +412,7 @@ impl ConsoleRuntime {
             .try_clone_reader()
             .map_err(|err| err.to_string())?;
 
-        let writer = pair
-            .master
-            .take_writer()
-            .map_err(|err| err.to_string())?;
+        let writer = pair.master.take_writer().map_err(|err| err.to_string())?;
 
         let (event_sender, event_receiver) = unbounded();
 
@@ -433,7 +429,10 @@ impl ConsoleRuntime {
                     Ok(0) => break,
                     Ok(read) => {
                         let text = String::from_utf8_lossy(&buffer[..read]).to_string();
-                        if reader_sender.send(ConsoleRuntimeEvent::Output(text)).is_err() {
+                        if reader_sender
+                            .send(ConsoleRuntimeEvent::Output(text))
+                            .is_err()
+                        {
                             break;
                         }
                     }
@@ -469,10 +468,10 @@ impl ConsoleRuntime {
     }
 
     fn send_line(&self, value: &str) -> Result<(), String> {
-        let mut writer =
-            self.writer
-                .lock()
-                .map_err(|_| "terminal writer poisoned".to_string())?;
+        let mut writer = self
+            .writer
+            .lock()
+            .map_err(|_| "terminal writer poisoned".to_string())?;
         writer
             .write_all(value.as_bytes())
             .map_err(|err| err.to_string())?;

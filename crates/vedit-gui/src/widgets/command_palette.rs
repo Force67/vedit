@@ -1,4 +1,4 @@
-use iced::widget::{container, scrollable, text, text_input, Column};
+use iced::widget::{Column, container, scrollable, text, text_input};
 use iced::{Element, Length};
 
 use crate::style;
@@ -42,17 +42,16 @@ impl CommandPalette {
         let suggestions = scrollable(
             Column::new()
                 .spacing(4)
-                .extend(filtered_suggestions.iter().map(|s| {
-                    text(*s).color(style::TEXT).into()
-                }))
-                .padding(8)
+                .extend(
+                    filtered_suggestions
+                        .iter()
+                        .map(|s| text(*s).color(style::TEXT).into()),
+                )
+                .padding(8),
         )
         .style(style::custom_scrollable());
 
-        let content = Column::new()
-            .spacing(8)
-            .push(input)
-            .push(suggestions);
+        let content = Column::new().spacing(8).push(input).push(suggestions);
 
         container(content)
             .style(style::panel_container())

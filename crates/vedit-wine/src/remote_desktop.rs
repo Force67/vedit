@@ -170,10 +170,22 @@ impl RemoteDesktop {
         };
 
         let session = match session_type {
-            DesktopType::Vnc => self.create_vnc_session(session_id, port, resolution, password.clone()).await?,
-            DesktopType::Rdp => self.create_rdp_session(session_id, port, resolution, password.clone()).await?,
-            DesktopType::X11 => self.create_x11_session(session_id, port, resolution, password.clone()).await?,
-            DesktopType::Wayland => self.create_wayland_session(session_id, port, resolution, password.clone()).await?,
+            DesktopType::Vnc => {
+                self.create_vnc_session(session_id, port, resolution, password.clone())
+                    .await?
+            }
+            DesktopType::Rdp => {
+                self.create_rdp_session(session_id, port, resolution, password.clone())
+                    .await?
+            }
+            DesktopType::X11 => {
+                self.create_x11_session(session_id, port, resolution, password.clone())
+                    .await?
+            }
+            DesktopType::Wayland => {
+                self.create_wayland_session(session_id, port, resolution, password.clone())
+                    .await?
+            }
         };
 
         let connection_url = self.build_connection_url(&session_type, port, &password);
@@ -202,7 +214,11 @@ impl RemoteDesktop {
         resolution: (u32, u32),
         password: Option<String>,
     ) -> WineResult<Child> {
-        tracing::info!("Creating VNC session on port {} with resolution {:?}", port, resolution);
+        tracing::info!(
+            "Creating VNC session on port {} with resolution {:?}",
+            port,
+            resolution
+        );
 
         // Use Xvfb to create virtual display
         let display_num = port - 5900;
@@ -243,7 +259,9 @@ impl RemoteDesktop {
 
         if self.config.performance.compression {
             vnc_cmd.arg("-compress").arg("level").arg("6");
-            vnc_cmd.arg("-quality").arg(self.config.performance.jpeg_quality.to_string());
+            vnc_cmd
+                .arg("-quality")
+                .arg(self.config.performance.jpeg_quality.to_string());
         }
 
         let vnc_process = vnc_cmd
@@ -265,7 +283,11 @@ impl RemoteDesktop {
         resolution: (u32, u32),
         password: Option<String>,
     ) -> WineResult<Child> {
-        tracing::info!("Creating RDP session on port {} with resolution {:?}", port, resolution);
+        tracing::info!(
+            "Creating RDP session on port {} with resolution {:?}",
+            port,
+            resolution
+        );
 
         // Use xrdp or XRDP for RDP server
         let mut rdp_cmd = Command::new("xrdp");
@@ -288,7 +310,9 @@ impl RemoteDesktop {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
-            .map_err(|e| WineError::RemoteDesktopError(format!("Failed to start RDP server: {}", e)))
+            .map_err(|e| {
+                WineError::RemoteDesktopError(format!("Failed to start RDP server: {}", e))
+            })
     }
 
     /// Create X11 forwarding session
@@ -359,7 +383,9 @@ impl RemoteDesktop {
             }
         }
 
-        Err(WineError::RemoteDesktopError("No available ports found".to_string()))
+        Err(WineError::RemoteDesktopError(
+            "No available ports found".to_string(),
+        ))
     }
 
     /// Generate a random password
@@ -377,7 +403,12 @@ impl RemoteDesktop {
     }
 
     /// Build connection URL for clients
-    fn build_connection_url(&self, session_type: &DesktopType, port: u16, password: &Option<String>) -> String {
+    fn build_connection_url(
+        &self,
+        session_type: &DesktopType,
+        port: u16,
+        password: &Option<String>,
+    ) -> String {
         match session_type {
             DesktopType::Vnc => {
                 let mut url = format!("vnc://127.0.0.1:{}", port);
@@ -412,8 +443,9 @@ impl RemoteDesktop {
     pub async fn close_session(&mut self, session_id: &Uuid) -> WineResult<()> {
         if let Some(session) = self.sessions.remove(session_id) {
             if let Some(mut process) = session.server_process {
-                process.kill().await
-                    .map_err(|e| WineError::RemoteDesktopError(format!("Failed to kill server process: {}", e)))?;
+                process.kill().await.map_err(|e| {
+                    WineError::RemoteDesktopError(format!("Failed to kill server process: {}", e))
+                })?;
             }
             tracing::info!("Closed remote desktop session: {}", session_id);
         }

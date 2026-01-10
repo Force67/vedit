@@ -1,5 +1,5 @@
 use iced::widget::{container, text};
-use iced::{Element, Color};
+use iced::{Color, Element};
 use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone)]
@@ -41,17 +41,13 @@ impl FpsCounter {
 
     pub fn view(&self) -> Element<'_, crate::message::Message> {
         let fps_text = if self.fps >= 120.0 {
-            text(format!("{:.0} FPS", self.fps))
-                .color(Color::from_rgb(0.0, 1.0, 0.0)) // Green for excellent FPS (144Hz+ target)
+            text(format!("{:.0} FPS", self.fps)).color(Color::from_rgb(0.0, 1.0, 0.0)) // Green for excellent FPS (144Hz+ target)
         } else if self.fps >= 90.0 {
-            text(format!("{:.0} FPS", self.fps))
-                .color(Color::from_rgb(0.2, 0.8, 0.2)) // Light green for good FPS
+            text(format!("{:.0} FPS", self.fps)).color(Color::from_rgb(0.2, 0.8, 0.2)) // Light green for good FPS
         } else if self.fps >= 60.0 {
-            text(format!("{:.0} FPS", self.fps))
-                .color(Color::from_rgb(1.0, 1.0, 0.0)) // Yellow for acceptable FPS
+            text(format!("{:.0} FPS", self.fps)).color(Color::from_rgb(1.0, 1.0, 0.0)) // Yellow for acceptable FPS
         } else {
-            text(format!("{:.0} FPS", self.fps))
-                .color(Color::from_rgb(1.0, 0.0, 0.0)) // Red for low FPS
+            text(format!("{:.0} FPS", self.fps)).color(Color::from_rgb(1.0, 0.0, 0.0)) // Red for low FPS
         };
 
         container(fps_text)

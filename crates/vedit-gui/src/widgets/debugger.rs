@@ -12,8 +12,7 @@ pub fn menu<'a>(
     spacing_medium: f32,
     spacing_small: f32,
 ) -> Element<'a, Message> {
-    let mut target_entries = column![]
-        .spacing(spacing_small);
+    let mut target_entries = column![].spacing(spacing_small);
 
     for target in debugger.filtered_targets() {
         let id = target.id;
@@ -49,11 +48,8 @@ pub fn menu<'a>(
         .primary_selected_target()
         .map(|target| {
             let mut details = column![
-                text(format!(
-                    "Executable: {}",
-                    target.executable.display()
-                ))
-                .size((14.0 * scale).max(10.0)),
+                text(format!("Executable: {}", target.executable.display()))
+                    .size((14.0 * scale).max(10.0)),
                 text(format!(
                     "Working dir: {}",
                     target.working_directory.display()
@@ -61,8 +57,7 @@ pub fn menu<'a>(
                 .size((14.0 * scale).max(10.0)),
                 text(format!("Arguments: {}", target.args.join(" ")))
                     .size((14.0 * scale).max(10.0)),
-                text(format!("Source: {}", target.source))
-                    .size((14.0 * scale).max(10.0)),
+                text(format!("Source: {}", target.source)).size((14.0 * scale).max(10.0)),
             ]
             .spacing((4.0 * scale).max(2.0));
 
@@ -84,11 +79,8 @@ pub fn menu<'a>(
             ]
         });
 
-    let status_line = text(format!(
-        "Status: {}",
-        debugger.status().label()
-    ))
-    .size((14.0 * scale).max(10.0));
+    let status_line =
+        text(format!("Status: {}", debugger.status().label())).size((14.0 * scale).max(10.0));
 
     let targets_section = column![
         text("Debug Targets").size((16.0 * scale).max(12.0)),
@@ -103,8 +95,7 @@ pub fn menu<'a>(
     ]
     .spacing(spacing_small);
 
-    let mut breakpoints_list = column![]
-        .spacing(spacing_small);
+    let mut breakpoints_list = column![].spacing(spacing_small);
 
     for breakpoint in debugger.breakpoints() {
         let id = breakpoint.id;
@@ -117,10 +108,7 @@ pub fn menu<'a>(
             .size((14.0 * scale).max(10.0))
             .on_toggle(move |_| Message::DebuggerBreakpointToggled(id));
 
-        let condition_value = breakpoint
-            .condition
-            .as_deref()
-            .unwrap_or("");
+        let condition_value = breakpoint.condition.as_deref().unwrap_or("");
         let condition = text_input("Condition", condition_value)
             .on_input(move |value| Message::DebuggerBreakpointConditionChanged(id, value))
             .padding((6.0 * scale).max(4.0))
@@ -131,13 +119,9 @@ pub fn menu<'a>(
             .on_press(Message::DebuggerBreakpointRemoved(id))
             .padding((6.0 * scale).max(4.0));
 
-        let row = row![
-            checkbox,
-            condition,
-            remove_button,
-        ]
-        .spacing(spacing_small)
-        .align_y(Alignment::Center);
+        let row = row![checkbox, condition, remove_button,]
+            .spacing(spacing_small)
+            .align_y(Alignment::Center);
         breakpoints_list = breakpoints_list.push(row);
     }
 
@@ -227,22 +211,19 @@ pub fn menu<'a>(
         .size((14.0 * scale).max(10.0))
         .width(Length::Fill);
 
-    let console_entries = debugger
-        .console()
-        .iter()
-        .fold(column![], |column, entry| {
-            let color = match entry.kind {
-                DebuggerConsoleEntryKind::Command => iced::Color::from_rgb8(180, 200, 250),
-                DebuggerConsoleEntryKind::Output => iced::Color::from_rgb8(200, 200, 200),
-                DebuggerConsoleEntryKind::Error => iced::Color::from_rgb8(240, 128, 128),
-                DebuggerConsoleEntryKind::Info => iced::Color::from_rgb8(180, 220, 180),
-            };
-            column.push(
-                text(&entry.message)
-                    .size((13.0 * scale).max(9.0))
-                    .color(color),
-            )
-        });
+    let console_entries = debugger.console().iter().fold(column![], |column, entry| {
+        let color = match entry.kind {
+            DebuggerConsoleEntryKind::Command => iced::Color::from_rgb8(180, 200, 250),
+            DebuggerConsoleEntryKind::Output => iced::Color::from_rgb8(200, 200, 200),
+            DebuggerConsoleEntryKind::Error => iced::Color::from_rgb8(240, 128, 128),
+            DebuggerConsoleEntryKind::Info => iced::Color::from_rgb8(180, 220, 180),
+        };
+        column.push(
+            text(&entry.message)
+                .size((13.0 * scale).max(9.0))
+                .color(color),
+        )
+    });
 
     let command_input = text_input("command", debugger.command_input())
         .on_input(Message::DebuggerGdbCommandInputChanged)
@@ -268,8 +249,18 @@ pub fn menu<'a>(
 
     let debugger_type_selector = row![
         text("Debugger Type:").size((14.0 * scale).max(10.0)),
-        iced::widget::radio("GDB", DebuggerType::Gdb, Some(debugger.debugger_type()), |dt| Message::DebuggerTypeChanged(dt)),
-        iced::widget::radio("Vedit", DebuggerType::Vedit, Some(debugger.debugger_type()), |dt| Message::DebuggerTypeChanged(dt)),
+        iced::widget::radio(
+            "GDB",
+            DebuggerType::Gdb,
+            Some(debugger.debugger_type()),
+            |dt| Message::DebuggerTypeChanged(dt)
+        ),
+        iced::widget::radio(
+            "Vedit",
+            DebuggerType::Vedit,
+            Some(debugger.debugger_type()),
+            |dt| Message::DebuggerTypeChanged(dt)
+        ),
     ]
     .spacing(spacing_small)
     .align_y(Alignment::Center);

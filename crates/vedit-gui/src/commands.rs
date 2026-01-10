@@ -1,10 +1,12 @@
+use crate::debugger::DebuggerType;
 use rfd::FileDialog;
 use std::fs;
 use std::path::PathBuf;
 use vedit_config::{WorkspaceConfig, WorkspaceMetadata};
 use vedit_core::{Document, Editor, FileNode};
-use vedit_debugger_gdb::{Breakpoint as DebuggerBreakpoint, GdbSession, LaunchConfig as DebuggerLaunchConfig};
-use crate::debugger::DebuggerType;
+use vedit_debugger_gdb::{
+    Breakpoint as DebuggerBreakpoint, GdbSession, LaunchConfig as DebuggerLaunchConfig,
+};
 
 #[derive(Debug, Clone)]
 pub struct SaveDocumentRequest {
@@ -56,13 +58,15 @@ pub async fn pick_keymap_location(current: Option<String>) -> Result<Option<Stri
         }
     }
 
-    Ok(dialog.save_file().map(|path| path.to_string_lossy().to_string()))
+    Ok(dialog
+        .save_file()
+        .map(|path| path.to_string_lossy().to_string()))
 }
 
 pub async fn pick_document() -> Result<Option<Document>, String> {
     if let Some(path) = FileDialog::new().pick_file() {
-        let document = Document::from_path(&path)
-            .map_err(|err| format!("Failed to read file: {}", err))?;
+        let document =
+            Document::from_path(&path).map_err(|err| format!("Failed to read file: {}", err))?;
         Ok(Some(document))
     } else {
         Ok(None)
@@ -125,7 +129,7 @@ pub async fn load_workspace_from_path(path: PathBuf) -> Result<Option<WorkspaceD
 
 pub async fn load_workspace_from_path_with_files(
     path: PathBuf,
-    _session_state: crate::session::SessionState
+    _session_state: crate::session::SessionState,
 ) -> Result<Option<WorkspaceData>, String> {
     if path.exists() && path.is_dir() {
         println!("DEBUG: Loading workspace from: {}", path.display());
@@ -153,7 +157,6 @@ pub async fn load_workspace_from_path_with_files(
         Ok(None)
     }
 }
-
 
 pub async fn pick_solution() -> Result<Option<WorkspaceData>, String> {
     if let Some(path) = FileDialog::new().pick_file() {
@@ -195,8 +198,7 @@ pub async fn save_document(request: SaveDocumentRequest) -> Result<Option<String
 
     if let Some(path) = path {
         let target = PathBuf::from(path);
-        fs::write(&target, contents)
-            .map_err(|err| format!("Failed to write file: {}", err))?;
+        fs::write(&target, contents).map_err(|err| format!("Failed to write file: {}", err))?;
         return Ok(Some(target.to_string_lossy().to_string()));
     }
 
@@ -208,8 +210,7 @@ pub async fn save_document(request: SaveDocumentRequest) -> Result<Option<String
     }
 
     if let Some(target) = dialog.save_file() {
-        fs::write(&target, contents)
-            .map_err(|err| format!("Failed to write file: {}", err))?;
+        fs::write(&target, contents).map_err(|err| format!("Failed to write file: {}", err))?;
         Ok(Some(target.to_string_lossy().to_string()))
     } else {
         Ok(None)
@@ -227,13 +228,15 @@ pub async fn save_keymap(request: SaveKeymapRequest) -> Result<String, String> {
         }
     }
 
-    fs::write(&target, contents)
-        .map_err(|err| format!("Failed to write keymap: {}", err))?;
+    fs::write(&target, contents).map_err(|err| format!("Failed to write keymap: {}", err))?;
 
     Ok(target.to_string_lossy().to_string())
 }
 
-pub async fn save_workspace_config(root: String, config: WorkspaceConfig) -> Result<String, String> {
+pub async fn save_workspace_config(
+    root: String,
+    config: WorkspaceConfig,
+) -> Result<String, String> {
     config
         .save(&root)
         .map_err(|err| format!("Failed to save workspace config: {}", err))?;

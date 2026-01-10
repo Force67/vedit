@@ -1,10 +1,10 @@
+use slab::Slab;
 use std::cmp::Ordering;
 use std::collections::{BTreeSet, HashSet};
 use std::fs;
 use std::io;
 use std::path::{Component, Path, PathBuf};
 use std::time::SystemTime;
-use slab::Slab;
 use vedit_make::{Makefile, MakefileError};
 use vedit_vs::{Solution, SolutionProject, VcxProject, VisualStudioError};
 
@@ -135,7 +135,11 @@ impl WorkspaceProvider for FsWorkspaceProvider {
                 // Handle symlinks, but for now treat as file
                 NodeKind::File
             };
-            let size = if metadata.is_file() { Some(metadata.len()) } else { None };
+            let size = if metadata.is_file() {
+                Some(metadata.len())
+            } else {
+                None
+            };
             let modified = metadata.modified().ok();
             let is_hidden = name.starts_with('.');
             entries.push(DirEntryMeta {
@@ -165,9 +169,17 @@ impl WorkspaceProvider for FsWorkspaceProvider {
         let path = self.root.join(rel);
         let metadata = fs::metadata(&path)?;
         Ok(FileMeta {
-            size: if metadata.is_file() { Some(metadata.len()) } else { None },
+            size: if metadata.is_file() {
+                Some(metadata.len())
+            } else {
+                None
+            },
             modified: metadata.modified().ok(),
-            is_hidden: path.file_name().and_then(|n| n.to_str()).map(|n| n.starts_with('.')).unwrap_or(false),
+            is_hidden: path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .map(|n| n.starts_with('.'))
+                .unwrap_or(false),
         })
     }
 
@@ -470,11 +482,7 @@ fn try_build_solution_node(path: &Path) -> Result<FileNode, VisualStudioError> {
         .map(|name| name.to_string())
         .unwrap_or_else(|| solution.name.clone());
     let path_string = path.to_string_lossy().to_string();
-    let mut children: Vec<FileNode> = solution
-        .projects
-        .into_iter()
-        .map(project_to_node)
-        .collect();
+    let mut children: Vec<FileNode> = solution.projects.into_iter().map(project_to_node).collect();
     sort_nodes(&mut children);
     let has_children = !children.is_empty();
 
@@ -530,9 +538,7 @@ fn try_build_vcxproj_node(path: &Path) -> Result<FileNode, VisualStudioError> {
     let has_children = !children.is_empty();
 
     Ok(FileNode {
-        name: project
-            .name
-            .clone(),
+        name: project.name.clone(),
         path: path.to_string_lossy().to_string(),
         is_directory: true,
         children,
@@ -608,7 +614,10 @@ fn insert_item(
 
     if segments.len() == 1 {
         let path_string = full_path.to_string_lossy().to_string();
-        if nodes.iter().any(|node| !node.is_directory && node.path == path_string) {
+        if nodes
+            .iter()
+            .any(|node| !node.is_directory && node.path == path_string)
+        {
             return;
         }
         nodes.push(FileNode {
@@ -643,21 +652,23 @@ fn insert_item(
                 children: Vec::new(),
                 has_children: false,
                 is_fully_scanned: true,
-        kind: LegacyNodeKind::Directory,
+                kind: LegacyNodeKind::Directory,
             });
             nodes.last_mut().unwrap()
         }
     };
 
-    insert_item(&mut child.children, &segments[1..], full_path, total_segments, depth + 1);
+    insert_item(
+        &mut child.children,
+        &segments[1..],
+        full_path,
+        total_segments,
+        depth + 1,
+    );
     child.has_children = !child.children.is_empty();
 }
 
-fn ancestor_for_depth(
-    full_path: &Path,
-    total_segments: usize,
-    depth: usize,
-) -> Option<PathBuf> {
+fn ancestor_for_depth(full_path: &Path, total_segments: usize, depth: usize) -> Option<PathBuf> {
     // If depth is beyond or equal to total segments, return None
     if depth >= total_segments {
         return None;
@@ -935,17 +946,15 @@ mod tests {
                 name: "dir1".to_string(),
                 path: "/tmp/dir1".to_string(),
                 is_directory: true,
-                children: vec![
-                    FileNode {
-                        name: "file1.txt".to_string(),
-                        path: "/tmp/dir1/file1.txt".to_string(),
-                        is_directory: false,
-                        children: vec![],
-                        has_children: false,
-                        is_fully_scanned: true,
-                        kind: LegacyNodeKind::File,
-                    },
-                ],
+                children: vec![FileNode {
+                    name: "file1.txt".to_string(),
+                    path: "/tmp/dir1/file1.txt".to_string(),
+                    is_directory: false,
+                    children: vec![],
+                    has_children: false,
+                    is_fully_scanned: true,
+                    kind: LegacyNodeKind::File,
+                }],
                 has_children: true,
                 is_fully_scanned: true,
                 kind: LegacyNodeKind::Directory,
@@ -1091,10 +1100,7 @@ mod tests {
         let path = PathBuf::from("/a/b/c/d/e");
 
         // Test various depths
-        assert_eq!(
-            ancestor_for_depth(&path, 5, 0),
-            Some(PathBuf::from("/a"))
-        );
+        assert_eq!(ancestor_for_depth(&path, 5, 0), Some(PathBuf::from("/a")));
 
         assert_eq!(
             ancestor_for_depth(&path, 5, 2),
@@ -1107,10 +1113,7 @@ mod tests {
         );
 
         // Depth 5 should return None since depth >= total_segments
-        assert_eq!(
-            ancestor_for_depth(&path, 5, 5),
-            None
-        );
+        assert_eq!(ancestor_for_depth(&path, 5, 5), None);
     }
 
     #[test]
@@ -1311,7 +1314,9 @@ mod tests {
             is_hidden: false,
         };
 
-        assert!(matches!(symlink_node.kind, NodeKind::Symlink(target) if matches!(*target, NodeKind::File)));
+        assert!(
+            matches!(symlink_node.kind, NodeKind::Symlink(target) if matches!(*target, NodeKind::File))
+        );
     }
 
     #[test]

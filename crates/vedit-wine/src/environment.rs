@@ -209,7 +209,10 @@ impl WineEnvironment {
         Self::apply_configuration(&prefix_path, &config).await?;
 
         let mut env_vars = std::collections::HashMap::new();
-        env_vars.insert("WINEPREFIX".to_string(), prefix_path.to_string_lossy().to_string());
+        env_vars.insert(
+            "WINEPREFIX".to_string(),
+            prefix_path.to_string_lossy().to_string(),
+        );
 
         // Configure DLL overrides
         let dll_overrides = Self::build_dll_overrides(&config.dll_overrides);
@@ -226,7 +229,10 @@ impl WineEnvironment {
     }
 
     /// Initialize a Wine prefix
-    async fn initialize_prefix(prefix_path: &Path, config: &WineEnvironmentConfig) -> WineResult<()> {
+    async fn initialize_prefix(
+        prefix_path: &Path,
+        config: &WineEnvironmentConfig,
+    ) -> WineResult<()> {
         tracing::info!("Initializing Wine prefix at: {}", prefix_path.display());
 
         let mut cmd = Command::new("wineboot");
@@ -259,7 +265,10 @@ impl WineEnvironment {
     }
 
     /// Apply configuration to the Wine prefix
-    async fn apply_configuration(prefix_path: &Path, config: &WineEnvironmentConfig) -> WineResult<()> {
+    async fn apply_configuration(
+        prefix_path: &Path,
+        config: &WineEnvironmentConfig,
+    ) -> WineResult<()> {
         // Set Windows version
         Self::set_windows_version(prefix_path, &config.windows_version).await?;
 
@@ -392,7 +401,8 @@ impl WineEnvironment {
     ) -> WineResult<WineProcess> {
         let process = WineProcess::spawn(self, exe_path, args, config).await?;
         let process_id = process.id();
-        self.active_processes.insert(process_id, process.clone_info());
+        self.active_processes
+            .insert(process_id, process.clone_info());
         Ok(process)
     }
 

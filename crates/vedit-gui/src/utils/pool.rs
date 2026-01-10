@@ -62,7 +62,8 @@ impl<T> Drop for PooledObject<'_, T> {
     fn drop(&mut self) {
         if let Some(object) = self.object.take() {
             let mut pool = self.pool.borrow_mut();
-            if pool.len() < 50 { // Prevent unbounded growth
+            if pool.len() < 50 {
+                // Prevent unbounded growth
                 pool.push_back(object);
             }
         }
@@ -89,7 +90,8 @@ pub fn return_usize_vec(mut vec: Vec<usize>) {
     vec.clear();
     USIZE_VEC_POOL.with(|pool| {
         let mut pool = pool.borrow_mut();
-        if pool.len() < 50 { // Prevent unbounded growth
+        if pool.len() < 50 {
+            // Prevent unbounded growth
             pool.push(vec);
         }
     })
@@ -114,7 +116,8 @@ pub fn return_string(mut string: String) {
     string.clear();
     STRING_POOL.with(|pool| {
         let mut pool = pool.borrow_mut();
-        if pool.len() < 50 { // Prevent unbounded growth
+        if pool.len() < 50 {
+            // Prevent unbounded growth
             pool.push(string);
         }
     })

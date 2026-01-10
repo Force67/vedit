@@ -1,7 +1,7 @@
 //! NixOS-specific Wine integration
 
-use crate::error::{WineError, WineResult};
 use crate::environment::{WineEnvironment, WineEnvironmentConfig};
+use crate::error::{WineError, WineResult};
 use crate::process::{WineProcess, WineProcessConfig};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -32,9 +32,8 @@ impl NixWineManager {
             return Err(WineError::NixError("Not running on NixOS".to_string()));
         }
 
-        let home = dirs::home_dir().ok_or_else(|| {
-            WineError::NixError("Could not determine home directory".to_string())
-        })?;
+        let home = dirs::home_dir()
+            .ok_or_else(|| WineError::NixError("Could not determine home directory".to_string()))?;
 
         let nix_expr_dir = home.join(".vedit").join("nix");
         let gc_root_dir = home.join(".vedit").join("nix-gcroots");
@@ -70,16 +69,25 @@ impl NixWineManager {
         self.build_environment(&nix_file, &gc_root).await?;
 
         // Create FHS user environment wrapper
-        let fhs_wrapper = self.create_fhs_wrapper(env_id, &gc_root, project_path).await?;
+        let fhs_wrapper = self
+            .create_fhs_wrapper(env_id, &gc_root, project_path)
+            .await?;
 
         // Initialize the Wine prefix using the FHS environment
-        self.initialize_nix_prefix(&fhs_wrapper, project_path, env_id, &config).await?;
+        self.initialize_nix_prefix(&fhs_wrapper, project_path, env_id, &config)
+            .await?;
 
         // Create WineEnvironment instance
         let prefix_path = project_path.join(".wine").join(env_id);
         let mut env_vars = std::collections::HashMap::new();
-        env_vars.insert("WINEPREFIX".to_string(), prefix_path.to_string_lossy().to_string());
-        env_vars.insert("NIX_WINE_WRAPPER".to_string(), fhs_wrapper.to_string_lossy().to_string());
+        env_vars.insert(
+            "WINEPREFIX".to_string(),
+            prefix_path.to_string_lossy().to_string(),
+        );
+        env_vars.insert(
+            "NIX_WINE_WRAPPER".to_string(),
+            fhs_wrapper.to_string_lossy().to_string(),
+        );
 
         // Configure DLL overrides
         let dll_overrides = Self::build_dll_overrides(&config.dll_overrides);
@@ -96,7 +104,11 @@ impl NixWineManager {
     }
 
     /// Generate Nix expression for Wine environment
-    fn generate_nix_expression(&self, env_id: &str, config: &WineEnvironmentConfig) -> WineResult<String> {
+    fn generate_nix_expression(
+        &self,
+        env_id: &str,
+        config: &WineEnvironmentConfig,
+    ) -> WineResult<String> {
         let wine_packages = self.get_wine_packages(config)?;
         let runtimes = self.get_runtime_packages(&config.runtimes)?;
 
@@ -202,16 +214,29 @@ pkgs.buildFHSUserEnv {{
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(WineError::NixError(format!("Failed to build Nix environment: {}", stderr)));
+            return Err(WineError::NixError(format!(
+                "Failed to build Nix environment: {}",
+                stderr
+            )));
         }
 
-        tracing::info!("Successfully built Nix environment at: {}", gc_root.display());
+        tracing::info!(
+            "Successfully built Nix environment at: {}",
+            gc_root.display()
+        );
         Ok(())
     }
 
     /// Create FHS wrapper script
-    async fn create_fhs_wrapper(&self, env_id: &str, gc_root: &Path, project_path: &Path) -> WineResult<PathBuf> {
-        let wrapper_path = project_path.join(".wine").join(format!("{}-wrapper.sh", env_id));
+    async fn create_fhs_wrapper(
+        &self,
+        env_id: &str,
+        gc_root: &Path,
+        project_path: &Path,
+    ) -> WineResult<PathBuf> {
+        let wrapper_path = project_path
+            .join(".wine")
+            .join(format!("{}-wrapper.sh", env_id));
 
         let wrapper_script = format!(
             r#"#!/usr/bin/env bash
@@ -265,10 +290,13 @@ exec "$@"
         let output = Command::new(fhs_wrapper)
             .args(&["wineboot", "--init"])
             .env("WINEPREFIX", &prefix_path)
-            .env("WINEARCH", match config.architecture {
-                crate::environment::WineArchitecture::Win32 => "win32",
-                crate::environment::WineArchitecture::Win64 => "win64",
-            })
+            .env(
+                "WINEARCH",
+                match config.architecture {
+                    crate::environment::WineArchitecture::Win32 => "win32",
+                    crate::environment::WineArchitecture::Win64 => "win64",
+                },
+            )
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()
@@ -276,15 +304,22 @@ exec "$@"
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(WineError::NixError(format!("Failed to initialize Wine prefix: {}", stderr)));
+            return Err(WineError::NixError(format!(
+                "Failed to initialize Wine prefix: {}",
+                stderr
+            )));
         }
 
         // Apply configuration using winetricks through FHS
         for runtime in &config.runtimes {
-            self.install_runtime_nix(fhs_wrapper, &prefix_path, runtime).await?;
+            self.install_runtime_nix(fhs_wrapper, &prefix_path, runtime)
+                .await?;
         }
 
-        tracing::info!("Successfully initialized Nix Wine prefix: {}", prefix_path.display());
+        tracing::info!(
+            "Successfully initialized Nix Wine prefix: {}",
+            prefix_path.display()
+        );
         Ok(())
     }
 
@@ -351,7 +386,9 @@ exec "$@"
         args: &[String],
         config: WineProcessConfig,
     ) -> WineResult<WineProcess> {
-        let fhs_wrapper = environment.env_vars.get("NIX_WINE_WRAPPER")
+        let fhs_wrapper = environment
+            .env_vars
+            .get("NIX_WINE_WRAPPER")
             .ok_or_else(|| WineError::NixError("NIX_WINE_WRAPPER not set".to_string()))?;
 
         let process_id = Uuid::new_v4();
@@ -387,7 +424,11 @@ exec "$@"
             cmd.stderr(Stdio::piped());
         }
 
-        tracing::info!("Spawning Nix Wine process: {:?} with args: {:?}", exe_path, args);
+        tracing::info!(
+            "Spawning Nix Wine process: {:?} with args: {:?}",
+            exe_path,
+            args
+        );
 
         let child = cmd.spawn().map_err(|e| {
             WineError::ProcessSpawnFailed(format!("Failed to spawn NIX wine process: {}", e))

@@ -227,10 +227,7 @@ fn sanitize_token(token: &str) -> Option<String> {
     {
         return None;
     }
-    let unquoted = trimmed
-        .trim_matches('"')
-        .trim_matches('\'')
-        .trim();
+    let unquoted = trimmed.trim_matches('"').trim_matches('\'').trim();
     if unquoted.is_empty() {
         return None;
     }
@@ -300,11 +297,7 @@ mod tests {
 
         let makefile_path = dir_path.join("Makefile");
         let mut makefile = fs::File::create(&makefile_path).unwrap();
-        writeln!(
-            makefile,
-            "SOURCES = src/main.c \\\n+ src/util.c\n"
-        )
-        .unwrap();
+        writeln!(makefile, "SOURCES = src/main.c \\\n+ src/util.c\n").unwrap();
         writeln!(makefile, "HEADERS := include/util.h").unwrap();
         writeln!(makefile, "include config.mk").unwrap();
         writeln!(makefile, "app: $(SOURCES) $(HEADERS) extra.o").unwrap();

@@ -20,7 +20,6 @@ impl Notification {
     pub fn body(&self) -> Option<&str> {
         self.body.as_deref()
     }
-
 }
 
 #[derive(Debug, Clone)]
@@ -82,7 +81,8 @@ impl NotificationCenter {
     }
 
     pub fn dismiss(&mut self, id: u64) {
-        self.notifications.retain(|notification| notification.id != id);
+        self.notifications
+            .retain(|notification| notification.id != id);
     }
 
     pub fn tick(&mut self, delta: Duration) {

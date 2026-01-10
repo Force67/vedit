@@ -1,14 +1,3 @@
-use iced_graphics::text::cosmic_text::Buffer as CosmicBuffer;
-use iced::advanced::clipboard::Clipboard;
-use iced::event::Event;
-use iced::advanced::layout::{self, Layout};
-use iced::advanced::mouse;
-use iced::advanced::renderer;
-use iced::advanced::widget::{Widget, tree};
-use iced::advanced::Shell;
-use iced::alignment;
-use iced::widget::text_editor;
-pub use iced::widget::text_editor::{Action, Content};
 use iced::Color;
 use iced::Element;
 use iced::Length;
@@ -19,16 +8,27 @@ use iced::Rectangle;
 use iced::Renderer as IcedRenderer;
 use iced::Size;
 use iced::Theme as IcedTheme;
-use iced::advanced::text::{LineHeight, Shaping, Text as PrimitiveText};
-use iced::advanced::text::highlighter;
-use iced::advanced::text::Highlighter as IcedHighlighter;
-use std::collections::VecDeque;
-use iced::advanced::text::Renderer as TextRenderer;
 use iced::advanced::Renderer as _;
+use iced::advanced::Shell;
+use iced::advanced::clipboard::Clipboard;
+use iced::advanced::layout::{self, Layout};
+use iced::advanced::mouse;
+use iced::advanced::renderer;
+use iced::advanced::text::Highlighter as IcedHighlighter;
+use iced::advanced::text::Renderer as TextRenderer;
+use iced::advanced::text::highlighter;
+use iced::advanced::text::{LineHeight, Shaping, Text as PrimitiveText};
+use iced::advanced::widget::{Widget, tree};
+use iced::alignment;
+use iced::event::Event;
+use iced::widget::text_editor;
+pub use iced::widget::text_editor::{Action, Content};
 use iced_graphics::text::Editor as GraphicsEditor;
+use iced_graphics::text::cosmic_text::Buffer as CosmicBuffer;
+use itoa;
 use std::cell::{Cell, Ref, RefCell};
-use std::rc::Rc;
-use itoa; // For zero-allocation integer to string conversion
+use std::collections::VecDeque;
+use std::rc::Rc; // For zero-allocation integer to string conversion
 
 const DEFAULT_GUTTER_WIDTH: f32 = 60.0;
 const DEFAULT_LINE_COLOR: Color = Color::from_rgba(0.7, 0.7, 0.7, 1.0);
@@ -67,11 +67,7 @@ impl WrapIndex {
         let mut running = 0usize;
 
         for line in &buffer.lines {
-            let wraps = line
-                .layout_opt()
-                .as_ref()
-                .map(|l| l.len())
-                .unwrap_or(1);
+            let wraps = line.layout_opt().as_ref().map(|l| l.len()).unwrap_or(1);
             running += wraps;
             self.cumulative.push(running);
         }
@@ -114,19 +110,25 @@ impl LineIndex {
         let mut offs = Vec::with_capacity(1 + bytes.len() / 32);
         offs.push(0);
         for (i, &b) in bytes.iter().enumerate() {
-            if b == b'\n' { offs.push(i + 1); }
+            if b == b'\n' {
+                offs.push(i + 1);
+            }
         }
-        if *offs.last().unwrap() != s.len() { offs.push(s.len()); }
+        if *offs.last().unwrap() != s.len() {
+            offs.push(s.len());
+        }
         Self { offs }
     }
 
     #[inline]
-    fn len(&self) -> usize { self.offs.len().saturating_sub(1) }
+    fn len(&self) -> usize {
+        self.offs.len().saturating_sub(1)
+    }
 
     #[inline]
     fn line<'a>(&self, s: &'a str, i: usize) -> &'a str {
         let start = self.offs[i];
-        let end   = self.offs[i + 1];
+        let end = self.offs[i + 1];
         &s[start..end].trim_end_matches('\n')
     }
 }
@@ -149,11 +151,11 @@ struct CachedLineNumbers {
 struct OptimizedLineState {
     // Wrap index for fast O(log N) scroll-to-line mapping
     wrap_index: WrapIndex,
-    cached_scroll: usize, // Last processed scroll position
+    cached_scroll: usize,                 // Last processed scroll position
     last_update_time: std::time::Instant, // Throttle scroll processing
     // Fast path optimization
     last_known_position: Option<(usize, usize)>, // Cached (buffer_line, wrap_offset)
-    buffer_width_hash: u64, // Track changes to wrapping width
+    buffer_width_hash: u64,                      // Track changes to wrapping width
 }
 
 impl OptimizedLineState {
@@ -204,22 +206,36 @@ impl OptimizedLineState {
         self.last_known_position = Some(self.wrap_index.locate(scroll));
     }
 
-    fn get_visible_lines(&self, start_scroll: usize, visible_lines: usize, _total_lines: usize) -> Vec<usize> {
-        let (start_buffer_line, start_wrap_offset) = self.last_known_position
+    fn get_visible_lines(
+        &self,
+        start_scroll: usize,
+        visible_lines: usize,
+        _total_lines: usize,
+    ) -> Vec<usize> {
+        let (start_buffer_line, start_wrap_offset) = self
+            .last_known_position
             .unwrap_or_else(|| self.wrap_index.locate(start_scroll));
 
         self.compute_visible_lines_optimized(start_buffer_line, start_wrap_offset, visible_lines)
     }
 
-    fn compute_visible_lines_optimized(&self, start_buffer_line: usize, start_wrap_offset: usize, visible_lines: usize) -> Vec<usize> {
+    fn compute_visible_lines_optimized(
+        &self,
+        start_buffer_line: usize,
+        start_wrap_offset: usize,
+        visible_lines: usize,
+    ) -> Vec<usize> {
         let mut result = Vec::with_capacity(visible_lines.saturating_add(1));
         let mut current_buffer_line = start_buffer_line;
         let mut current_wrap_offset = start_wrap_offset;
         let mut display_index = 0;
 
-        while display_index < visible_lines && current_buffer_line < self.wrap_index.cumulative.len().saturating_sub(1) {
+        while display_index < visible_lines
+            && current_buffer_line < self.wrap_index.cumulative.len().saturating_sub(1)
+        {
             let wraps = if current_buffer_line + 1 < self.wrap_index.cumulative.len() {
-                self.wrap_index.cumulative[current_buffer_line + 1] - self.wrap_index.cumulative[current_buffer_line]
+                self.wrap_index.cumulative[current_buffer_line + 1]
+                    - self.wrap_index.cumulative[current_buffer_line]
             } else {
                 1
             };
@@ -266,8 +282,14 @@ impl IncrementalLineState {
         self.optimized.update(buffer, scroll);
     }
 
-    fn get_visible_lines(&self, start_scroll: usize, visible_lines: usize, total_lines: usize) -> Vec<usize> {
-        self.optimized.get_visible_lines(start_scroll, visible_lines, total_lines)
+    fn get_visible_lines(
+        &self,
+        start_scroll: usize,
+        visible_lines: usize,
+        total_lines: usize,
+    ) -> Vec<usize> {
+        self.optimized
+            .get_visible_lines(start_scroll, visible_lines, total_lines)
     }
 }
 
@@ -285,7 +307,14 @@ impl CachedLineNumbers {
         }
     }
 
-    fn is_valid(&self, scroll: usize, visible_lines: usize, total_lines: usize, font_size: f32, line_height: f32) -> bool {
+    fn is_valid(
+        &self,
+        scroll: usize,
+        visible_lines: usize,
+        total_lines: usize,
+        font_size: f32,
+        line_height: f32,
+    ) -> bool {
         self.scroll == scroll
             && self.visible_lines == visible_lines
             && self.total_lines == total_lines
@@ -293,7 +322,15 @@ impl CachedLineNumbers {
             && (self.line_height - line_height).abs() < f32::EPSILON
     }
 
-    fn update(&mut self, numbers: Vec<usize>, scroll: usize, visible_lines: usize, total_lines: usize, font_size: f32, line_height: f32) {
+    fn update(
+        &mut self,
+        numbers: Vec<usize>,
+        scroll: usize,
+        visible_lines: usize,
+        total_lines: usize,
+        font_size: f32,
+        line_height: f32,
+    ) {
         self.numbers = numbers;
         self.scroll = scroll;
         self.visible_lines = visible_lines;
@@ -303,10 +340,17 @@ impl CachedLineNumbers {
         self.batch_valid = false; // Invalidate cached batches
     }
 
-    
-    fn get_or_create_text_batches(&mut self, bounds: Rectangle, base_padding: &Padding, gutter_width: f32, line_height: f32) -> &[(String, f32, f32)] {
+    fn get_or_create_text_batches(
+        &mut self,
+        bounds: Rectangle,
+        base_padding: &Padding,
+        gutter_width: f32,
+        line_height: f32,
+    ) -> &[(String, f32, f32)] {
         // Always regenerate if bounds changed significantly (window resize, etc.)
-        let should_regenerate = !self.batch_valid || self.cached_text_batches.is_empty() || self.cached_text_batches.len() != self.numbers.len();
+        let should_regenerate = !self.batch_valid
+            || self.cached_text_batches.is_empty()
+            || self.cached_text_batches.len() != self.numbers.len();
 
         if should_regenerate {
             self.cached_text_batches.clear();
@@ -338,12 +382,12 @@ struct CachedLineMetrics {
     font_size: f32,
     visible_lines: usize,
     total_visual_lines: usize,
-    buffer_version: u64, // Track buffer changes
-    width_hash: u64, // Track layout-affecting changes
-    current_scroll: usize, // Cache current scroll position
+    buffer_version: u64,                  // Track buffer changes
+    width_hash: u64,                      // Track layout-affecting changes
+    current_scroll: usize,                // Cache current scroll position
     last_render_time: std::time::Instant, // Throttle updates
-    should_stream: bool, // Cached streaming decision
-    wrap_index: WrapIndex, // Cached wrap index for O(1) access
+    should_stream: bool,                  // Cached streaming decision
+    wrap_index: WrapIndex,                // Cached wrap index for O(1) access
 }
 
 impl CachedLineMetrics {
@@ -367,7 +411,7 @@ impl CachedLineMetrics {
         // Only throttle if content hasn't changed and scroll is small
         let time_since_last = now.duration_since(self.last_render_time).as_millis();
         let small_scroll_change = if self.current_scroll > scroll {
-            self.current_scroll - scroll <= 1  // More sensitive for smooth scrolling
+            self.current_scroll - scroll <= 1 // More sensitive for smooth scrolling
         } else {
             scroll - self.current_scroll <= 1
         };
@@ -375,10 +419,11 @@ impl CachedLineMetrics {
         let current_width_hash = compute_width_hash(buffer);
 
         // Always update if scroll changed significantly or content/layout changed
-        if !small_scroll_change ||
-           self.buffer_version != get_buffer_version(buffer) ||
-           self.width_hash != current_width_hash ||
-           (self.font_size - font_size).abs() > f32::EPSILON {
+        if !small_scroll_change
+            || self.buffer_version != get_buffer_version(buffer)
+            || self.width_hash != current_width_hash
+            || (self.font_size - font_size).abs() > f32::EPSILON
+        {
             return true;
         }
 
@@ -605,8 +650,10 @@ where
         self.base_padding = padding.into();
         let effective = add_gutter(self.base_padding, self.gutter_width);
         self.inner = self.inner.padding(effective);
-        self.pointer_correction
-            .set(pointer_correction_value(self.base_padding, self.gutter_width));
+        self.pointer_correction.set(pointer_correction_value(
+            self.base_padding,
+            self.gutter_width,
+        ));
         self
     }
 
@@ -659,7 +706,10 @@ where
     }
 
     pub fn add_debug_dot(mut self, line_number: usize) -> Self {
-        self.debug_dots.push(DebugDot { line_number, enabled: true });
+        self.debug_dots.push(DebugDot {
+            line_number,
+            enabled: true,
+        });
         self
     }
 
@@ -742,7 +792,8 @@ where
         let visible_lines = calculate_visible_lines(buffer, None);
         let total_lines = incremental_state.optimized.wrap_index.total_visual();
 
-        let visible_line_numbers = incremental_state.get_visible_lines(scroll, visible_lines, total_lines);
+        let visible_line_numbers =
+            incremental_state.get_visible_lines(scroll, visible_lines, total_lines);
 
         if line_number < visible_line_numbers.len() {
             Some(visible_line_numbers[line_number])
@@ -795,13 +846,17 @@ where
         viewport: &Rectangle,
     ) {
         // Handle gutter click events
-        if let (Some(gutter_click_handler), Some(cursor_pos)) = (&self.on_gutter_click, cursor.position_over(layout.bounds())) {
+        if let (Some(gutter_click_handler), Some(cursor_pos)) =
+            (&self.on_gutter_click, cursor.position_over(layout.bounds()))
+        {
             let gutter_right = layout.bounds().x + self.base_padding.left + self.gutter_width;
 
             // Check if click is in gutter area
             if cursor_pos.x < gutter_right {
                 if let Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) = event {
-                    if let Some(line_number) = self.get_line_number_from_position(cursor_pos, layout.bounds()) {
+                    if let Some(line_number) =
+                        self.get_line_number_from_position(cursor_pos, layout.bounds())
+                    {
                         shell.publish(gutter_click_handler(line_number));
                         return;
                     }
@@ -811,14 +866,7 @@ where
 
         // Delegate to inner text editor for other events
         self.inner.update(
-            tree,
-            event,
-            layout,
-            cursor,
-            renderer,
-            clipboard,
-            shell,
-            viewport,
+            tree, event, layout, cursor, renderer, clipboard, shell, viewport,
         );
     }
 
@@ -839,7 +887,16 @@ where
 
         // Draw search highlight if active
         if let Some(highlight_line) = self.search_highlight_line {
-            draw_search_highlight_static(renderer, bounds, viewport, highlight_line, self.content, self.base_padding, self.gutter_width, self.font_size);
+            draw_search_highlight_static(
+                renderer,
+                bounds,
+                viewport,
+                highlight_line,
+                self.content,
+                self.base_padding,
+                self.gutter_width,
+                self.font_size,
+            );
         }
 
         draw_line_numbers_optimized_with_background(
@@ -873,7 +930,7 @@ where
         // For now, skip or add a placeholder
     }
 
-fn mouse_interaction(
+    fn mouse_interaction(
         &self,
         tree: &tree::Tree,
         layout: Layout<'_>,
@@ -950,7 +1007,8 @@ fn draw_search_highlight_static(
     }
 }
 
-impl<'a, Message, H> From<TextEditor<'a, Message, H>> for Element<'a, Message, IcedTheme, IcedRenderer>
+impl<'a, Message, H> From<TextEditor<'a, Message, H>>
+    for Element<'a, Message, IcedTheme, IcedRenderer>
 where
     Message: 'a,
     H: IcedHighlighter,
@@ -987,7 +1045,6 @@ fn adjust_point(position: Point, pointer_correction: f32) -> Point {
         position.y + pointer_correction,
     )
 }
-
 
 // Streaming buffer for truly large files - only loads visible lines
 #[derive(Debug)]
@@ -1064,7 +1121,11 @@ impl StreamingBuffer {
         self.loaded_start = 0;
     }
 
-    fn ensure_lines_loaded(&mut self, target_buffer_line: usize, approx_visible_buffer_lines: usize) {
+    fn ensure_lines_loaded(
+        &mut self,
+        target_buffer_line: usize,
+        approx_visible_buffer_lines: usize,
+    ) {
         if self.file_content.is_none() || self.line_index.is_none() {
             return;
         }
@@ -1074,7 +1135,8 @@ impl StreamingBuffer {
         let buffer_below = 50; // Load 50 lines below viewport
         let needed_start = target_buffer_line.saturating_sub(buffer_above);
         let total_lines = self.line_index.as_ref().map(|idx| idx.len()).unwrap_or(0);
-        let needed_end = (target_buffer_line + approx_visible_buffer_lines + buffer_below).min(total_lines);
+        let needed_end =
+            (target_buffer_line + approx_visible_buffer_lines + buffer_below).min(total_lines);
 
         // Initial fill: populate the window if empty
         if self.loaded.is_empty() {
@@ -1087,7 +1149,9 @@ impl StreamingBuffer {
         // Slide down: add lines at the back, remove from front
         while self.loaded_start + self.loaded.len() < needed_end {
             let next = self.loaded_start + self.loaded.len();
-            if next >= total_lines { break; }
+            if next >= total_lines {
+                break;
+            }
             self.loaded.push_back(next);
             if self.loaded.len() > self.max_loaded {
                 self.loaded.pop_front();
@@ -1117,7 +1181,14 @@ impl StreamingBuffer {
         None
     }
 
-    fn prepare_viewport_batch(&mut self, start_line: usize, visible_lines: usize, viewport: &Rectangle, bounds: Rectangle, line_height: f32) {
+    fn prepare_viewport_batch(
+        &mut self,
+        start_line: usize,
+        visible_lines: usize,
+        viewport: &Rectangle,
+        bounds: Rectangle,
+        line_height: f32,
+    ) {
         let viewport_top = viewport.y;
         let viewport_bottom = viewport.y + viewport.height;
         let start_y = bounds.y + 10.0; // Approximate base padding top
@@ -1159,7 +1230,18 @@ impl StreamingBuffer {
         self.last_viewport = Some(*viewport);
     }
 
-    fn render_batch(&mut self, renderer: &mut IcedRenderer, bounds: Rectangle, base_padding: &Padding, gutter_width: f32, color: Color, font_size: f32, line_height: f32, viewport: &Rectangle, start_line: usize) {
+    fn render_batch(
+        &mut self,
+        renderer: &mut IcedRenderer,
+        bounds: Rectangle,
+        base_padding: &Padding,
+        gutter_width: f32,
+        color: Color,
+        font_size: f32,
+        line_height: f32,
+        viewport: &Rectangle,
+        start_line: usize,
+    ) {
         let text_size = Pixels(font_size);
         let font = renderer.default_font();
         let text_width = (gutter_width - GUTTER_TEXT_PADDING * 2.0).max(0.0);
@@ -1188,7 +1270,6 @@ impl StreamingBuffer {
             renderer.fill_text(text, Point::new(x, y), color, *viewport);
         }
     }
-
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1200,8 +1281,7 @@ pub struct ScrollMetrics {
 
 impl ScrollMetrics {
     pub fn max_scroll(&self) -> usize {
-        self.total_visual_lines
-            .saturating_sub(self.visible_lines)
+        self.total_visual_lines.saturating_sub(self.visible_lines)
     }
 }
 
@@ -1234,7 +1314,9 @@ impl CachedScrollMetrics {
         let current_width_hash = compute_width_hash(buffer);
         self.buffer_version == get_buffer_version(buffer)
             && self.width_hash == current_width_hash
-            && self.last_scroll.map_or(false, |last| last == current_scroll)
+            && self
+                .last_scroll
+                .map_or(false, |last| last == current_scroll)
     }
 
     fn update(&mut self, buffer: &CosmicBuffer) {
@@ -1292,8 +1374,7 @@ pub fn scroll_to(content: &mut Content, target: usize) {
     }
 
     let delta = clamped as isize - current as isize;
-    let delta = delta
-        .clamp(i32::MIN as isize, i32::MAX as isize) as i32;
+    let delta = delta.clamp(i32::MIN as isize, i32::MAX as isize) as i32;
 
     if delta != 0 {
         content.perform(Action::Scroll { lines: delta });
@@ -1415,7 +1496,9 @@ fn render_gutter_numbers(
 
     for (i, &n) in numbers.iter().enumerate() {
         let y = start_y + (i as f32) * line_height;
-        if y + line_height < top || y > bottom { continue; }
+        if y + line_height < top || y > bottom {
+            continue;
+        }
         let s = itoa_buf.format(n);
         let text = PrimitiveText {
             content: s.to_string(), // Convert to owned String
@@ -1477,7 +1560,14 @@ fn draw_line_numbers_optimized_with_background(
     // Update the traditional cache as well for compatibility
     let mut line_numbers_cache = cached_line_numbers.borrow_mut();
     if !line_numbers_cache.is_valid(scroll, visible_lines, total_lines, font_size, line_height) {
-        line_numbers_cache.update(numbers.clone(), scroll, visible_lines, total_lines, font_size, line_height);
+        line_numbers_cache.update(
+            numbers.clone(),
+            scroll,
+            visible_lines,
+            total_lines,
+            font_size,
+            line_height,
+        );
     }
 
     // Use the cached numbers for rendering (avoids clone)
@@ -1531,7 +1621,15 @@ fn draw_line_numbers_optimized_with_background(
     // Always render gutter numbers from the cached numbers vector
     // This eliminates the streaming branch that was causing the issue
     render_gutter_numbers(
-        renderer, bounds, viewport, base_padding, gutter_width, color, font_size, line_height, numbers_for_render
+        renderer,
+        bounds,
+        viewport,
+        base_padding,
+        gutter_width,
+        color,
+        font_size,
+        line_height,
+        numbers_for_render,
     );
 }
 
@@ -1678,8 +1776,7 @@ fn count_visual_lines(buffer: &CosmicBuffer) -> usize {
         .lines
         .iter()
         .map(|line| {
-            line
-                .layout_opt()
+            line.layout_opt()
                 .as_ref()
                 .map(|layout| layout.len())
                 .unwrap_or(1)
@@ -1783,5 +1880,3 @@ fn draw_debug_dots(
         }
     }
 }
-
-

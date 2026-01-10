@@ -89,8 +89,7 @@ impl SettingsState {
                 .binding(command.action.unwrap())
                 .map(|combo| combo.to_string())
                 .unwrap_or_default();
-            self.binding_inputs
-                .insert(command.id, entry);
+            self.binding_inputs.insert(command.id, entry);
             self.binding_errors.remove(&command.id);
         }
     }

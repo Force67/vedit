@@ -1,7 +1,7 @@
 use crate::message::Message;
 use crate::state::EditorState;
 use crate::style::{ribbon_container, top_bar_button};
-use iced::widget::{button, container, mouse_area, row, text, Space};
+use iced::widget::{Space, button, container, mouse_area, row, text};
 use iced::{Alignment, Color, Element, Length};
 use iced_font_awesome::fa_icon_solid;
 
@@ -32,12 +32,15 @@ pub fn render_title_bar(
                 fa_icon_solid("angle-down").color(iced::Color::WHITE)
             };
 
-            button(row![
-                text("Command Prompt").size((14.0 * scale).max(10.0)),
-                icon.size((14.0 * scale).max(10.0))
-            ].spacing(4.0))
-                .style(top_bar_button())
-                .on_press(Message::CommandPromptToggled)
+            button(
+                row![
+                    text("Command Prompt").size((14.0 * scale).max(10.0)),
+                    icon.size((14.0 * scale).max(10.0))
+                ]
+                .spacing(4.0),
+            )
+            .style(top_bar_button())
+            .on_press(Message::CommandPromptToggled)
         },
         {
             let icon = if state.console().is_visible() {
@@ -46,25 +49,38 @@ pub fn render_title_bar(
                 fa_icon_solid("angle-down").color(iced::Color::WHITE)
             };
 
-            button(row![
-                text("Terminal").size((14.0 * scale).max(10.0)),
-                icon.size((14.0 * scale).max(10.0))
-            ].spacing(4.0))
-                .style(top_bar_button())
-                .on_press(Message::ConsoleVisibilityToggled)
+            button(
+                row![
+                    text("Terminal").size((14.0 * scale).max(10.0)),
+                    icon.size((14.0 * scale).max(10.0))
+                ]
+                .spacing(4.0),
+            )
+            .style(top_bar_button())
+            .on_press(Message::ConsoleVisibilityToggled)
         },
-        button(row![
-            fa_icon_solid("play").size((14.0 * scale).max(10.0)).color(iced::Color::WHITE),
-            text("Run").size((14.0 * scale).max(10.0))
-        ].spacing(4.0))
-            .style(top_bar_button())
-            .on_press(Message::DebuggerLaunchRequested),
-        button(row![
-            fa_icon_solid("stop").size((14.0 * scale).max(10.0)).color(iced::Color::WHITE),
-            text("Stop").size((14.0 * scale).max(10.0))
-        ].spacing(4.0))
-            .style(top_bar_button())
-            .on_press(Message::DebuggerStopRequested),
+        button(
+            row![
+                fa_icon_solid("play")
+                    .size((14.0 * scale).max(10.0))
+                    .color(iced::Color::WHITE),
+                text("Run").size((14.0 * scale).max(10.0))
+            ]
+            .spacing(4.0)
+        )
+        .style(top_bar_button())
+        .on_press(Message::DebuggerLaunchRequested),
+        button(
+            row![
+                fa_icon_solid("stop")
+                    .size((14.0 * scale).max(10.0))
+                    .color(iced::Color::WHITE),
+                text("Stop").size((14.0 * scale).max(10.0))
+            ]
+            .spacing(4.0)
+        )
+        .style(top_bar_button())
+        .on_press(Message::DebuggerStopRequested),
         {
             let summary = state.debugger().selection_summary();
             let icon = if state.debugger_menu_open() {
@@ -72,12 +88,15 @@ pub fn render_title_bar(
             } else {
                 fa_icon_solid("angle-down").color(iced::Color::WHITE)
             };
-            button(row![
-                text(summary).size((14.0 * scale).max(10.0)),
-                icon.size((14.0 * scale).max(10.0))
-            ].spacing(4.0))
-                .style(top_bar_button())
-                .on_press(Message::DebuggerMenuToggled)
+            button(
+                row![
+                    text(summary).size((14.0 * scale).max(10.0)),
+                    icon.size((14.0 * scale).max(10.0))
+                ]
+                .spacing(4.0),
+            )
+            .style(top_bar_button())
+            .on_press(Message::DebuggerMenuToggled)
         },
         Space::new().width(Length::Fill),
     ]
@@ -90,20 +109,36 @@ pub fn render_title_bar(
         Message::SettingsOpened
     };
 
-    let settings_button = button(fa_icon_solid("gear").size((16.0 * scale).max(12.0)).color(iced::Color::WHITE))
-        .style(top_bar_button())
-        .on_press(message);
+    let settings_button = button(
+        fa_icon_solid("gear")
+            .size((16.0 * scale).max(12.0))
+            .color(iced::Color::WHITE),
+    )
+    .style(top_bar_button())
+    .on_press(message);
 
     let window_buttons = row![
-        button(fa_icon_solid("window-minimize").size((14.0 * scale).max(10.0)).color(iced::Color::WHITE))
-            .style(top_bar_button())
-            .on_press(Message::WindowMinimize),
-        button(fa_icon_solid("window-maximize").size((14.0 * scale).max(10.0)).color(iced::Color::WHITE))
-            .style(top_bar_button())
-            .on_press(Message::WindowMaximize),
-        button(fa_icon_solid("xmark").size((14.0 * scale).max(10.0)).color(iced::Color::WHITE))
-            .style(top_bar_button())
-            .on_press(Message::WindowClose),
+        button(
+            fa_icon_solid("window-minimize")
+                .size((14.0 * scale).max(10.0))
+                .color(iced::Color::WHITE)
+        )
+        .style(top_bar_button())
+        .on_press(Message::WindowMinimize),
+        button(
+            fa_icon_solid("window-maximize")
+                .size((14.0 * scale).max(10.0))
+                .color(iced::Color::WHITE)
+        )
+        .style(top_bar_button())
+        .on_press(Message::WindowMaximize),
+        button(
+            fa_icon_solid("xmark")
+                .size((14.0 * scale).max(10.0))
+                .color(iced::Color::WHITE)
+        )
+        .style(top_bar_button())
+        .on_press(Message::WindowClose),
     ]
     .spacing(spacing_small);
 
@@ -112,8 +147,7 @@ pub fn render_title_bar(
     row = row.push(Space::new().width(Length::Fixed(20.0)));
     row = row.push(window_buttons);
 
-    let title_bar = mouse_area(row)
-        .on_press(Message::WindowDragStart);
+    let title_bar = mouse_area(row).on_press(Message::WindowDragStart);
 
     container(title_bar)
         .padding([spacing_medium, spacing_large])
