@@ -1,3 +1,6 @@
+// Commands module - some async commands are API for future use
+#![allow(dead_code)]
+
 use crate::debugger::DebuggerType;
 use rfd::FileDialog;
 use std::fs;

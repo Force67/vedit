@@ -115,7 +115,9 @@ pub enum DebuggerType {
     Vedit,
 }
 
+// All status variants defined for completeness, some not yet used
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum DebugSessionStatus {
     Idle,
     Launching,
@@ -144,7 +146,9 @@ impl Default for DebugSessionStatus {
     }
 }
 
+// All entry kinds defined for completeness
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum DebuggerConsoleEntryKind {
     Command,
     Output,
@@ -166,6 +170,7 @@ impl DebuggerConsoleEntry {
         }
     }
 
+    #[allow(dead_code)]
     pub fn output(message: impl Into<String>) -> Self {
         Self {
             kind: DebuggerConsoleEntryKind::Output,

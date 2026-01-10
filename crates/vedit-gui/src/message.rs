@@ -1,3 +1,7 @@
+// Message enum contains all application messages - some variants are defined
+// for future features or API completeness and may not yet be constructed
+#![allow(dead_code)]
+
 use crate::commands::DebugSession;
 use crate::commands::WorkspaceData;
 use crate::debugger::DebuggerType;

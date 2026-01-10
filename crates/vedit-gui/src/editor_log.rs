@@ -1,3 +1,7 @@
+// Logging infrastructure - all log levels and functions are kept for completeness
+// even if not all are currently used in the codebase.
+#![allow(dead_code)]
+
 use crate::console::{ConsoleLineKind, ConsoleState};
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};

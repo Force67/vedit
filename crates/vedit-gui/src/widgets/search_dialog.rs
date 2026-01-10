@@ -1,3 +1,6 @@
+// SearchDialog has some helper methods not yet used by the main app
+#![allow(dead_code)]
+
 use crate::message::Message;
 use crate::style::panel_container;
 use iced::widget::{Space, button, checkbox, column, container, row, text, text_input};

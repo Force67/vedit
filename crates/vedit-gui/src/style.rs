@@ -1,4 +1,4 @@
-use iced::widget::{button, container, rule, scrollable, text_input};
+use iced::widget::{button, container, scrollable};
 use iced::{Background, Border, Color, Shadow, Theme, Vector};
 
 const fn rgb(r: u8, g: u8, b: u8) -> Color {
@@ -17,7 +17,6 @@ pub const PRIMARY_HOVER: Color = rgb(143, 176, 250);
 pub const SUCCESS: Color = rgb(128, 211, 155);
 pub const WARNING: Color = rgb(230, 180, 80);
 pub const ERROR: Color = rgb(228, 104, 118);
-pub const FOCUS_RING: Color = Color::from_rgba(122.0 / 255.0, 162.0 / 255.0, 247.0 / 255.0, 0.55);
 
 // Container styles
 pub fn root_container() -> impl Fn(&Theme) -> container::Style {
@@ -67,19 +66,6 @@ pub fn status_container() -> impl Fn(&Theme) -> container::Style {
     }
 }
 
-pub fn custom_container() -> impl Fn(&Theme) -> container::Style {
-    |_theme| container::Style {
-        background: Some(Background::Color(SURFACE)),
-        text_color: Some(TEXT),
-        border: Border {
-            radius: 4.0.into(),
-            width: 1.0,
-            color: BORDER,
-        },
-        ..Default::default()
-    }
-}
-
 pub fn floating_panel_container() -> impl Fn(&Theme) -> container::Style {
     |_theme| container::Style {
         background: Some(Background::Color(SURFACE)),
@@ -89,13 +75,6 @@ pub fn floating_panel_container() -> impl Fn(&Theme) -> container::Style {
             width: 1.0,
             color: BORDER,
         },
-        ..Default::default()
-    }
-}
-
-pub fn overlay_container() -> impl Fn(&Theme) -> container::Style {
-    |_theme| container::Style {
-        background: None,
         ..Default::default()
     }
 }
@@ -241,54 +220,6 @@ pub fn custom_button() -> impl Fn(&Theme, button::Status) -> button::Style {
     }
 }
 
-pub fn selected_button() -> impl Fn(&Theme, button::Status) -> button::Style {
-    |_theme, status| {
-        let base = button::Style {
-            background: Some(Background::Color(PRIMARY)),
-            text_color: TEXT,
-            border: Border {
-                radius: 4.0.into(),
-                width: 1.0,
-                color: PRIMARY,
-            },
-            shadow: Default::default(),
-            snap: true,
-        };
-
-        match status {
-            button::Status::Active => base,
-            button::Status::Hovered => button::Style {
-                background: Some(Background::Color(PRIMARY_HOVER)),
-                border: Border {
-                    radius: 4.0.into(),
-                    width: 1.0,
-                    color: PRIMARY_HOVER,
-                },
-                ..base
-            },
-            button::Status::Pressed => button::Style {
-                background: Some(Background::Color(SURFACE2)),
-                border: Border {
-                    radius: 4.0.into(),
-                    width: 1.0,
-                    color: PRIMARY,
-                },
-                ..base
-            },
-            button::Status::Disabled => button::Style {
-                background: Some(Background::Color(SURFACE)),
-                text_color: MUTED,
-                border: Border {
-                    radius: 4.0.into(),
-                    width: 1.0,
-                    color: BORDER,
-                },
-                ..base
-            },
-        }
-    }
-}
-
 // Scrollable styles
 pub fn custom_scrollable() -> impl Fn(&Theme, scrollable::Status) -> scrollable::Style {
     |_theme, status| {
@@ -337,49 +268,3 @@ pub fn custom_scrollable() -> impl Fn(&Theme, scrollable::Status) -> scrollable:
     }
 }
 
-// Text input styles
-pub fn custom_text_input() -> impl Fn(&Theme, text_input::Status) -> text_input::Style {
-    |_theme, status| {
-        let base = text_input::Style {
-            background: Background::Color(SURFACE),
-            border: Border {
-                radius: 4.0.into(),
-                width: 1.0,
-                color: BORDER,
-            },
-            icon: MUTED,
-            placeholder: MUTED,
-            value: TEXT,
-            selection: PRIMARY,
-        };
-
-        match status {
-            text_input::Status::Active => base,
-            text_input::Status::Hovered => text_input::Style {
-                border: Border {
-                    color: PRIMARY,
-                    ..base.border
-                },
-                ..base
-            },
-            text_input::Status::Focused { .. } => text_input::Style {
-                border: Border {
-                    color: FOCUS_RING,
-                    ..base.border
-                },
-                ..base
-            },
-            text_input::Status::Disabled => base,
-        }
-    }
-}
-
-// Rule styles
-pub fn custom_rule() -> impl Fn(&Theme) -> rule::Style {
-    |_theme| rule::Style {
-        color: BORDER,
-        radius: 0.0.into(),
-        fill_mode: rule::FillMode::Full,
-        snap: true,
-    }
-}

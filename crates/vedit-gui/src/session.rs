@@ -1,3 +1,6 @@
+// Session management infrastructure - some methods are API endpoints not yet used
+#![allow(dead_code)]
+
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io;

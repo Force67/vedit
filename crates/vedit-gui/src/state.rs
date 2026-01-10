@@ -1,3 +1,6 @@
+// EditorState has many accessor/mutator methods - some are API for future features
+#![allow(dead_code)]
+
 use crate::console::{ConsoleKind, ConsoleLineKind, ConsoleState};
 use crate::debugger::{
     DebugLaunchPlan, DebugTarget, DebuggerConsoleEntry, DebuggerState, DebuggerUiEvent,

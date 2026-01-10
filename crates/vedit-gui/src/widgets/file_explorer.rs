@@ -1,3 +1,7 @@
+// File explorer has many planned features (rename, delete, drag-drop, etc.)
+// Allow dead_code for feature stubs pending implementation
+#![allow(dead_code)]
+
 use crate::style;
 use iced::widget::{Column, Row, Scrollable, Space, button, row, text, text_input};
 use iced::{Alignment, Element, Length, Padding, Task};

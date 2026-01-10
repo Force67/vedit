@@ -1,3 +1,6 @@
+// App has some configuration methods that are API for future use
+#![allow(dead_code)]
+
 use crate::commands::{
     self, DebugSessionBreakpoint, DebugSessionRequest, SaveDocumentRequest, SaveKeymapRequest,
     WorkspaceData,

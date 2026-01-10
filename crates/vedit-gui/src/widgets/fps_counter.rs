@@ -39,6 +39,7 @@ impl FpsCounter {
         }
     }
 
+    #[allow(dead_code)]
     pub fn view(&self) -> Element<'_, crate::message::Message> {
         let fps_text = if self.fps >= 120.0 {
             text(format!("{:.0} FPS", self.fps)).color(Color::from_rgb(0.0, 1.0, 0.0)) // Green for excellent FPS (144Hz+ target)

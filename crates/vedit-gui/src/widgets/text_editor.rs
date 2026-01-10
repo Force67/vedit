@@ -1,3 +1,7 @@
+// Allow dead code for optimization infrastructure that is built but not yet fully integrated.
+// This includes: LineIndex, StreamingBuffer, various caching helpers for large file support.
+#![allow(dead_code)]
+
 use iced::Color;
 use iced::Element;
 use iced::Length;
