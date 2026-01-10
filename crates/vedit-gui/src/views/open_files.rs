@@ -19,15 +19,15 @@ pub fn render_open_files_panel(
             title.push('*');
         }
 
-        let file_text = text(&title).style(iced::theme::Text::Color(TEXT));
+        let file_text = text(title.clone()).color(TEXT);
 
-        let close_button = button(text("×").style(iced::theme::Text::Color(MUTED)))
+        let close_button = button(text("×").color(MUTED))
             .style(crate::style::custom_button())
             .on_press(Message::DocumentSelected(0)); // dummy
 
         let item = row![file_text, close_button]
             .spacing(4)
-            .align_items(Alignment::Center);
+            .align_y(Alignment::Center);
 
         let button = button(item)
             .style(crate::style::document_button())
@@ -38,13 +38,13 @@ pub fn render_open_files_panel(
 
     let open_scroll = scrollable(open_list).style(crate::style::custom_scrollable());
 
-    let header = button(text("Recent Files").style(iced::theme::Text::Color(TEXT)))
+    let header = button(text("Recent Files").color(TEXT))
         .style(crate::style::custom_button())
         .on_press(Message::DocumentSelected(0)); // dummy
 
     let mut recent_list = Column::new().spacing(4);
     for path in state.workspace_recent_files() {
-        let item = button(text(&path).style(iced::theme::Text::Color(MUTED)))
+        let item = button(text(path.clone()).color(MUTED))
             .style(crate::style::document_button())
             .on_press(Message::WorkspaceFileActivated(path.clone()));
 
@@ -54,7 +54,7 @@ pub fn render_open_files_panel(
     let recent_scroll = scrollable(recent_list).style(crate::style::custom_scrollable());
 
     let content = column![
-        text("Open Files").style(iced::theme::Text::Color(TEXT)),
+        text("Open Files").color(TEXT),
         open_scroll,
         header,
         recent_scroll,

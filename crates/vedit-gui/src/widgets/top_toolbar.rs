@@ -25,7 +25,7 @@ impl TopToolbar {
             .spacing(8)
             .push(
                 tooltip(
-                    button(text("New").style(iced::theme::Text::Color(style::TEXT)))
+                    button(text("New").color(style::TEXT))
                         .style(style::custom_button())
                         .on_press(Message::NewFile),
                     "New File (Ctrl+N)",
@@ -34,7 +34,7 @@ impl TopToolbar {
             )
             .push(
                 tooltip(
-                    button(text("Open").style(iced::theme::Text::Color(style::TEXT)))
+                    button(text("Open").color(style::TEXT))
                         .style(style::custom_button())
                         .on_press(Message::OpenFile),
                     "Open File (Ctrl+O)",
@@ -43,7 +43,7 @@ impl TopToolbar {
             )
             .push(
                 tooltip(
-                    button(text("Save").style(iced::theme::Text::Color(style::TEXT)))
+                    button(text("Save").color(style::TEXT))
                         .style(style::custom_button())
                         .on_press(Message::SaveFile),
                     "Save File (Ctrl+S)",
@@ -55,7 +55,7 @@ impl TopToolbar {
             .spacing(8)
             .push(
                 tooltip(
-                    button(text("Run").style(iced::theme::Text::Color(style::TEXT)))
+                    button(text("Run").color(style::TEXT))
                         .style(style::custom_button())
                         .on_press(Message::Run),
                     "Run (F5)",
@@ -64,7 +64,7 @@ impl TopToolbar {
             )
             .push(
                 tooltip(
-                    button(text("Debug").style(iced::theme::Text::Color(style::TEXT)))
+                    button(text("Debug").color(style::TEXT))
                         .style(style::custom_button())
                         .on_press(Message::Debug),
                     "Debug (F10)",
@@ -76,7 +76,7 @@ impl TopToolbar {
             .spacing(8)
             .push(
                 tooltip(
-                    button(text("Settings").style(iced::theme::Text::Color(style::TEXT)))
+                    button(text("Settings").color(style::TEXT))
                         .style(style::custom_button())
                         .on_press(Message::Settings),
                     "Settings (Ctrl+,)",
@@ -89,7 +89,7 @@ impl TopToolbar {
             .push(file_group)
             .push(run_group)
             .push(settings_group)
-            .align_items(Alignment::Center);
+            .align_y(Alignment::Center);
 
         container(toolbar)
             .style(style::ribbon_container())

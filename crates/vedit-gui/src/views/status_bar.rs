@@ -44,7 +44,7 @@ pub fn render_status_bar(
                 state.fps_counter().fps()
             ))
             .size((18.0 * scale).max(12.0)) // Bigger font for FPS
-            .style(if state.fps_counter().fps() >= 120.0 {
+            .color(if state.fps_counter().fps() >= 120.0 {
                 Color::from_rgb(0.0, 1.0, 0.0) // Green for 144Hz+ target
             } else if state.fps_counter().fps() >= 90.0 {
                 Color::from_rgb(0.2, 0.8, 0.2) // Light green for good FPS
@@ -57,12 +57,12 @@ pub fn render_status_bar(
                 (Some(err), _) => text(format!("Error: {}", err)).size((14.0 * scale).max(10.0)),
                 (None, Some(notice)) => text(notice)
                     .size((14.0 * scale).max(10.0))
-                    .style(Color::from_rgb8(38, 139, 210)),
+                    .color(Color::from_rgb8(38, 139, 210)),
                 _ => text("").size(14),
             },
         ]
         .spacing((24.0 * scale).max(12.0))
-        .align_items(Alignment::Center),
+        .align_y(Alignment::Center),
     )
     .padding([spacing_small, spacing_large])
     .width(Length::Fill)

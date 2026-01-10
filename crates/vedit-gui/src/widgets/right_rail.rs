@@ -102,7 +102,7 @@ pub fn render_right_rail(
                     .into()
             } else {
                 scrollable(
-                    column![text("Open a folder to view solutions").style(iced::theme::Text::Color(crate::style::TEXT))]
+                    column![text("Open a folder to view solutions").color(crate::style::TEXT)]
                         .spacing(4)
                         .padding(8)
                 )
@@ -115,7 +115,7 @@ pub fn render_right_rail(
         }
         _ => {
             scrollable(
-                column![text("Not implemented yet").style(iced::theme::Text::Color(crate::style::TEXT))]
+                column![text("Not implemented yet").color(crate::style::TEXT)]
                     .spacing(4)
                     .padding(8)
             )

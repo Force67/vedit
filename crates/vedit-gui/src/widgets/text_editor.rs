@@ -1,4 +1,4 @@
-use cosmic_text::Buffer as CosmicBuffer;
+use iced_graphics::text::cosmic_text::Buffer as CosmicBuffer;
 use iced::advanced::clipboard::Clipboard;
 use iced::event::{self, Event};
 use iced::advanced::layout::{self, Layout};
@@ -396,7 +396,7 @@ impl CachedLineMetrics {
     fn update(&mut self, buffer: &CosmicBuffer, font_size: f32, scroll: usize) {
         self.line_height = buffer.metrics().line_height.max(1.0);
         self.font_size = font_size;
-        self.visible_lines = buffer.visible_lines().max(0) as usize;
+        self.visible_lines = calculate_visible_lines(buffer, None);
 
         // Use a cached wrap index to avoid O(N) each frame
         let width_hash = compute_width_hash(buffer);
@@ -453,6 +453,26 @@ fn compute_width_hash(buffer: &CosmicBuffer) -> u64 {
     metrics.line_height.to_bits().hash(&mut hasher);
     // Add any other layout-affecting properties here
     hasher.finish()
+}
+
+/// Get the scroll line from a buffer's scroll position.
+/// In cosmic_text 0.15+, Scroll is a struct with a `line` field.
+#[inline]
+fn get_scroll_line(buffer: &CosmicBuffer) -> usize {
+    buffer.scroll().line
+}
+
+/// Calculate visible lines based on buffer metrics.
+/// This replaces the removed `visible_lines()` method from cosmic_text.
+#[inline]
+fn calculate_visible_lines(buffer: &CosmicBuffer, viewport_height: Option<f32>) -> usize {
+    let metrics = buffer.metrics();
+    let line_height = metrics.line_height.max(1.0);
+    // Use buffer size if no viewport provided, otherwise use viewport
+    let height = viewport_height.unwrap_or_else(|| {
+        buffer.size().1.unwrap_or(600.0) // Default viewport height
+    });
+    (height / line_height).ceil() as usize
 }
 
 /// Red dot marker for debugging integration
@@ -536,7 +556,7 @@ impl<'a, Message> TextEditor<'a, Message, highlighter::PlainText> {
         NH: IcedHighlighter,
     {
         TextEditor {
-            inner: self.inner.highlight(settings, to_format),
+            inner: self.inner.highlight_with(settings, to_format),
             content: self.content,
             base_padding: self.base_padding,
             gutter_width: self.gutter_width,
@@ -665,7 +685,7 @@ where
     pub fn cached_scroll_metrics(&self) -> ScrollMetrics {
         let editor_ref = borrow_editor(self.content);
         let buffer = editor_ref.buffer();
-        let current_scroll = buffer.scroll().max(0) as usize;
+        let current_scroll = get_scroll_line(buffer);
 
         let mut cache = self.cached_scroll_metrics.borrow_mut();
         if !cache.is_valid(buffer, current_scroll) {
@@ -704,7 +724,7 @@ where
         let _editor_ref = borrow_editor(self.content);
         let buffer = _editor_ref.buffer();
         let line_height = buffer.metrics().line_height.max(1.0);
-        let scroll = buffer.scroll().max(0) as usize;
+        let scroll = get_scroll_line(buffer);
         let start_y = bounds.y + self.base_padding.top;
 
         // Calculate which line was clicked based on y position
@@ -719,7 +739,7 @@ where
 
         // Get the actual line number from the incremental state for accuracy
         let incremental_state = self.incremental_line_state.borrow();
-        let visible_lines = buffer.visible_lines().max(0) as usize;
+        let visible_lines = calculate_visible_lines(buffer, None);
         let total_lines = incremental_state.optimized.wrap_index.total_visual();
 
         let visible_line_numbers = incremental_state.get_visible_lines(scroll, visible_lines, total_lines);
@@ -747,11 +767,15 @@ where
     }
 
     fn size(&self) -> Size<Length> {
-        self.inner.size()
+        // Return default fill size for the text editor
+        Size {
+            width: Length::Fill,
+            height: Length::Fill,
+        }
     }
 
     fn layout(
-        &self,
+        &mut self,
         tree: &mut tree::Tree,
         renderer: &IcedRenderer,
         limits: &layout::Limits,
@@ -759,17 +783,17 @@ where
         self.inner.layout(tree, renderer, limits)
     }
 
-    fn on_event(
+    fn update(
         &mut self,
         tree: &mut tree::Tree,
-        event: Event,
+        event: &Event,
         layout: Layout<'_>,
         cursor: mouse::Cursor,
         renderer: &IcedRenderer,
         clipboard: &mut dyn Clipboard,
         shell: &mut Shell<'_, Message>,
         viewport: &Rectangle,
-    ) -> event::Status {
+    ) {
         // Handle gutter click events
         if let (Some(gutter_click_handler), Some(cursor_pos)) = (&self.on_gutter_click, cursor.position_over(layout.bounds())) {
             let gutter_right = layout.bounds().x + self.base_padding.left + self.gutter_width;
@@ -779,14 +803,14 @@ where
                 if let Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) = event {
                     if let Some(line_number) = self.get_line_number_from_position(cursor_pos, layout.bounds()) {
                         shell.publish(gutter_click_handler(line_number));
-                        return event::Status::Captured;
+                        return;
                     }
                 }
             }
         }
 
         // Delegate to inner text editor for other events
-        self.inner.on_event(
+        self.inner.update(
             tree,
             event,
             layout,
@@ -795,7 +819,7 @@ where
             clipboard,
             shell,
             viewport,
-        )
+        );
     }
 
     fn draw(
@@ -890,7 +914,7 @@ fn draw_search_highlight_static(
     let buffer = _editor_ref.buffer();
     let _font_size = font_size.map(|p| p.0).unwrap_or(buffer.metrics().font_size);
     let line_height = buffer.metrics().line_height.max(1.0);
-    let scroll = buffer.scroll().max(0) as f32;
+    let scroll = get_scroll_line(buffer) as f32;
 
     // Calculate line position using the same logic as line numbers
     let start_y = bounds.y + base_padding.top;
@@ -902,7 +926,7 @@ fn draw_search_highlight_static(
         let highlight_rect = Rectangle {
             x: bounds.x + base_padding.left + gutter_width - 1.0, // Start near gutter with small padding
             y: highlight_y, // Use the same calculation as line numbers
-            width: bounds.width - base_padding.horizontal() - gutter_width + 2.0, // Extend past gutter with small padding
+            width: bounds.width - (base_padding.left + base_padding.right) - gutter_width + 2.0, // Extend past gutter with small padding
             height: line_height, // Use full line height
         };
 
@@ -919,6 +943,7 @@ fn draw_search_highlight_static(
                     color: Color::TRANSPARENT,
                 },
                 shadow: iced::Shadow::default(),
+                snap: true,
             },
             highlight_color,
         );
@@ -1141,26 +1166,22 @@ impl StreamingBuffer {
         let gutter_right = bounds.x + base_padding.left + gutter_width;
         let start_y = bounds.y + base_padding.top;
 
-        // Create template text primitive with Basic shaping for line numbers
-        let text_template = PrimitiveText {
-            content: "", // Will be set each iteration
-            bounds: Size::new(text_width, line_height),
-            size: text_size,
-            line_height: LineHeight::Absolute(Pixels(line_height)),
-            font,
-            horizontal_alignment: alignment::Horizontal::Right,
-            vertical_alignment: alignment::Vertical::Top,
-            shaping: Shaping::Basic, // Use Basic shaping for line numbers (ASCII digits only)
-        };
-
         // Batch render all visible lines
         while let Some((line_number, line_str)) = self.render_batch.pop_front() {
             let index = line_number.saturating_sub(start_line); // Convert to 0-based index
             let y = start_y + index as f32 * line_height;
 
+            // Create text primitive with owned content
             let text = PrimitiveText {
-                content: &line_str,
-                ..text_template
+                content: line_str, // Owned String
+                bounds: Size::new(text_width, line_height),
+                size: text_size,
+                line_height: LineHeight::Absolute(Pixels(line_height)),
+                font,
+                align_x: alignment::Horizontal::Right.into(),
+                align_y: alignment::Vertical::Top,
+                shaping: Shaping::Basic,
+                wrapping: iced::advanced::text::Wrapping::None,
             };
 
             let x = (gutter_right - text_width - GUTTER_TEXT_PADDING).max(bounds.x);
@@ -1217,8 +1238,8 @@ impl CachedScrollMetrics {
     }
 
     fn update(&mut self, buffer: &CosmicBuffer) {
-        let visible_lines = buffer.visible_lines().max(0) as usize;
-        let scroll = buffer.scroll().max(0) as usize;
+        let visible_lines = calculate_visible_lines(buffer, None);
+        let scroll = get_scroll_line(buffer);
         let width_hash = compute_width_hash(buffer);
 
         // Rebuild wrap index if needed - this is the only O(N) operation
@@ -1249,7 +1270,7 @@ pub fn buffer_scroll_metrics_optimized(content: &Content) -> ScrollMetrics {
 
     let editor = borrow_editor(content);
     let buffer = editor.buffer();
-    let current_scroll = buffer.scroll().max(0) as usize;
+    let current_scroll = get_scroll_line(buffer);
 
     SCROLL_CACHE.with(|cache| {
         let mut cache = cache.borrow_mut();
@@ -1293,8 +1314,8 @@ fn draw_line_numbers(
     let buffer = _editor_ref.buffer();
     let font_size = font_size_override.unwrap_or(buffer.metrics().font_size);
     let line_height = buffer.metrics().line_height.max(1.0);
-    let visible_lines = buffer.visible_lines().max(0) as usize;
-    let scroll = buffer.scroll().max(0) as usize;
+    let visible_lines = calculate_visible_lines(buffer, None);
+    let scroll = get_scroll_line(buffer);
     let numbers = collect_visible_line_numbers(buffer, scroll, visible_lines);
 
     // Draw gutter background (VSCode-style)
@@ -1315,6 +1336,7 @@ fn draw_line_numbers(
                 radius: 0.0.into(),
             },
             shadow: iced::Shadow::default(),
+            snap: true,
         },
         GUTTER_BACKGROUND,
     );
@@ -1336,6 +1358,7 @@ fn draw_line_numbers(
                 radius: 0.0.into(),
             },
             shadow: iced::Shadow::default(),
+            snap: true,
         },
         GUTTER_BORDER_COLOR,
     );
@@ -1350,16 +1373,16 @@ fn draw_line_numbers(
 
     for (index, line_number) in numbers.iter().enumerate() {
         let y = start_y + index as f32 * line_height;
-        let label = line_number.to_string();
         let text = PrimitiveText {
-            content: &label,
+            content: line_number.to_string(), // Owned String
             bounds: Size::new(text_width, line_height),
             size: text_size,
             line_height: LineHeight::Absolute(Pixels(line_height)),
             font,
-            horizontal_alignment: alignment::Horizontal::Right,
-            vertical_alignment: alignment::Vertical::Top,
+            align_x: alignment::Horizontal::Right.into(),
+            align_y: alignment::Vertical::Top,
             shaping: Shaping::Basic,
+            wrapping: iced::advanced::text::Wrapping::None,
         };
 
         renderer.fill_text(text, Point::new(start_x, y), color, *viewport);
@@ -1382,16 +1405,6 @@ fn render_gutter_numbers(
     let start_y = bounds.y + base_padding.top;
     let start_x = (gutter_right - text_width - GUTTER_TEXT_PADDING).max(bounds.x);
     let font = renderer.default_font();
-    let template = PrimitiveText {
-        content: "",
-        bounds: Size::new(text_width, line_height),
-        size: Pixels(font_size),
-        line_height: LineHeight::Absolute(Pixels(line_height)),
-        font,
-        horizontal_alignment: alignment::Horizontal::Right,
-        vertical_alignment: alignment::Vertical::Top,
-        shaping: Shaping::Basic,
-    };
 
     // Optional: cull with the viewport
     let top = viewport.y;
@@ -1404,7 +1417,18 @@ fn render_gutter_numbers(
         let y = start_y + (i as f32) * line_height;
         if y + line_height < top || y > bottom { continue; }
         let s = itoa_buf.format(n);
-        renderer.fill_text(PrimitiveText { content: s, ..template }, Point::new(start_x, y), color, *viewport);
+        let text = PrimitiveText {
+            content: s.to_string(), // Convert to owned String
+            bounds: Size::new(text_width, line_height),
+            size: Pixels(font_size),
+            line_height: LineHeight::Absolute(Pixels(line_height)),
+            font,
+            align_x: alignment::Horizontal::Right.into(),
+            align_y: alignment::Vertical::Top,
+            shaping: Shaping::Basic,
+            wrapping: iced::advanced::text::Wrapping::None,
+        };
+        renderer.fill_text(text, Point::new(start_x, y), color, *viewport);
     }
 }
 
@@ -1425,7 +1449,7 @@ fn draw_line_numbers_optimized_with_background(
     let _editor_ref = borrow_editor(content);
     let buffer = _editor_ref.buffer();
     let font_size = font_size_override.unwrap_or(buffer.metrics().font_size);
-    let scroll = buffer.scroll().max(0) as usize;
+    let scroll = get_scroll_line(buffer);
 
     // Fast path: use cached values during smooth scrolling to avoid expensive buffer queries
     let mut metrics_cache = cached_line_metrics.borrow_mut();
@@ -1477,6 +1501,7 @@ fn draw_line_numbers_optimized_with_background(
                 radius: 0.0.into(),
             },
             shadow: iced::Shadow::default(),
+            snap: true,
         },
         background_color,
     );
@@ -1498,6 +1523,7 @@ fn draw_line_numbers_optimized_with_background(
                 radius: 0.0.into(),
             },
             shadow: iced::Shadow::default(),
+            snap: true,
         },
         GUTTER_BORDER_COLOR,
     );
@@ -1710,7 +1736,7 @@ fn draw_debug_dots(
     let buffer = _editor_ref.buffer();
     let font_size = font_size_override.unwrap_or(buffer.metrics().font_size);
     let line_height = buffer.metrics().line_height.max(1.0);
-    let scroll = buffer.scroll().max(0) as usize;
+    let scroll = get_scroll_line(buffer);
 
     // Calculate positions
     let start_y = bounds.y + base_padding.top;
@@ -1750,6 +1776,7 @@ fn draw_debug_dots(
                         radius: DEBUG_DOT_RADIUS.into(),
                     },
                     shadow: iced::Shadow::default(),
+                    snap: true,
                 },
                 DEBUG_DOT_COLOR,
             );

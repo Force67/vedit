@@ -7,14 +7,15 @@ edition = "2021"
 path = "src/lib.rs"
 
 [dependencies]
-iced = { version = "0.12", features = ["wgpu", "tokio", "lazy", "advanced"] }
-iced_graphics = "0.12"
-iced_aw = "0.9"
-iced_font_awesome = "0.1.0"
-cosmic-text = "0.10"
-rfd = "0.14"
+iced = { version = "0.14", features = ["wgpu", "tokio", "lazy", "advanced"] }
+iced_graphics = "0.14"
+iced_aw = "0.13"
+iced_font_awesome = "0.4"
+# Note: cosmic-text is re-exported from iced_graphics::text::cosmic_text
+# We don't need a direct dependency
+rfd = "0.17"
 crossbeam-channel = "0.5"
-portable-pty = "0.8"
+portable-pty = "0.9"
 slab = "0.4"
 dirs = "5.0"
 serde = { version = "1.0", features = ["derive"] }
@@ -29,8 +30,8 @@ vedit-debugger = { path = "../vedit-debugger" }
 vedit-document = { path = "../vedit-document" }
 vedit-wine = { path = "../vedit-wine" }
 uuid = { version = "1.0", features = ["v4"] }
-tree-sitter = "0.25"
-tree-sitter-highlight = "0.25"
+tree-sitter = "0.26"
+tree-sitter-highlight = "0.26"
 tree-sitter-rust = "0.24"
 tree-sitter-c = "0.24"
 tree-sitter-cpp = "0.23"
@@ -42,7 +43,7 @@ tree-sitter-json = "0.24"
 tree-sitter-yaml = "0.7"
 tree-sitter-html = "0.23"
 tree-sitter-css = "0.25"
-tree-sitter-lua = "0.2.0"
-tree-sitter-nix = "0.3.0"
+tree-sitter-lua = "0.4"
+tree-sitter-nix = "0.3"
 itoa = "1.0"
 chrono = "0.4"

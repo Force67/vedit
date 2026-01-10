@@ -40,8 +40,8 @@ impl Toast {
     pub fn view(&self) -> Element<Message> {
         let content = Column::new()
             .spacing(8)
-            .push(text(&self.message).style(iced::theme::Text::Color(style::TEXT)))
-            .push(text("Dismiss").style(iced::theme::Text::Color(self.level.color())));
+            .push(text(&self.message).color(style::TEXT))
+            .push(text("Dismiss").color(self.level.color()));
 
         container(content)
             .style(style::notification_container(self.level.into()))

@@ -3,10 +3,10 @@ use crate::state::EditorState;
 use crate::style::{panel_container, active_document_button, document_button};
 use crate::syntax::{format_highlight, SyntaxHighlighter};
 use crate::widgets::text_editor::TextEditor as EditorWidget;
-use crate::views::scrollbar_style::EditorScrollbarStyle;
+use crate::views::scrollbar_style::editor_scrollbar_style;
 use crate::views::console_panel;
-use iced::widget::{button, column, container, horizontal_space, pick_list, row, scrollable, text, text_input, vertical_slider, Row};
-use iced::{theme, Alignment, Color, Element, Font, Length, Padding, Pixels};
+use iced::widget::{button, column, container, Space, pick_list, row, scrollable, text, text_input, vertical_slider, Row};
+use iced::{Alignment, Color, Element, Font, Length, Padding, Pixels};
 use iced::widget::slider;
 
 pub fn render_editor_content(
@@ -30,7 +30,7 @@ pub fn render_editor_content(
     .step(0.5_f32)  // Smaller steps for smoother scrolling
     .width(scrollbar_width)
     .height(Length::Fill)
-    .style(theme::Slider::Custom(Box::new(EditorScrollbarStyle)));
+    .style(editor_scrollbar_style());
 
     let font_size = Pixels((14.0 * state.code_font_zoom()) as f32);
     let buffer = EditorWidget::new(state.buffer_content())
@@ -55,7 +55,7 @@ pub fn render_editor_content(
     let scrollbar_track: Element<'_, Message> = container(scrollbar)
         .width(Length::Fixed(scrollbar_width))
         .height(Length::Fill)
-        .center_x()
+        .center_x(Length::Fill)
         .into();
 
     let buffer_content = row![
@@ -63,7 +63,7 @@ pub fn render_editor_content(
         scrollbar_track,
     ]
     .spacing((6.0 * scale).max(3.0))
-    .align_items(Alignment::Start)
+    .align_y(Alignment::Start)
     .width(Length::Fill)
     .height(Length::Fill);
 

@@ -43,7 +43,7 @@ impl CommandPalette {
             Column::new()
                 .spacing(4)
                 .extend(filtered_suggestions.iter().map(|s| {
-                    text(*s).style(iced::theme::Text::Color(style::TEXT)).into()
+                    text(*s).color(style::TEXT).into()
                 }))
                 .padding(8)
         )

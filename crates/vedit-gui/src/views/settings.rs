@@ -2,7 +2,7 @@ use crate::message::Message;
 use crate::state::EditorState;
 use crate::style::{active_document_button, document_button, panel_container};
 use vedit_application::{SettingsCategory, SETTINGS_CATEGORIES};
-use iced::widget::{button, column, container, horizontal_space, row, text, text_input};
+use iced::widget::{button, column, container, Space, row, text, text_input};
 use iced::{theme, Alignment, Color, Element, Length, Padding};
 
 pub fn render_settings(
@@ -56,7 +56,7 @@ fn render_keybindings_settings(
     let mut content = column![
         row![
             text("Quick Command Shortcuts").size((16.0 * scale).max(12.0)),
-            horizontal_space().width(Length::Fill),
+            Space::new().width(Length::Fill).width(Length::Fill),
             {
                 let button_label = text("Save Keybindings").size((14.0 * scale).max(10.0));
                 let base = button(button_label);
@@ -68,7 +68,7 @@ fn render_keybindings_settings(
             },
         ]
         .spacing(spacing_small)
-        .align_items(Alignment::Center),
+        .align_y(Alignment::Center),
         text("Assign keyboard shortcuts to launch quick actions directly.")
             .size((14.0 * scale).max(10.0)),
     ]
@@ -81,19 +81,19 @@ fn render_keybindings_settings(
     content = content.push(
         row![
             text(format!("Keymap file: {}", keymap_path)).size((13.0 * scale).max(9.0)),
-            horizontal_space().width(Length::Fill),
+            Space::new().width(Length::Fill).width(Length::Fill),
             button(text("Change File…").size((13.0 * scale).max(9.0)))
                 .on_press(Message::SettingsKeymapPathRequested),
         ]
         .spacing(spacing_small)
-        .align_items(Alignment::Center),
+        .align_y(Alignment::Center),
     );
 
     if let Some(notice) = state.settings_notice() {
         content = content.push(
             text(notice)
                 .size((13.0 * scale).max(9.0))
-                .style(Color::from_rgb8(38, 139, 210)),
+                .color(Color::from_rgb8(38, 139, 210)),
         );
     }
 
@@ -101,7 +101,7 @@ fn render_keybindings_settings(
         content = content.push(
             text(err)
                 .size((13.0 * scale).max(9.0))
-                .style(Color::from_rgb8(220, 50, 47)),
+                .color(Color::from_rgb8(220, 50, 47)),
         );
     }
 
@@ -125,19 +125,19 @@ fn render_keybindings_settings(
             text(command.title).size((14.0 * scale).max(10.0)),
             text(command.description)
                 .size((12.0 * scale).max(9.0))
-                .style(Color::from_rgb8(170, 170, 170)),
+                .color(Color::from_rgb8(170, 170, 170)),
             row![field, apply_button]
                 .spacing(spacing_small)
-                .align_items(Alignment::Center),
+                .align_y(Alignment::Center),
         ]
         .spacing(spacing_small)
-        .padding([spacing_small, 0.0, spacing_small, 0.0]);
+        .padding(Padding::new(spacing_small).right(0.0).left(0.0));
 
         if let Some(err) = state.settings().binding_error(id) {
             entry = entry.push(
                 text(err)
                     .size((12.0 * scale).max(9.0))
-                    .style(Color::from_rgb8(220, 50, 47)),
+                    .color(Color::from_rgb8(220, 50, 47)),
             );
         }
 

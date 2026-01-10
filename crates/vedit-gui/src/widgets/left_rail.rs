@@ -35,7 +35,7 @@ impl OpenFilesList {
                 fa_icon_solid("circle").color(iced::Color::TRANSPARENT)
             };
 
-            let file_text = text(file).style(iced::theme::Text::Color(crate::style::TEXT));
+            let file_text = text(file).color(crate::style::TEXT);
 
             let close_button = button(fa_icon_solid("xmark").color(iced::Color::WHITE))
                 .style(crate::style::custom_button())
@@ -43,7 +43,7 @@ impl OpenFilesList {
 
             let item = row![dirty_dot, file_text, close_button]
                 .spacing(4)
-                .align_items(Alignment::Center);
+                .align_y(Alignment::Center);
 
             let button = button(item)
                 .style(style::document_button())
@@ -77,7 +77,7 @@ impl RecentFiles {
         };
         let header = button(row![
             icon,
-            text("Recent Files").style(iced::theme::Text::Color(crate::style::TEXT))
+            text("Recent Files").color(crate::style::TEXT)
         ].spacing(4.0))
             .style(crate::style::custom_button())
             .on_press(Message::ToggleRecentFiles);
@@ -87,7 +87,7 @@ impl RecentFiles {
 
         if !self.collapsed {
             for file in &self.files {
-                let item = button(text(file).style(iced::theme::Text::Color(crate::style::MUTED)))
+                let item = button(text(file).color(crate::style::MUTED))
                     .style(crate::style::document_button())
                     .on_press(Message::OpenFile(file.clone()));
 

@@ -135,7 +135,7 @@ pub enum Message {
     // Window state tracking messages
     WindowChanged(u32, u32), // width, height
     WindowMoved(i32, i32),    // x, y
-    WindowStateChanged(iced::window::Id, iced::window::Event),
+    WindowEvent(iced::window::Event),
 
     // Wine integration messages
     // Simple Wine integration messages

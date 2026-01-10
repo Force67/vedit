@@ -11,7 +11,7 @@ use crate::state::EditorState;
 use crate::views;
 use crate::notifications::{NotificationKind, NotificationRequest};
 use iced::Subscription;
-use iced::{event, mouse, window, Application, Command, Element, executor, theme, time, Settings};
+use iced::{event, mouse, window, Element, Theme, time, Task};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use vedit_core::{Document, Key, QUICK_COMMAND_MENU_ACTION, SAVE_ACTION};
@@ -80,22 +80,22 @@ pub fn run() -> iced::Result {
         window_state.x, window_state.y,
         window_state.maximized);
 
-    let settings = Settings {
-        window: window::Settings {
-            size: iced::Size::new(window_state.width as f32, window_state.height as f32),
-            position: iced::window::Position::Centered,
-            resizable: true,
-            decorations: false,
-            ..Default::default()
-        },
-        ..Default::default()
-    };
-    EditorApp::run(settings)
+    iced::application(EditorApp::new, EditorApp::update, EditorApp::view)
+        .title("vedit")
+        .subscription(EditorApp::subscription)
+        .theme(EditorApp::theme)
+        .window_size(iced::Size::new(window_state.width as f32, window_state.height as f32))
+        .centered()
+        .resizable(true)
+        .decorations(false)
+        .scale_factor(EditorApp::scale_factor)
+        .run()
 }
 
 struct EditorApp {
     state: EditorState,
     session_manager: SessionManager,
+    main_window_id: window::Id,
 }
 
 impl Default for EditorApp {
@@ -115,6 +115,7 @@ impl Default for EditorApp {
         Self {
             state: EditorState::default(),
             session_manager,
+            main_window_id: window::Id::unique(),
         }
     }
 }
@@ -215,19 +216,14 @@ impl EditorApp {
     }
 }
 
-impl Application for EditorApp {
-    type Executor = executor::Default;
-    type Message = Message;
-    type Theme = theme::Theme;
-    type Flags = ();
-
-    fn new(_flags: Self::Flags) -> (Self, Command<Self::Message>) {
+impl EditorApp {
+    fn new() -> (Self, Task<Message>) {
         let mut app = Self::default();
 
         // Load session state at startup
         let session_manager = app.session_manager.clone();
         let config_dir = session_manager.config_dir.clone();
-        let load_command = Command::perform(
+        let load_command = Task::perform(
             async move {
                 println!("DEBUG: Attempting to load session from: {}", config_dir.display());
                 let result = session_manager.load_session_state();
@@ -241,23 +237,19 @@ impl Application for EditorApp {
         );
 
         // Trigger refresh rate detection at startup
-        let refresh_command = Command::perform(async {}, |_| Message::DetectMonitorRefreshRates);
+        let refresh_command = Task::perform(async {}, |_| Message::DetectMonitorRefreshRates);
 
-        let combined_command = Command::batch(vec![load_command, refresh_command]);
+        let combined_command = Task::batch(vec![load_command, refresh_command]);
         (app, combined_command)
     }
 
-    fn title(&self) -> String {
-        "vedit".into()
-    }
-
-    fn update(&mut self, message: Self::Message) -> Command<Self::Message> {
+    fn update(&mut self, message: Message) -> Task<Message> {
         let debugger_events = self.state.process_debugger_events();
         self.state.process_console_events();
         self.handle_debugger_events(debugger_events);
         match message {
             Message::OpenFileRequested => {
-                return self.wrap_command(Command::perform(
+                return self.wrap_command(Task::perform(
                     commands::pick_document(),
                     Message::FileLoaded,
                 ));
@@ -277,7 +269,7 @@ impl Application for EditorApp {
                     if let Some(session_state) = self.state.get_session_state() {
                         let session_state = session_state.clone();
                         let session_manager = self.session_manager.clone();
-                        return self.wrap_command(Command::perform(
+                        return self.wrap_command(Task::perform(
                             async move {
                                 let result = session_manager.save_session_state(&session_state);
                                 match &result {
@@ -294,14 +286,14 @@ impl Application for EditorApp {
                     let additional_files = self.state.take_pending_files_to_restore();
                     if !additional_files.is_empty() {
                         println!("DEBUG: Loading {} additional files", additional_files.len());
-                        return self.wrap_command(Command::perform(
+                        return self.wrap_command(Task::perform(
                             async move { additional_files },
                             Message::AdditionalFilesRestoreRequested,
                         ));
                     }
 
                     if let Some((root, config)) = self.state.record_recent_workspace_file() {
-                return self.wrap_command(Command::perform(
+                return self.wrap_command(Task::perform(
                     commands::save_workspace_config(root, config),
                     Message::WorkspaceConfigSaved,
                 ));
@@ -321,19 +313,19 @@ impl Application for EditorApp {
                 self.state.sync_buffer_from_editor();
             }
             Message::WorkspaceOpenRequested => {
-                return self.wrap_command(Command::perform(
+                return self.wrap_command(Task::perform(
                     commands::pick_workspace(),
                     Message::WorkspaceLoaded,
                 ));
             }
             Message::SolutionOpenRequested => {
-                return self.wrap_command(Command::perform(
+                return self.wrap_command(Task::perform(
                     commands::pick_solution(),
                     Message::SolutionLoaded,
                 ));
             }
             Message::SolutionSelected(path) => {
-                return self.wrap_command(Command::perform(
+                return self.wrap_command(Task::perform(
                     commands::load_solution_from_path(path),
                     Message::SolutionLoaded,
                 ));
@@ -357,7 +349,7 @@ impl Application for EditorApp {
                     let pending_files = self.state.take_pending_files_to_restore();
                     if !pending_files.is_empty() {
                         println!("DEBUG: Triggering restoration of {} pending files", pending_files.len());
-                        return self.wrap_command(Command::perform(
+                        return self.wrap_command(Task::perform(
                             async move { pending_files },
                             Message::FilesRestoreRequested,
                         ));
@@ -379,7 +371,7 @@ impl Application for EditorApp {
 
                     println!("DEBUG: Saving complete session for root: {}", root);
                     let session_manager = self.session_manager.clone();
-                    return self.wrap_command(Command::perform(
+                    return self.wrap_command(Task::perform(
                         async move {
                             // Save both workspace state and complete session
                             let workspace_result = session_manager.save_workspace_state(&workspace_state);
@@ -425,7 +417,7 @@ impl Application for EditorApp {
                     let pending_files = self.state.take_pending_files_to_restore();
                     if !pending_files.is_empty() {
                         println!("DEBUG: Triggering restoration of {} pending files", pending_files.len());
-                        return self.wrap_command(Command::perform(
+                        return self.wrap_command(Task::perform(
                             async move { pending_files },
                             Message::FilesRestoreRequested,
                         ));
@@ -447,7 +439,7 @@ impl Application for EditorApp {
 
                     println!("DEBUG: Saving complete session for root: {}", root);
                     let session_manager = self.session_manager.clone();
-                    return self.wrap_command(Command::perform(
+                    return self.wrap_command(Task::perform(
                         async move {
                             // Save both workspace state and complete session
                             let workspace_result = session_manager.save_workspace_state(&workspace_state);
@@ -479,7 +471,7 @@ impl Application for EditorApp {
                 if self.state.recent_files.len() > 10 {
                     self.state.recent_files.truncate(10);
                 }
-                return self.wrap_command(Command::perform(
+                return self.wrap_command(Task::perform(
                     commands::load_document_from_path(path),
                     |result| Message::FileLoaded(result.map(Some)),
                 ));
@@ -492,7 +484,7 @@ impl Application for EditorApp {
             Message::BufferAction(action) => {
                 self.state.apply_buffer_action(action);
                 if let Some((root, metadata)) = self.state.take_workspace_metadata_payload() {
-                    return self.wrap_command(Command::perform(
+                    return self.wrap_command(Task::perform(
                         commands::save_workspace_metadata(root, metadata),
                         Message::WorkspaceMetadataSaved,
                     ));
@@ -508,7 +500,7 @@ impl Application for EditorApp {
                     if let Some((root, metadata)) =
                         self.state.take_workspace_metadata_payload()
                     {
-                        return self.wrap_command(Command::perform(
+                        return self.wrap_command(Task::perform(
                             commands::save_workspace_metadata(root, metadata),
                             Message::WorkspaceMetadataSaved,
                         ));
@@ -542,7 +534,7 @@ impl Application for EditorApp {
                     self.state.clear_error();
                 }
                 if let Some((root, metadata)) = self.state.take_workspace_metadata_payload() {
-                    return self.wrap_command(Command::perform(
+                    return self.wrap_command(Task::perform(
                         commands::save_workspace_metadata(root, metadata),
                         Message::WorkspaceMetadataSaved,
                     ));
@@ -551,7 +543,7 @@ impl Application for EditorApp {
             Message::StickyNoteContentChanged(id, value) => {
                 self.state.update_sticky_note_content(id, value);
                 if let Some((root, metadata)) = self.state.take_workspace_metadata_payload() {
-                    return self.wrap_command(Command::perform(
+                    return self.wrap_command(Task::perform(
                         commands::save_workspace_metadata(root, metadata),
                         Message::WorkspaceMetadataSaved,
                     ));
@@ -560,7 +552,7 @@ impl Application for EditorApp {
             Message::StickyNoteDeleted(id) => {
                 self.state.remove_sticky_note(id);
                 if let Some((root, metadata)) = self.state.take_workspace_metadata_payload() {
-                        return self.wrap_command(Command::perform(
+                        return self.wrap_command(Task::perform(
                             commands::save_workspace_metadata(root, metadata),
                             Message::WorkspaceMetadataSaved,
                         ));
@@ -592,7 +584,7 @@ impl Application for EditorApp {
                 match self.state.keymap_save_payload() {
                     Ok((path, contents)) => {
                         let request = SaveKeymapRequest { path, contents };
-                return self.wrap_command(Command::perform(
+                return self.wrap_command(Task::perform(
                     commands::save_keymap(request),
                     Message::SettingsBindingsSaved,
                 ));
@@ -612,7 +604,7 @@ impl Application for EditorApp {
             },
             Message::SettingsKeymapPathRequested => {
                 let current = self.state.keymap_path_display();
-                return self.wrap_command(Command::perform(
+                return self.wrap_command(Task::perform(
                     commands::pick_keymap_location(current),
                     Message::SettingsKeymapPathSelected,
                 ));
@@ -656,17 +648,17 @@ impl Application for EditorApp {
                             self.state.close_debugger_menu();
                             let save_payload = self.state.begin_debug_launch(&plan.target);
                             let request = session_request_from_plan(plan, self.state.debugger().debugger_type());
-                            let mut commands_list = vec![Command::perform(
+                            let mut commands_list = vec![Task::perform(
                                 commands::start_debug_session(request),
                                 Message::DebuggerSessionStarted,
                             )];
                             if let Some((root, config)) = save_payload {
-                                commands_list.push(Command::perform(
+                                commands_list.push(Task::perform(
                                     commands::save_workspace_config(root, config),
                                     Message::WorkspaceConfigSaved,
                                 ));
                             }
-                            return self.wrap_command(Command::batch(commands_list));
+                            return self.wrap_command(Task::batch(commands_list));
                         } else {
                             self.state.set_error(Some("No debug targets selected".to_string()));
                         }
@@ -760,7 +752,7 @@ impl Application for EditorApp {
                 match key_event {
                     iced::keyboard::Event::ModifiersChanged(modifiers) => {
                         self.state.set_modifiers(modifiers);
-                        return self.wrap_command(Command::none());
+                        return self.wrap_command(Task::none());
                     }
                     iced::keyboard::Event::KeyPressed { modifiers, .. }
                     | iced::keyboard::Event::KeyReleased { modifiers, .. } => {
@@ -773,13 +765,13 @@ impl Application for EditorApp {
                     if core_event.key == Key::Character('F') &&
                        (core_event.ctrl || core_event.command) {
                         self.state.search_dialog_mut().toggle();
-                        return self.wrap_command(Command::none());
+                        return self.wrap_command(Task::none());
                     }
 
                     // Handle Escape key to close search dialog (high priority)
                     if core_event.key == Key::Escape && self.state.search_dialog().is_visible {
                         self.state.search_dialog_mut().hide();
-                        return self.wrap_command(Command::none());
+                        return self.wrap_command(Task::none());
                     }
 
                     // Handle F3 for next match, Shift+F3 for previous match (high priority)
@@ -790,7 +782,7 @@ impl Application for EditorApp {
                             } else {
                                 self.state.search_next();
                             }
-                            return self.wrap_command(Command::none());
+                            return self.wrap_command(Task::none());
                         }
                     }
 
@@ -801,7 +793,7 @@ impl Application for EditorApp {
                             self.state.set_command_palette_query(String::new());
                             self.state.open_command_palette();
                         }
-                        return self.wrap_command(Command::none());
+                        return self.wrap_command(Task::none());
                     }
 
                     for command in self.state.quick_commands() {
@@ -822,11 +814,11 @@ impl Application for EditorApp {
                         match core_event.key {
                             Key::ArrowDown => {
                                 self.state.handle_quick_command_navigation(1);
-                                return self.wrap_command(Command::none());
+                                return self.wrap_command(Task::none());
                             }
                             Key::ArrowUp => {
                                 self.state.handle_quick_command_navigation(-1);
-                                return self.wrap_command(Command::none());
+                                return self.wrap_command(Task::none());
                             }
                             Key::Enter => {
                                 if let Some(command) = self.state.selected_quick_command() {
@@ -834,11 +826,11 @@ impl Application for EditorApp {
                                     let cmd = self.execute_quick_command(command);
                                     return self.wrap_command(cmd);
                                 }
-                                return self.wrap_command(Command::none());
+                                return self.wrap_command(Task::none());
                             }
                             Key::Escape => {
                                 self.state.close_command_palette();
-                                return self.wrap_command(Command::none());
+                                return self.wrap_command(Task::none());
                             }
                             _ => {}
                         }
@@ -850,29 +842,29 @@ impl Application for EditorApp {
                             match core_event.key {
                                 Key::ArrowDown => {
                                     let _ = explorer.update(crate::widgets::file_explorer::Message::FocusNext);
-                                    return self.wrap_command(Command::none());
+                                    return self.wrap_command(Task::none());
                                 }
                                 Key::ArrowUp => {
                                     let _ = explorer.update(crate::widgets::file_explorer::Message::FocusPrev);
-                                    return self.wrap_command(Command::none());
+                                    return self.wrap_command(Task::none());
                                 }
                                 Key::Enter => {
                                     if let Some(cursor) = explorer.cursor() {
                                         explorer.update(crate::widgets::file_explorer::Message::Open(cursor, crate::widgets::file_explorer::OpenKind::InEditor));
                                     }
-                                    return self.wrap_command(Command::none());
+                                    return self.wrap_command(Task::none());
                                 }
                                 Key::Function(2) => {
                                     if let Some(cursor) = explorer.cursor() {
                                         explorer.update(crate::widgets::file_explorer::Message::StartRename(cursor));
                                     }
-                                    return self.wrap_command(Command::none());
+                                    return self.wrap_command(Task::none());
                                 }
                                 Key::Delete => {
                                     if let Some(cursor) = explorer.cursor() {
                                         explorer.update(crate::widgets::file_explorer::Message::Delete(cursor));
                                     }
-                                    return self.wrap_command(Command::none());
+                                    return self.wrap_command(Task::none());
                                 }
                                 _ => {}
                             }
@@ -883,7 +875,7 @@ impl Application for EditorApp {
             Message::MouseWheelScrolled(delta) => {
                 let modifiers = self.state.modifiers();
                 if !(modifiers.control() || modifiers.command()) {
-                    return self.wrap_command(Command::none());
+                    return self.wrap_command(Task::none());
                 }
 
                 let delta_y = match delta {
@@ -956,28 +948,28 @@ impl Application for EditorApp {
                 self.state.dismiss_notification(id);
             }
             Message::WindowMinimize => {
-                return window::minimize(window::Id::MAIN, true);
+                return window::minimize(self.main_window_id, true);
             }
             Message::WindowMaximize => {
                 if self.state.is_maximized {
                     self.state.is_maximized = false;
-                    let mut commands = vec![window::maximize(window::Id::MAIN, false)];
+                    let mut commands = vec![window::maximize(self.main_window_id, false)];
                     if let Some(size) = self.state.previous_size {
-                        commands.push(window::resize(window::Id::MAIN, size));
+                        commands.push(window::resize(self.main_window_id, size));
                         self.state.current_window_size = size;
                     }
-                    return iced::Command::batch(commands);
+                    return iced::Task::batch(commands);
                 } else {
                     self.state.is_maximized = true;
                     self.state.previous_size = Some(self.state.current_window_size);
-                    return window::maximize(window::Id::MAIN, true);
+                    return window::maximize(self.main_window_id, true);
                 }
             }
             Message::WindowClose => {
-                return window::close(window::Id::MAIN);
+                return window::close(self.main_window_id);
             }
             Message::WindowDragStart => {
-                return window::drag(window::Id::MAIN);
+                return window::drag(self.main_window_id);
             }
             Message::WindowResizeStart(pos) => {
                 let size = self.state.current_window_size;
@@ -996,7 +988,7 @@ impl Application for EditorApp {
                     let new_height = if matches!(dir, crate::state::ResizeDirection::Bottom | crate::state::ResizeDirection::Both) { (start_size.height + delta.y).max(100.0) } else { start_size.height };
                     let new_size = iced::Size::new(new_width, new_height);
                     self.state.current_window_size = new_size;
-                    return window::resize(window::Id::MAIN, new_size);
+                    return window::resize(self.main_window_id, new_size);
                 }
             }
             Message::WindowResizeEnd => {
@@ -1006,7 +998,7 @@ impl Application for EditorApp {
             }
             Message::FileExplorer(msg) => {
                 if let crate::widgets::file_explorer::Message::OpenFile(path) = &msg {
-                    return self.wrap_command(Command::perform(
+                    return self.wrap_command(Task::perform(
                         commands::load_document_from_path(path.clone()),
                         |result| Message::FileLoaded(result.map(Some)),
                     ));
@@ -1166,7 +1158,7 @@ impl Application for EditorApp {
                     if workspace_path.exists() {
                         println!("DEBUG: Workspace exists, triggering restore");
                         // Attempt to restore the workspace
-                        return self.wrap_command(Command::perform(
+                        return self.wrap_command(Task::perform(
                             async move { (workspace_path, session_state) },
                             |(path, state)| Message::WorkspaceRestoreFromPath(path, state),
                         ));
@@ -1194,7 +1186,7 @@ impl Application for EditorApp {
             Message::WindowStateUpdate(window_state) => {
                 // Save window state
                 let session_manager = self.session_manager.clone();
-                return self.wrap_command(Command::perform(
+                return self.wrap_command(Task::perform(
                     async move {
                         session_manager.save_window_state(&window_state)
                             .map_err(|e| format!("Failed to save window state: {}", e))
@@ -1206,7 +1198,7 @@ impl Application for EditorApp {
             Message::WorkspaceStateUpdate(workspace_state) => {
                 // Save workspace state
                 let session_manager = self.session_manager.clone();
-                return self.wrap_command(Command::perform(
+                return self.wrap_command(Task::perform(
                     async move {
                         session_manager.save_workspace_state(&workspace_state)
                             .map_err(|e| format!("Failed to save workspace state: {}", e))
@@ -1227,7 +1219,7 @@ impl Application for EditorApp {
 
                 self.state.set_pending_files_to_restore(files_to_restore.clone());
 
-                return self.wrap_command(Command::perform(
+                return self.wrap_command(Task::perform(
                     commands::load_workspace_from_path_with_files(path, session_state),
                     Message::WorkspaceLoaded,
                 ));
@@ -1236,7 +1228,7 @@ impl Application for EditorApp {
             Message::FilesRestoreRequested(file_paths) => {
                 println!("DEBUG: Restoring {} files", file_paths.len());
                 if file_paths.is_empty() {
-                    return self.wrap_command(Command::none());
+                    return self.wrap_command(Task::none());
                 }
 
                 // Separate first file from additional files
@@ -1249,7 +1241,7 @@ impl Application for EditorApp {
                     self.state.set_pending_files_to_restore(additional_files);
                 }
 
-                return self.wrap_command(Command::perform(
+                return self.wrap_command(Task::perform(
                     commands::load_document_from_path(first_file.to_string_lossy().to_string()),
                     |result| Message::FileLoaded(result.map(Some).map_err(|e| e)),
                 ));
@@ -1258,7 +1250,7 @@ impl Application for EditorApp {
             Message::AdditionalFilesRestoreRequested(file_paths) => {
                 println!("DEBUG: Loading {} additional files", file_paths.len());
                 if file_paths.is_empty() {
-                    return self.wrap_command(Command::none());
+                    return self.wrap_command(Task::none());
                 }
 
                 // Load the next file in the list
@@ -1269,7 +1261,7 @@ impl Application for EditorApp {
                 self.state.set_pending_files_to_restore(remaining_files.clone());
 
                 println!("DEBUG: Loading additional file: {}", first_file.display());
-                return self.wrap_command(Command::perform(
+                return self.wrap_command(Task::perform(
                     commands::load_document_from_path(first_file.to_string_lossy().to_string()),
                     |result| Message::FileLoaded(result.map(Some).map_err(|e| e)),
                 ));
@@ -1285,7 +1277,7 @@ impl Application for EditorApp {
                 if let Some(session_state) = self.state.get_session_state() {
                     let session_state = session_state.clone();
                     let session_manager = self.session_manager.clone();
-                    return self.wrap_command(Command::perform(
+                    return self.wrap_command(Task::perform(
                         async move {
                             let result = session_manager.save_session_state(&session_state);
                             match &result {
@@ -1309,7 +1301,7 @@ impl Application for EditorApp {
                     self.state.update_window_state(x, y, current_state.width, current_state.height, current_state.maximized);
 
                     let session_manager = self.session_manager.clone();
-                    return self.wrap_command(Command::perform(
+                    return self.wrap_command(Task::perform(
                         async move {
                             let result = session_manager.save_session_state(&session_state);
                             match &result {
@@ -1323,7 +1315,7 @@ impl Application for EditorApp {
                 }
             }
 
-            Message::WindowStateChanged(_id, event) => {
+            Message::WindowEvent(event) => {
                 if matches!(event, window::Event::Focused) {
                     println!("DEBUG: Window focused");
                 }
@@ -1332,19 +1324,19 @@ impl Application for EditorApp {
             // TODO: Handle remaining Wine messages when complex widget is re-enabled
         }
 
-        self.wrap_command(Command::none())
+        self.wrap_command(Task::none())
     }
 
-    fn view(&self) -> Element<'_, Self::Message> {
+    fn view(&self) -> Element<'_, Message> {
         views::view(&self.state)
     }
 
-    fn theme(&self) -> Self::Theme {
-        theme::Theme::Dark
+    fn theme(&self) -> Theme {
+        Theme::Dark
     }
 
-    fn subscription(&self) -> Subscription<Self::Message> {
-        let input = event::listen_with(|event, _status| {
+    fn subscription(&self) -> Subscription<Message> {
+        let input = event::listen_with(|event, _status, _id| {
             unsafe {
                 static mut CURSOR_POS: iced::Point = iced::Point::ORIGIN;
                 match event {
@@ -1370,14 +1362,14 @@ impl Application for EditorApp {
                     event::Event::Mouse(mouse::Event::WheelScrolled { delta }) => {
                         Some(Message::MouseWheelScrolled(delta))
                     }
-                    event::Event::Window(_id, window::Event::Resized { width, height }) => {
-                        Some(Message::WindowChanged(width, height))
+                    event::Event::Window(window::Event::Resized(size)) => {
+                        Some(Message::WindowChanged(size.width as u32, size.height as u32))
                     }
-                    event::Event::Window(_id, window::Event::Moved { x, y }) => {
-                        Some(Message::WindowMoved(x, y))
+                    event::Event::Window(window::Event::Moved(pos)) => {
+                        Some(Message::WindowMoved(pos.x as i32, pos.y as i32))
                     }
-                    event::Event::Window(id, event) => {
-                        Some(Message::WindowStateChanged(id, event))
+                    event::Event::Window(event) => {
+                        Some(Message::WindowEvent(event))
                     }
                     _ => None,
                 }
@@ -1392,8 +1384,8 @@ impl Application for EditorApp {
         Subscription::batch(vec![input, tick, fps_tick, debounce_tick, highlight_tick])
     }
 
-    fn scale_factor(&self) -> f64 {
-        self.state.scale_factor()
+    fn scale_factor(&self) -> f32 {
+        self.state.scale_factor() as f32
     }
 }
 
@@ -1421,28 +1413,28 @@ fn session_request_from_plan(plan: &DebugLaunchPlan, debugger_type: DebuggerType
 }
 
 impl EditorApp {
-    fn wrap_command(&mut self, command: Command<Message>) -> Command<Message> {
+    fn wrap_command(&mut self, command: Task<Message>) -> Task<Message> {
         if let Some((root, metadata)) = self.state.take_workspace_metadata_payload() {
-            let save = Command::perform(
+            let save = Task::perform(
                 commands::save_workspace_metadata(root, metadata),
                 Message::WorkspaceMetadataSaved,
             );
-            Command::batch(vec![command, save])
+            Task::batch(vec![command, save])
         } else {
             command
         }
     }
 
-    fn execute_quick_command(&mut self, command: QuickCommandId) -> Command<Message> {
+    fn execute_quick_command(&mut self, command: QuickCommandId) -> Task<Message> {
         match command {
             QuickCommandId::OpenFile => {
-                Command::perform(commands::pick_document(), Message::FileLoaded)
+                Task::perform(commands::pick_document(), Message::FileLoaded)
             }
             QuickCommandId::OpenFolder => {
-                Command::perform(commands::pick_workspace(), Message::WorkspaceLoaded)
+                Task::perform(commands::pick_workspace(), Message::WorkspaceLoaded)
             }
             QuickCommandId::OpenSolution => {
-                Command::perform(commands::pick_solution(), Message::SolutionLoaded)
+                Task::perform(commands::pick_solution(), Message::SolutionLoaded)
             }
             QuickCommandId::SaveFile => self.save_active_document(),
             QuickCommandId::NewScratchBuffer => {
@@ -1450,13 +1442,13 @@ impl EditorApp {
                 self.state.editor_mut().set_active(index);
                 self.state.clear_error();
                 self.state.sync_buffer_from_editor();
-                Command::none()
+                Task::none()
             }
             QuickCommandId::ShowScaleFactor => {
                 let scale_info = self.state.format_scale_factor();
                 println!("{}", scale_info);
                 self.state.set_error(Some(scale_info));
-                Command::none()
+                Task::none()
             }
             QuickCommandId::AddStickyNote => {
                 match self.state.add_sticky_note_at_cursor() {
@@ -1464,35 +1456,35 @@ impl EditorApp {
                     Err(err) => self.state.set_error(Some(err)),
                 }
                 if let Some((root, metadata)) = self.state.take_workspace_metadata_payload() {
-                    Command::perform(
+                    Task::perform(
                         commands::save_workspace_metadata(root, metadata),
                         Message::WorkspaceMetadataSaved,
                     )
                 } else {
-                    Command::none()
+                    Task::none()
                 }
             }
             QuickCommandId::IncreaseCodeFontZoom => {
                 self.state.increase_code_font_zoom();
-                Command::none()
+                Task::none()
             }
             QuickCommandId::ShowEditorLog => {
                 self.state.show_editor_log();
-                Command::none()
+                Task::none()
             }
         }
     }
 
-    fn save_active_document(&mut self) -> Command<Message> {
+    fn save_active_document(&mut self) -> Task<Message> {
         if let Some(doc) = self.state.editor().active_document() {
             let request = SaveDocumentRequest {
                 path: doc.path.clone(),
                 contents: doc.buffer.to_string(),
                 suggested_name: Some(doc.display_name().to_string()),
             };
-            Command::perform(commands::save_document(request), Message::DocumentSaved)
+            Task::perform(commands::save_document(request), Message::DocumentSaved)
         } else {
-            Command::none()
+            Task::none()
         }
     }
 

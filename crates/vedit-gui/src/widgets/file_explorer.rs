@@ -1,5 +1,5 @@
-use iced::widget::{button, column, container, horizontal_space, row, scrollable, text, text_input, Column, Row, Scrollable};
-use iced::{Command, Element, Length, Padding, Alignment};
+use iced::widget::{button, column, container, Space, row, scrollable, text, text_input, Column, Row, Scrollable};
+use iced::{Task, Element, Length, Padding, Alignment};
 use iced_font_awesome::fa_icon_solid;
 use crate::style;
 use vedit_core::{FilterState, FsWorkspaceProvider, GitStatus, Node, NodeId, NodeKind, WorkspaceProvider, WorkspaceTree};
@@ -182,7 +182,7 @@ impl FileExplorer {
         visible
     }
 
-    pub fn update(&mut self, message: Message) -> Command<Message> {
+    pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::TreeToggle(id) => {
                 if self.tree.expanded.contains(&id) {
@@ -192,7 +192,7 @@ impl FileExplorer {
                     self.tree.expanded.insert(id);
                 }
                 self.update_visible_rows();
-                Command::none()
+                Task::none()
             }
             Message::TreeSelect(id, kind) => {
                 match kind {
@@ -200,7 +200,7 @@ impl FileExplorer {
                         self.tree.selection.clear();
                         self.tree.selection.insert(id);
                         self.tree.cursor = Some(id);
-                        Command::none()
+                        Task::none()
                     }
                     SelectKind::Range => {
                         if let Some(cursor) = self.tree.cursor {
@@ -216,7 +216,7 @@ impl FileExplorer {
                                 }
                             }
                         }
-                        Command::none()
+                        Task::none()
                     }
                     SelectKind::Toggle => {
                         if self.tree.selection.contains(&id) {
@@ -225,7 +225,7 @@ impl FileExplorer {
                             self.tree.selection.insert(id);
                         }
                         self.tree.cursor = Some(id);
-                        Command::none()
+                        Task::none()
                     }
                 }
             }
@@ -240,13 +240,13 @@ impl FileExplorer {
                         self.update_visible_rows();
                     }
                 }
-                Command::none()
+                Task::none()
             }
             Message::RowClick(id) => {
                 if let Some(node) = self.tree.nodes.get(id) {
                     if matches!(node.kind, NodeKind::File) {
                         let full_path = self.root_path.join(&node.rel_path).to_string_lossy().to_string();
-                        return Command::perform(async { Message::OpenFile(full_path) }, |msg| msg);
+                        return Task::perform(async { Message::OpenFile(full_path) }, |msg| msg);
                     }
                 }
                 // For folders or other, handle selection and double click
@@ -278,11 +278,11 @@ impl FileExplorer {
                     self.tree.cursor = Some(id);
                     self.last_click = Some((id, now));
                 }
-                Command::none()
+                Task::none()
             }
             Message::StartRename(id) => {
                 self.renaming = Some(id);
-                Command::none()
+                Task::none()
             }
             Message::CommitRename(id, new_name) => {
                 if self.renaming == Some(id) && !new_name.is_empty() {
@@ -291,18 +291,18 @@ impl FileExplorer {
                     }
                 }
                 self.renaming = None;
-                Command::none()
+                Task::none()
             }
             Message::CancelRename => {
                 self.renaming = None;
-                Command::none()
+                Task::none()
             }
             Message::Delete(id) => {
                 self.tree.nodes.remove(id);
                 self.update_visible_rows();
-                Command::none()
+                Task::none()
             }
-            _ => Command::none()
+            _ => Task::none()
         }
     }
 
@@ -337,7 +337,7 @@ impl FileExplorer {
             .spacing(4);
 
         Column::new()
-            .push(text("Workspace: /path/to/root").style(iced::theme::Text::Color(style::TEXT)))
+            .push(text("Workspace: /path/to/root").color(style::TEXT))
             .push(actions)
             .push(filter_input)
             .spacing(8)
@@ -395,16 +395,16 @@ impl FileExplorer {
                 fa_icon_solid("chevron-right").color(iced::Color::TRANSPARENT).size(12.0)
             };
 
-            let name_button = button(text(&node.name).style(if is_selected { iced::theme::Text::Color(style::PRIMARY) } else { iced::theme::Text::Color(style::TEXT) }))
+            let name_button = button(text(&node.name).color(if is_selected { style::PRIMARY } else { style::TEXT }))
                 .style(style::custom_button())
                 .on_press(Message::RowClick(id));
 
             // Create indentation based on depth
             let indent_width = depth * 16; // 16 pixels per level
             let indent = if indent_width > 0 {
-                horizontal_space().width(Length::Fixed(indent_width as f32))
+                Space::new().width(Length::Fill).width(Length::Fixed(indent_width as f32))
             } else {
-                horizontal_space().width(Length::Fixed(0.0))
+                Space::new().width(Length::Fill).width(Length::Fixed(0.0))
             };
 
             let chevron_element: Element<Message> = if matches!(node.kind, NodeKind::Folder) {
@@ -413,7 +413,7 @@ impl FileExplorer {
                     .on_press(Message::TreeToggle(id))
                     .into()
             } else {
-                horizontal_space().width(Length::Fixed(12.0)).into()
+                Space::new().width(Length::Fill).width(Length::Fixed(12.0)).into()
             };
 
             let row = row![
@@ -423,7 +423,7 @@ impl FileExplorer {
                 name_button,
             ]
             .spacing(4)
-            .align_items(Alignment::Center);
+            .align_y(Alignment::Center);
 
             row.into()
         } else {

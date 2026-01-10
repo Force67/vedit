@@ -1,40 +1,46 @@
 use iced::widget::slider;
-use iced::Theme;
+use iced::{Border, Theme};
 
-pub struct EditorScrollbarStyle;
-
-impl slider::StyleSheet for EditorScrollbarStyle {
-    type Style = Theme;
-
-    fn active(&self, theme: &Self::Style) -> slider::Appearance {
+pub fn editor_scrollbar_style() -> impl Fn(&Theme, slider::Status) -> slider::Style {
+    |theme, status| {
         let palette = theme.extended_palette();
-        slider::Appearance {
+        let base = slider::Style {
             rail: slider::Rail {
-                colors: (
-                    palette.background.base.color,
-                    palette.background.base.color,
+                backgrounds: (
+                    palette.background.base.color.into(),
+                    palette.background.base.color.into(),
                 ),
                 width: 4.0,
-                border_radius: 2.0.into(),
+                border: Border {
+                    radius: 2.0.into(),
+                    width: 0.0,
+                    color: iced::Color::TRANSPARENT,
+                },
             },
             handle: slider::Handle {
                 shape: slider::HandleShape::Circle { radius: 5.0 },
-                color: palette.primary.weak.color,
+                background: palette.primary.weak.color.into(),
                 border_color: palette.primary.strong.color,
                 border_width: 1.0,
             },
+        };
+
+        match status {
+            slider::Status::Active => base,
+            slider::Status::Hovered => slider::Style {
+                handle: slider::Handle {
+                    background: palette.primary.base.color.into(),
+                    ..base.handle
+                },
+                ..base
+            },
+            slider::Status::Dragged => slider::Style {
+                handle: slider::Handle {
+                    background: palette.primary.strong.color.into(),
+                    ..base.handle
+                },
+                ..base
+            },
         }
-    }
-
-    fn hovered(&self, theme: &Self::Style) -> slider::Appearance {
-        let mut active = self.active(theme);
-        active.handle.color = theme.extended_palette().primary.base.color;
-        active
-    }
-
-    fn dragging(&self, theme: &Self::Style) -> slider::Appearance {
-        let mut active = self.active(theme);
-        active.handle.color = theme.extended_palette().primary.strong.color;
-        active
     }
 }

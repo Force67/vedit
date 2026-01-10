@@ -1,9 +1,8 @@
 use crate::message::Message;
 use crate::state::EditorState;
 use crate::style::{floating_panel_container, panel_container};
-use iced::widget::{button, column, container, horizontal_space, row, scrollable, text, text_input};
-use iced::{theme, Alignment, Color, Element, Length};
-use iced_aw::Modal;
+use iced::widget::{button, column, container, Space, row, scrollable, text, text_input};
+use iced::{Alignment, Color, Element, Length};
 use iced_font_awesome::fa_icon_solid;
 
 pub fn render_command_palette_contents(state: &EditorState) -> Element<'_, Message> {
@@ -67,9 +66,9 @@ pub fn render_command_palette_contents(state: &EditorState) -> Element<'_, Messa
                         .on_press(Message::CommandPaletteCommandInvoked(command.id));
 
                     if i == selection {
-                        entry = entry.style(theme::Button::Primary);
+                        entry = entry.style(iced::widget::button::primary);
                     } else {
-                        entry = entry.style(theme::Button::Text);
+                        entry = entry.style(iced::widget::button::text);
                     }
 
                     command_list = command_list.push(entry);
@@ -80,13 +79,13 @@ pub fn render_command_palette_contents(state: &EditorState) -> Element<'_, Messa
 
     let header = row![
         text("Command Prompt").size((18.0 * scale).max(14.0)),
-        horizontal_space().width(Length::Fill),
+        Space::new().width(Length::Fill).width(Length::Fill),
         button(fa_icon_solid("xmark").size((16.0 * scale).max(12.0)).color(iced::Color::WHITE))
-            .style(theme::Button::Text)
+            .style(iced::widget::button::text)
             .on_press(Message::CommandPaletteClosed),
     ]
     .spacing(spacing_small)
-    .align_items(Alignment::Center);
+    .align_y(Alignment::Center);
 
     let palette_column = column![
         header,

@@ -259,14 +259,14 @@ fn set_breakpoint(pid: Pid, addr: u64) -> Result<u8, nix::errno::Errno> {
     let original_word: i64 = ptrace::read(pid, addr as *mut _)?;
     let original_byte = (original_word & 0xFF) as u8;
     let modified_word = (original_word & !0xFF) | 0xCC;
-    unsafe { ptrace::write(pid, addr as *mut _, &modified_word as *const i64 as *mut _)?; }
+    unsafe { ptrace::write(pid, addr as *mut _, modified_word)?; }
     Ok(original_byte)
 }
 
 fn restore_breakpoint(pid: Pid, bp: &Breakpoint) -> Result<(), nix::errno::Errno> {
     let current_word: i64 = ptrace::read(pid, bp.address as *mut _)?;
     let restored_word = (current_word & !0xFF) | (bp.original_byte as i64);
-    unsafe { ptrace::write(pid, bp.address as *mut _, &restored_word as *const i64 as *mut _)?; }
+    unsafe { ptrace::write(pid, bp.address as *mut _, restored_word)?; }
     Ok(())
 }
 

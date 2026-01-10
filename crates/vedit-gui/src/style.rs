@@ -1,10 +1,5 @@
-use iced::theme;
-use iced::widget::{button, container, scrollable, text_input, pick_list, rule};
-use iced::{Background, Border, Color, Shadow, Vector};
-
-// pub mod button_style;
-// pub mod container_style;
-// pub mod text_input_style;
+use iced::widget::{button, container, scrollable, text_input, rule};
+use iced::{Background, Border, Color, Shadow, Theme, Vector};
 
 const fn rgb(r: u8, g: u8, b: u8) -> Color {
     Color::from_rgb(r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0)
@@ -24,193 +19,85 @@ pub const WARNING: Color = rgb(230, 180, 80);
 pub const ERROR: Color = rgb(228, 104, 118);
 pub const FOCUS_RING: Color = Color::from_rgba(122.0 / 255.0, 162.0 / 255.0, 247.0 / 255.0, 0.55);
 
-#[derive(Debug, Clone, Copy, Default)]
-pub struct RootContainer;
-
-impl container::StyleSheet for RootContainer {
-    type Style = theme::Theme;
-
-    fn appearance(&self, _style: &Self::Style) -> container::Appearance {
-        container::Appearance {
-            background: Some(Background::Color(BG)),
-            text_color: Some(TEXT),
-            ..Default::default()
-        }
+// Container styles
+pub fn root_container() -> impl Fn(&Theme) -> container::Style {
+    |_theme| container::Style {
+        background: Some(Background::Color(BG)),
+        text_color: Some(TEXT),
+        ..Default::default()
     }
 }
 
-#[derive(Debug, Clone, Copy, Default)]
-pub struct PanelContainer;
-
-impl container::StyleSheet for PanelContainer {
-    type Style = theme::Theme;
-
-    fn appearance(&self, _style: &Self::Style) -> container::Appearance {
-        container::Appearance {
-            background: Some(Background::Color(SURFACE)),
-            border: Border {
-                radius: 4.0.into(),
-                width: 1.0,
-                color: BORDER,
-            },
-            text_color: Some(TEXT),
-            ..Default::default()
-        }
+pub fn panel_container() -> impl Fn(&Theme) -> container::Style {
+    |_theme| container::Style {
+        background: Some(Background::Color(SURFACE)),
+        border: Border {
+            radius: 4.0.into(),
+            width: 1.0,
+            color: BORDER,
+        },
+        text_color: Some(TEXT),
+        ..Default::default()
     }
 }
 
-#[derive(Debug, Clone, Copy, Default)]
-pub struct RibbonContainer;
-
-impl container::StyleSheet for RibbonContainer {
-    type Style = theme::Theme;
-
-    fn appearance(&self, _style: &Self::Style) -> container::Appearance {
-        container::Appearance {
-            background: Some(Background::Color(SURFACE2)),
-            border: Border {
-                radius: 0.0.into(),
-                width: 0.0,
-                color: Color::TRANSPARENT,
-            },
-            text_color: Some(TEXT),
-            ..Default::default()
-        }
+pub fn ribbon_container() -> impl Fn(&Theme) -> container::Style {
+    |_theme| container::Style {
+        background: Some(Background::Color(SURFACE2)),
+        border: Border {
+            radius: 0.0.into(),
+            width: 0.0,
+            color: Color::TRANSPARENT,
+        },
+        text_color: Some(TEXT),
+        ..Default::default()
     }
 }
 
-#[derive(Debug, Clone, Copy, Default)]
-pub struct StatusContainer;
-
-impl container::StyleSheet for StatusContainer {
-    type Style = theme::Theme;
-
-    fn appearance(&self, _style: &Self::Style) -> container::Appearance {
-        container::Appearance {
-            background: Some(Background::Color(OVERLAY)),
-            border: Border {
-                radius: 0.0.into(),
-                width: 1.0,
-                color: BORDER,
-            },
-            text_color: Some(MUTED),
-            ..Default::default()
-        }
+pub fn status_container() -> impl Fn(&Theme) -> container::Style {
+    |_theme| container::Style {
+        background: Some(Background::Color(OVERLAY)),
+        border: Border {
+            radius: 0.0.into(),
+            width: 1.0,
+            color: BORDER,
+        },
+        text_color: Some(MUTED),
+        ..Default::default()
     }
 }
 
-#[derive(Debug, Clone, Copy, Default)]
-pub struct TopBarButton;
-
-impl button::StyleSheet for TopBarButton {
-    type Style = theme::Theme;
-
-    fn active(&self, _style: &Self::Style) -> button::Appearance {
-        button::Appearance {
-            shadow_offset: Vector::default(),
-            background: Some(Background::Color(SURFACE2)),
-            text_color: TEXT,
-            border: Border {
-                radius: 3.0.into(),
-                width: 0.0,
-                color: Color::TRANSPARENT,
-            },
-            shadow: Default::default(),
-        }
-    }
-
-    fn hovered(&self, _style: &Self::Style) -> button::Appearance {
-        button::Appearance {
-            shadow_offset: Vector::default(),
-            background: Some(Background::Color(PRIMARY_HOVER)),
-            text_color: TEXT,
-            border: Border {
-                radius: 3.0.into(),
-                width: 0.0,
-                color: Color::TRANSPARENT,
-            },
-            shadow: Default::default(),
-        }
-    }
-
-    fn pressed(&self, _style: &Self::Style) -> button::Appearance {
-        button::Appearance {
-            shadow_offset: Vector::default(),
-            background: Some(Background::Color(PRIMARY)),
-            text_color: TEXT,
-            border: Border {
-                radius: 3.0.into(),
-                width: 0.0,
-                color: Color::TRANSPARENT,
-            },
-            shadow: Default::default(),
-        }
+pub fn custom_container() -> impl Fn(&Theme) -> container::Style {
+    |_theme| container::Style {
+        background: Some(Background::Color(SURFACE)),
+        text_color: Some(TEXT),
+        border: Border {
+            radius: 4.0.into(),
+            width: 1.0,
+            color: BORDER,
+        },
+        ..Default::default()
     }
 }
 
-#[derive(Debug, Clone, Copy, Default)]
-pub struct DocumentButton;
-
-impl button::StyleSheet for DocumentButton {
-    type Style = theme::Theme;
-
-    fn active(&self, _style: &Self::Style) -> button::Appearance {
-        button::Appearance {
-            shadow_offset: Vector::default(),
-            background: None,
-            text_color: MUTED,
-            border: Border::default(),
-            shadow: Default::default(),
-        }
-    }
-
-    fn hovered(&self, _style: &Self::Style) -> button::Appearance {
-        button::Appearance {
-            shadow_offset: Vector::default(),
-            background: Some(Background::Color(PRIMARY_HOVER)),
-            text_color: TEXT,
-            border: Border::default(),
-            shadow: Default::default(),
-        }
+pub fn floating_panel_container() -> impl Fn(&Theme) -> container::Style {
+    |_theme| container::Style {
+        background: Some(Background::Color(SURFACE)),
+        text_color: Some(TEXT),
+        border: Border {
+            radius: 12.0.into(),
+            width: 1.0,
+            color: BORDER,
+        },
+        ..Default::default()
     }
 }
 
-#[derive(Debug, Clone, Copy, Default)]
-pub struct ActiveDocumentButton;
-
-impl button::StyleSheet for ActiveDocumentButton {
-    type Style = theme::Theme;
-
-    fn active(&self, _style: &Self::Style) -> button::Appearance {
-        button::Appearance {
-            shadow_offset: Vector::default(),
-            background: Some(Background::Color(PRIMARY)),
-            text_color: TEXT,
-            border: Border::default(),
-            shadow: Default::default(),
-        }
+pub fn overlay_container() -> impl Fn(&Theme) -> container::Style {
+    |_theme| container::Style {
+        background: None,
+        ..Default::default()
     }
-
-    fn hovered(&self, style: &Self::Style) -> button::Appearance {
-        self.active(style)
-    }
-}
-
-pub fn root_container() -> theme::Container {
-    theme::Container::Custom(Box::new(RootContainer))
-}
-
-// Re-export style modules for convenience
-// pub use button_style::*;
-// pub use container_style::*;
-// pub use text_input_style::*;
-
-pub fn panel_container() -> theme::Container {
-    theme::Container::Custom(Box::new(PanelContainer))
-}
-
-pub fn ribbon_container() -> theme::Container {
-    theme::Container::Custom(Box::new(RibbonContainer))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -220,28 +107,15 @@ pub enum NotificationTone {
     Error,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct NotificationContainer {
-    tone: NotificationTone,
-}
-
-impl NotificationContainer {
-    pub fn new(tone: NotificationTone) -> Self {
-        Self { tone }
-    }
-}
-
-impl container::StyleSheet for NotificationContainer {
-    type Style = theme::Theme;
-
-    fn appearance(&self, _style: &Self::Style) -> container::Appearance {
-        let accent = match self.tone {
+pub fn notification_container(tone: NotificationTone) -> impl Fn(&Theme) -> container::Style {
+    move |_theme| {
+        let accent = match tone {
             NotificationTone::Info => PRIMARY,
             NotificationTone::Success => SUCCESS,
             NotificationTone::Error => ERROR,
         };
 
-        container::Appearance {
+        container::Style {
             background: Some(Background::Color(OVERLAY)),
             border: Border {
                 radius: 12.0.into(),
@@ -254,393 +128,259 @@ impl container::StyleSheet for NotificationContainer {
                 blur_radius: 18.0,
                 color: Color::from_rgba(0.0, 0.0, 0.0, 0.45),
             },
+            snap: true,
         }
     }
 }
 
-pub fn notification_container(tone: NotificationTone) -> theme::Container {
-    theme::Container::Custom(Box::new(NotificationContainer::new(tone)))
-}
-
-pub fn status_container() -> theme::Container {
-    theme::Container::Custom(Box::new(StatusContainer))
-}
-
-pub fn top_bar_button() -> theme::Button {
-    theme::Button::Custom(Box::new(TopBarButton))
-}
-
-pub fn document_button() -> theme::Button {
-    theme::Button::Custom(Box::new(DocumentButton))
-}
-
-pub fn active_document_button() -> theme::Button {
-    theme::Button::Custom(Box::new(ActiveDocumentButton))
-}
-
-pub fn custom_container() -> theme::Container {
-    theme::Container::Custom(Box::new(CustomContainer))
-}
-
-pub fn custom_button() -> theme::Button {
-    theme::Button::Custom(Box::new(CustomButton))
-}
-
-
-
-pub fn custom_scrollable() -> theme::Scrollable {
-    theme::Scrollable::Custom(Box::new(CustomScrollable))
-}
-
-pub fn custom_text_input() -> theme::TextInput {
-    theme::TextInput::Custom(Box::new(CustomTextInput))
-}
-
-
-
-pub fn custom_rule() -> theme::Rule {
-    theme::Rule::Custom(Box::new(CustomRule))
-}
-
-pub fn floating_panel_container() -> theme::Container {
-    theme::Container::Custom(Box::new(FloatingPanelContainer))
-}
-
-pub fn overlay_container() -> theme::Container {
-    theme::Container::Custom(Box::new(OverlayContainer))
-}
-
-#[derive(Debug, Clone, Copy, Default)]
-pub struct CustomContainer;
-
-impl container::StyleSheet for CustomContainer {
-    type Style = theme::Theme;
-
-    fn appearance(&self, _style: &Self::Style) -> container::Appearance {
-        container::Appearance {
-            background: Some(Background::Color(SURFACE)),
-            text_color: Some(TEXT),
-            border: Border {
-                radius: 4.0.into(),
-                width: 1.0,
-                color: BORDER,
-            },
-            ..Default::default()
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, Default)]
-pub struct FloatingPanelContainer;
-
-impl container::StyleSheet for FloatingPanelContainer {
-    type Style = theme::Theme;
-
-    fn appearance(&self, _style: &Self::Style) -> container::Appearance {
-        container::Appearance {
-            background: Some(Background::Color(SURFACE)),
-            text_color: Some(TEXT),
-            border: Border {
-                radius: 12.0.into(),
-                width: 1.0,
-                color: BORDER,
-            },
-            ..Default::default()
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, Default)]
-pub struct OverlayContainer;
-
-impl container::StyleSheet for OverlayContainer {
-    type Style = theme::Theme;
-
-    fn appearance(&self, _style: &Self::Style) -> container::Appearance {
-        container::Appearance {
-            background: None,
-            ..Default::default()
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, Default)]
-pub struct CustomButton;
-
-impl button::StyleSheet for CustomButton {
-    type Style = theme::Theme;
-
-    fn active(&self, _style: &Self::Style) -> button::Appearance {
-        button::Appearance {
-            shadow_offset: Vector::default(),
+// Button styles
+pub fn top_bar_button() -> impl Fn(&Theme, button::Status) -> button::Style {
+    |_theme, status| {
+        let base = button::Style {
             background: Some(Background::Color(SURFACE2)),
             text_color: TEXT,
             border: Border {
-                radius: 4.0.into(),
-                width: 1.0,
-                color: BORDER,
+                radius: 3.0.into(),
+                width: 0.0,
+                color: Color::TRANSPARENT,
             },
             shadow: Default::default(),
-        }
-    }
+            snap: true,
+        };
 
-    fn hovered(&self, _style: &Self::Style) -> button::Appearance {
-        button::Appearance {
-            shadow_offset: Vector::default(),
-            background: Some(Background::Color(PRIMARY_HOVER)),
-            text_color: TEXT,
-            border: Border {
-                radius: 4.0.into(),
-                width: 1.0,
-                color: PRIMARY,
+        match status {
+            button::Status::Active => base,
+            button::Status::Hovered => button::Style {
+                background: Some(Background::Color(PRIMARY_HOVER)),
+                ..base
             },
-            shadow: Default::default(),
-        }
-    }
-
-    fn pressed(&self, _style: &Self::Style) -> button::Appearance {
-        button::Appearance {
-            shadow_offset: Vector::default(),
-            background: Some(Background::Color(PRIMARY)),
-            text_color: TEXT,
-            border: Border {
-                radius: 4.0.into(),
-                width: 1.0,
-                color: PRIMARY,
+            button::Status::Pressed => button::Style {
+                background: Some(Background::Color(PRIMARY)),
+                ..base
             },
-            shadow: Default::default(),
-        }
-    }
-
-    fn disabled(&self, _style: &Self::Style) -> button::Appearance {
-        button::Appearance {
-            shadow_offset: Vector::default(),
-            background: Some(Background::Color(SURFACE)),
-            text_color: MUTED,
-            border: Border {
-                radius: 4.0.into(),
-                width: 1.0,
-                color: BORDER,
-            },
-            shadow: Default::default(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, Default)]
-pub struct SelectedButton;
-
-impl button::StyleSheet for SelectedButton {
-    type Style = theme::Theme;
-
-    fn active(&self, _style: &Self::Style) -> button::Appearance {
-        button::Appearance {
-            shadow_offset: Vector::default(),
-            background: Some(Background::Color(PRIMARY)),
-            text_color: TEXT,
-            border: Border {
-                radius: 4.0.into(),
-                width: 1.0,
-                color: PRIMARY,
-            },
-            shadow: Default::default(),
-        }
-    }
-
-    fn hovered(&self, _style: &Self::Style) -> button::Appearance {
-        button::Appearance {
-            shadow_offset: Vector::default(),
-            background: Some(Background::Color(PRIMARY_HOVER)),
-            text_color: TEXT,
-            border: Border {
-                radius: 4.0.into(),
-                width: 1.0,
-                color: PRIMARY_HOVER,
-            },
-            shadow: Default::default(),
-        }
-    }
-
-    fn pressed(&self, _style: &Self::Style) -> button::Appearance {
-        button::Appearance {
-            shadow_offset: Vector::default(),
-            background: Some(Background::Color(SURFACE2)),
-            text_color: TEXT,
-            border: Border {
-                radius: 4.0.into(),
-                width: 1.0,
-                color: PRIMARY,
-            },
-            shadow: Default::default(),
-        }
-    }
-
-    fn disabled(&self, _style: &Self::Style) -> button::Appearance {
-        button::Appearance {
-            shadow_offset: Vector::default(),
-            background: Some(Background::Color(SURFACE)),
-            text_color: MUTED,
-            border: Border {
-                radius: 4.0.into(),
-                width: 1.0,
-                color: BORDER,
-            },
-            shadow: Default::default(),
-        }
-    }
-}
-
-pub fn selected_button() -> theme::Button {
-    theme::Button::Custom(Box::new(SelectedButton))
-}
-
-#[derive(Debug, Clone, Copy, Default)]
-pub struct CustomScrollable;
-
-impl scrollable::StyleSheet for CustomScrollable {
-    type Style = theme::Theme;
-
-    fn active(&self, _style: &Self::Style) -> scrollable::Appearance {
-        scrollable::Appearance {
-            container: container::Appearance {
+            button::Status::Disabled => button::Style {
                 background: Some(Background::Color(SURFACE)),
-                text_color: Some(TEXT),
-                ..Default::default()
+                text_color: MUTED,
+                ..base
             },
-            scrollbar: scrollable::Scrollbar {
+        }
+    }
+}
+
+pub fn document_button() -> impl Fn(&Theme, button::Status) -> button::Style {
+    |_theme, status| {
+        let base = button::Style {
+            background: None,
+            text_color: MUTED,
+            border: Border::default(),
+            shadow: Default::default(),
+            snap: true,
+        };
+
+        match status {
+            button::Status::Active | button::Status::Disabled => base,
+            button::Status::Hovered | button::Status::Pressed => button::Style {
+                background: Some(Background::Color(PRIMARY_HOVER)),
+                text_color: TEXT,
+                ..base
+            },
+        }
+    }
+}
+
+pub fn active_document_button() -> impl Fn(&Theme, button::Status) -> button::Style {
+    |_theme, _status| button::Style {
+        background: Some(Background::Color(PRIMARY)),
+        text_color: TEXT,
+        border: Border::default(),
+        shadow: Default::default(),
+            snap: true,
+    }
+}
+
+pub fn custom_button() -> impl Fn(&Theme, button::Status) -> button::Style {
+    |_theme, status| {
+        let base = button::Style {
+            background: Some(Background::Color(SURFACE2)),
+            text_color: TEXT,
+            border: Border {
+                radius: 4.0.into(),
+                width: 1.0,
+                color: BORDER,
+            },
+            shadow: Default::default(),
+            snap: true,
+        };
+
+        match status {
+            button::Status::Active => base,
+            button::Status::Hovered => button::Style {
+                background: Some(Background::Color(PRIMARY_HOVER)),
+                border: Border {
+                    radius: 4.0.into(),
+                    width: 1.0,
+                    color: PRIMARY,
+                },
+                ..base
+            },
+            button::Status::Pressed => button::Style {
+                background: Some(Background::Color(PRIMARY)),
+                border: Border {
+                    radius: 4.0.into(),
+                    width: 1.0,
+                    color: PRIMARY,
+                },
+                ..base
+            },
+            button::Status::Disabled => button::Style {
+                background: Some(Background::Color(SURFACE)),
+                text_color: MUTED,
+                ..base
+            },
+        }
+    }
+}
+
+pub fn selected_button() -> impl Fn(&Theme, button::Status) -> button::Style {
+    |_theme, status| {
+        let base = button::Style {
+            background: Some(Background::Color(PRIMARY)),
+            text_color: TEXT,
+            border: Border {
+                radius: 4.0.into(),
+                width: 1.0,
+                color: PRIMARY,
+            },
+            shadow: Default::default(),
+            snap: true,
+        };
+
+        match status {
+            button::Status::Active => base,
+            button::Status::Hovered => button::Style {
+                background: Some(Background::Color(PRIMARY_HOVER)),
+                border: Border {
+                    radius: 4.0.into(),
+                    width: 1.0,
+                    color: PRIMARY_HOVER,
+                },
+                ..base
+            },
+            button::Status::Pressed => button::Style {
                 background: Some(Background::Color(SURFACE2)),
+                border: Border {
+                    radius: 4.0.into(),
+                    width: 1.0,
+                    color: PRIMARY,
+                },
+                ..base
+            },
+            button::Status::Disabled => button::Style {
+                background: Some(Background::Color(SURFACE)),
+                text_color: MUTED,
+                border: Border {
+                    radius: 4.0.into(),
+                    width: 1.0,
+                    color: BORDER,
+                },
+                ..base
+            },
+        }
+    }
+}
+
+// Scrollable styles
+pub fn custom_scrollable() -> impl Fn(&Theme, scrollable::Status) -> scrollable::Style {
+    |_theme, status| {
+        let scroller_color = match status {
+            scrollable::Status::Active { .. } => MUTED,
+            scrollable::Status::Hovered { .. } |
+            scrollable::Status::Dragged { .. } => PRIMARY,
+        };
+
+        let rail = scrollable::Rail {
+            background: Some(Background::Color(SURFACE2)),
+            border: Border {
+                radius: 2.0.into(),
+                width: 0.0,
+                color: Color::TRANSPARENT,
+            },
+            scroller: scrollable::Scroller {
+                background: Background::Color(scroller_color),
                 border: Border {
                     radius: 2.0.into(),
                     width: 0.0,
                     color: Color::TRANSPARENT,
                 },
-                scroller: scrollable::Scroller {
-                    color: MUTED,
-                    border: Border {
-                        radius: 2.0.into(),
-                        width: 0.0,
-                        color: Color::TRANSPARENT,
-                    },
-                },
             },
+        };
+
+        scrollable::Style {
+            container: container::Style {
+                background: Some(Background::Color(SURFACE)),
+                text_color: Some(TEXT),
+                ..Default::default()
+            },
+            vertical_rail: rail,
+            horizontal_rail: rail,
             gap: None,
+            auto_scroll: scrollable::AutoScroll {
+                background: Background::Color(SURFACE2),
+                border: Border {
+                    radius: 4.0.into(),
+                    width: 1.0,
+                    color: MUTED,
+                },
+                shadow: Shadow::default(),
+                icon: TEXT,
+            },
         }
-    }
-
-    fn hovered(&self, style: &Self::Style, _is_active: bool) -> scrollable::Appearance {
-        let mut appearance = self.active(style);
-        appearance.scrollbar.scroller.color = PRIMARY;
-        appearance
     }
 }
 
-#[derive(Debug, Clone, Copy, Default)]
-pub struct CustomTextInput;
-
-impl text_input::StyleSheet for CustomTextInput {
-    type Style = theme::Theme;
-
-    fn active(&self, _style: &Self::Style) -> text_input::Appearance {
-        text_input::Appearance {
+// Text input styles
+pub fn custom_text_input() -> impl Fn(&Theme, text_input::Status) -> text_input::Style {
+    |_theme, status| {
+        let base = text_input::Style {
             background: Background::Color(SURFACE),
             border: Border {
                 radius: 4.0.into(),
                 width: 1.0,
                 color: BORDER,
             },
-            icon_color: MUTED,
-        }
-    }
+            icon: MUTED,
+            placeholder: MUTED,
+            value: TEXT,
+            selection: PRIMARY,
+        };
 
-    fn hovered(&self, style: &Self::Style) -> text_input::Appearance {
-        let mut appearance = self.active(style);
-        appearance.border.color = PRIMARY;
-        appearance
-    }
-
-    fn focused(&self, style: &Self::Style) -> text_input::Appearance {
-        let mut appearance = self.hovered(style);
-        appearance.border.color = FOCUS_RING;
-        appearance
-    }
-
-    fn placeholder_color(&self, _style: &Self::Style) -> Color {
-        MUTED
-    }
-
-    fn value_color(&self, _style: &Self::Style) -> Color {
-        TEXT
-    }
-
-    fn selection_color(&self, _style: &Self::Style) -> Color {
-        PRIMARY
-    }
-
-    fn disabled(&self, _style: &Self::Style) -> text_input::Appearance {
-        text_input::Appearance {
-            background: Background::Color(SURFACE),
-            border: Border {
-                radius: 4.0.into(),
-                width: 1.0,
-                color: BORDER,
+        match status {
+            text_input::Status::Active => base,
+            text_input::Status::Hovered => text_input::Style {
+                border: Border {
+                    color: PRIMARY,
+                    ..base.border
+                },
+                ..base
             },
-            icon_color: MUTED,
-        }
-    }
-
-    fn disabled_color(&self, _style: &Self::Style) -> Color {
-        MUTED
-    }
-}
-
-#[derive(Debug, Clone, Copy, Default)]
-pub struct CustomPickList;
-
-impl pick_list::StyleSheet for CustomPickList {
-    type Style = theme::Theme;
-
-    fn active(&self, _style: &Self::Style) -> pick_list::Appearance {
-        pick_list::Appearance {
-            text_color: TEXT,
-            placeholder_color: MUTED,
-            handle_color: TEXT,
-            background: Background::Color(SURFACE),
-            border: Border {
-                radius: 4.0.into(),
-                width: 1.0,
-                color: BORDER,
+            text_input::Status::Focused { .. } => text_input::Style {
+                border: Border {
+                    color: FOCUS_RING,
+                    ..base.border
+                },
+                ..base
             },
+            text_input::Status::Disabled => base,
         }
     }
-
-    fn hovered(&self, style: &Self::Style) -> pick_list::Appearance {
-        let mut appearance = self.active(style);
-        appearance.border.color = PRIMARY;
-        appearance
-    }
 }
 
-// Convenience functions
-pub fn active() -> theme::Button {
-    theme::Button::Primary
-}
-
-pub fn secondary() -> theme::Button {
-    theme::Button::Secondary
-}
-
-#[derive(Debug, Clone, Copy, Default)]
-pub struct CustomRule;
-
-impl rule::StyleSheet for CustomRule {
-    type Style = theme::Theme;
-
-    fn appearance(&self, _style: &Self::Style) -> rule::Appearance {
-        rule::Appearance {
-            color: BORDER,
-            width: 1,
-            radius: 0.0.into(),
-            fill_mode: rule::FillMode::Full,
-        }
+// Rule styles
+pub fn custom_rule() -> impl Fn(&Theme) -> rule::Style {
+    |_theme| rule::Style {
+        color: BORDER,
+        radius: 0.0.into(),
+        fill_mode: rule::FillMode::Full,
+        snap: true,
     }
 }

@@ -2,7 +2,7 @@ use crate::console::{ConsoleKind, ConsoleLineKind, ConsoleStatus};
 use crate::message::Message;
 use crate::state::EditorState;
 use crate::style::panel_container;
-use iced::widget::{button, column, container, horizontal_space, row, scrollable, text, text_input};
+use iced::widget::{button, column, container, Space, row, scrollable, text, text_input};
 use iced::{theme, Alignment, Color, Element, Font, Length};
 
 pub fn render_console_panel(
@@ -26,9 +26,9 @@ pub fn render_console_panel(
             .width(Length::Fill)
             .padding((6.0 * scale).max(4.0));
         if Some(tab_id) == console.active_tab_id() {
-            button = button.style(theme::Button::Primary);
+            button = button.style(iced::widget::button::primary);
         } else {
-            button = button.style(theme::Button::Text);
+            button = button.style(iced::widget::button::text);
         }
         tab_column = tab_column.push(button.on_press(Message::ConsoleTabSelected(tab_id)));
     }
@@ -37,7 +37,7 @@ pub fn render_console_panel(
         button(text("+ New").size((14.0 * scale).max(10.0)))
             .padding((6.0 * scale).max(4.0))
             .width(Length::Fill)
-            .style(theme::Button::Secondary)
+            .style(iced::widget::button::secondary)
             .on_press(Message::ConsoleNewRequested),
     );
 
@@ -71,7 +71,7 @@ pub fn render_console_panel(
                 text(text_value)
                     .font(Font::MONOSPACE)
                     .size((13.0 * scale).max(9.0))
-                    .style(color),
+                    .color(color),
             );
         }
 
@@ -88,12 +88,12 @@ pub fn render_console_panel(
         let mut content = column![
             row![
                 text(active.title()).size((16.0 * scale).max(12.0)),
-                horizontal_space().width(Length::Fill),
+                Space::new().width(Length::Fill).width(Length::Fill),
                 text(status_text)
                     .size((13.0 * scale).max(9.0))
-                    .style(Color::from_rgb8(180, 180, 180)),
+                    .color(Color::from_rgb8(180, 180, 180)),
             ]
-            .align_items(Alignment::Center),
+            .align_y(Alignment::Center),
             scroll,
         ]
         .spacing(spacing_medium)
@@ -110,27 +110,27 @@ pub fn render_console_panel(
 
                 let send_button = button(text("Send").size((14.0 * scale).max(10.0)))
                     .padding((6.0 * scale).max(4.0))
-                    .style(theme::Button::Primary)
+                    .style(iced::widget::button::primary)
                     .on_press(Message::ConsoleInputSubmitted(tab_id));
 
                 content = content.push(
                     row![input_field, send_button]
                         .spacing(spacing_small)
-                        .align_items(Alignment::Center),
+                        .align_y(Alignment::Center),
                 );
             }
             ConsoleKind::Debug => {
                 content = content.push(
                     text("Debug output (read-only)")
                         .size((13.0 * scale).max(9.0))
-                        .style(Color::from_rgb8(180, 180, 180)),
+                        .color(Color::from_rgb8(180, 180, 180)),
                 );
             }
             ConsoleKind::EditorLog => {
                 content = content.push(
                     text("Editor internal debug log (read-only)")
                         .size((13.0 * scale).max(9.0))
-                        .style(Color::from_rgb8(180, 180, 180)),
+                        .color(Color::from_rgb8(180, 180, 180)),
                 );
             }
         }
@@ -145,14 +145,14 @@ pub fn render_console_panel(
             column![
                 text("No console available")
                     .size((14.0 * scale).max(10.0))
-                    .style(Color::from_rgb8(200, 200, 200)),
+                    .color(Color::from_rgb8(200, 200, 200)),
                 button(text("Create terminal").size((14.0 * scale).max(10.0)))
-                    .style(theme::Button::Primary)
+                    .style(iced::widget::button::primary)
                     .on_press(Message::ConsoleNewRequested),
             ]
             .spacing(spacing_medium)
             .width(Length::Fill)
-            .align_items(Alignment::Start),
+            .align_x(Alignment::Start),
         )
         .padding(spacing_large)
         .width(Length::Fill)

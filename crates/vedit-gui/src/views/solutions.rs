@@ -4,14 +4,14 @@ use crate::state::{
     VisualStudioProjectEntry, VisualStudioSolutionEntry,
 };
 use crate::style::{document_button, TEXT, MUTED, ERROR, WARNING};
-use iced::widget::{button, column, horizontal_space, row, text, scrollable, Column};
+use iced::widget::{button, column, Space, row, text, scrollable, Column};
 use iced::{Alignment, Element, Length, Padding};
 
 pub fn render_solutions_tab(state: &EditorState, scale: f32) -> Column<'_, Message> {
     let mut content = column![
         text("Solutions")
             .size((16.0 * scale).max(12.0))
-            .style(iced::theme::Text::Color(TEXT))
+            .color(TEXT)
     ]
     .spacing((6.0 * scale).max(3.0))
     .padding(Padding::from([8.0, 16.0]));
@@ -20,7 +20,7 @@ pub fn render_solutions_tab(state: &EditorState, scale: f32) -> Column<'_, Messa
     if entries.is_empty() {
         content = content.push(
             text("No solutions or Makefiles found")
-                .style(iced::theme::Text::Color(MUTED))
+                .color(MUTED)
                 .size((13.0 * scale).max(9.0)),
         );
         return content;
@@ -51,7 +51,7 @@ fn render_visual_studio_solution(
     let mut content = column![
         button(
             text(format!("🟦 {}", solution.name))
-                .style(iced::theme::Text::Color(TEXT))
+                .color(TEXT)
                 .size((14.0 * scale).max(10.0)),
         )
         .style(document_button())
@@ -62,13 +62,13 @@ fn render_visual_studio_solution(
     for warning in &solution.warnings {
         content = content.push(
             row![
-                horizontal_space().width(Length::Fixed(16.0)),
+                Space::new().width(Length::Fill).width(Length::Fixed(16.0)),
                 text(warning)
-                    .style(iced::theme::Text::Color(WARNING))
+                    .color(WARNING)
                     .size((12.0 * scale).max(9.0)),
             ]
             .spacing(spacing)
-            .align_items(Alignment::Center),
+            .align_y(Alignment::Center),
         );
     }
 
@@ -87,14 +87,14 @@ fn render_visual_studio_project(
     let mut column = Column::new().spacing(spacing);
 
     let header = row![
-        horizontal_space().width(Length::Fixed(16.0)),
+        Space::new().width(Length::Fill).width(Length::Fixed(16.0)),
         text("🛠").size((13.0 * scale).max(9.0)),
         text(&project.name)
-            .style(iced::theme::Text::Color(TEXT))
+            .color(TEXT)
             .size((13.0 * scale).max(9.0)),
     ]
     .spacing(spacing)
-    .align_items(Alignment::Center);
+    .align_y(Alignment::Center);
 
     column = column.push(
         button(header)
@@ -105,13 +105,13 @@ fn render_visual_studio_project(
     if let Some(error) = &project.load_error {
         column = column.push(
             row![
-                horizontal_space().width(Length::Fixed(32.0)),
+                Space::new().width(Length::Fill).width(Length::Fixed(32.0)),
                 text(error)
-                    .style(iced::theme::Text::Color(ERROR))
+                    .color(ERROR)
                     .size((12.0 * scale).max(9.0)),
             ]
             .spacing(spacing)
-            .align_items(Alignment::Center),
+            .align_y(Alignment::Center),
         );
     } else if !project.files.is_empty() {
         column = column.push(render_solution_node_column(&project.files, 32.0, scale));
@@ -125,7 +125,7 @@ fn render_makefile_entry(makefile: &MakefileEntry, scale: f32) -> Element<'_, Me
     let mut column = column![
         button(
             text(format!("⚙ {}", makefile.name))
-                .style(iced::theme::Text::Color(TEXT))
+                .color(TEXT)
                 .size((14.0 * scale).max(10.0)),
         )
         .style(document_button())
@@ -136,13 +136,13 @@ fn render_makefile_entry(makefile: &MakefileEntry, scale: f32) -> Element<'_, Me
     if makefile.files.is_empty() {
         column = column.push(
             row![
-                horizontal_space().width(Length::Fixed(16.0)),
+                Space::new().width(Length::Fill).width(Length::Fixed(16.0)),
                 text("No referenced files detected")
-                    .style(iced::theme::Text::Color(MUTED))
+                    .color(MUTED)
                     .size((12.0 * scale).max(9.0)),
             ]
             .spacing(spacing)
-            .align_items(Alignment::Center),
+            .align_y(Alignment::Center),
         );
     } else {
         column = column.push(render_solution_node_column(&makefile.files, 16.0, scale));
@@ -154,7 +154,7 @@ fn render_makefile_entry(makefile: &MakefileEntry, scale: f32) -> Element<'_, Me
 fn render_solution_error(error: &SolutionErrorEntry, scale: f32) -> Element<'_, Message> {
     column![
         text(format!("{}: {}", error.path, error.message))
-            .style(iced::theme::Text::Color(ERROR))
+            .color(ERROR)
             .size((12.0 * scale).max(9.0)),
     ]
     .spacing((2.0 * scale).max(1.0))
@@ -173,14 +173,14 @@ fn render_solution_node_column<'a>(
     for node in nodes {
         let icon = if node.is_directory { "📁" } else { "📄" };
         let row_content = row![
-            horizontal_space().width(Length::Fixed(indent)),
+            Space::new().width(Length::Fill).width(Length::Fixed(indent)),
             text(icon).size((12.0 * scale).max(9.0)),
             text(&node.name)
-                .style(iced::theme::Text::Color(TEXT))
+                .color(TEXT)
                 .size((13.0 * scale).max(9.0)),
         ]
         .spacing(spacing)
-        .align_items(Alignment::Center);
+        .align_y(Alignment::Center);
 
         let element: Element<'_, Message> = if let Some(path) = &node.path {
             button(row_content)

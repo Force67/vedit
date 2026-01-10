@@ -2,7 +2,7 @@ use crate::message::Message;
 use crate::notifications::{Notification, NotificationKind};
 use crate::state::EditorState;
 use crate::style::notification_container;
-use iced::widget::{button, column, container, horizontal_space, text, row};
+use iced::widget::{button, column, container, Space, text, row};
 use iced::{theme, Alignment, Color, Element, Length, Padding};
 use crate::style::NotificationTone;
 
@@ -15,20 +15,20 @@ pub fn render_notifications(
     let bubble_spacing = (spacing_medium * 0.6).max(6.0);
     let mut stack = column![]
         .spacing(bubble_spacing)
-        .align_items(Alignment::End);
+        .align_x(Alignment::End);
 
     for notification in state.notifications() {
         stack = stack.push(render_notification_card(notification, scale));
     }
 
-    let overlay = row![horizontal_space().width(Length::Fill), stack]
+    let overlay = row![Space::new().width(Length::Fill).width(Length::Fill), stack]
         .spacing(bubble_spacing)
-        .align_items(Alignment::End);
+        .align_y(Alignment::End);
 
     container(overlay)
         .width(Length::Fill)
         .height(Length::Shrink)
-        .padding([0.0, spacing_large, spacing_large, spacing_large])
+        .padding(Padding::new(0.0).right(spacing_large).bottom(spacing_large).left(spacing_large))
         .align_y(iced::alignment::Vertical::Bottom)
         .into()
 }
@@ -40,15 +40,15 @@ fn render_notification_card(notification: &Notification, scale: f32) -> Element<
     let spacing = (10.0 * scale).max(6.0);
     let icon_size = (14.0 * scale).max(10.0);
 
-    let icon = container(text("●").size(icon_size).style(accent))
+    let icon = container(text("●").size(icon_size).color(accent))
     .width(Length::Fixed((icon_size + 4.0).max(12.0)))
-    .center_x()
-    .center_y();
+    .center_x(Length::Fill)
+    .center_y(Length::Fill);
 
     let mut body = column![
         text(&notification.title)
             .size((15.0 * scale).max(11.0))
-            .style(Color::from_rgb8(240, 240, 240)),
+            .color(Color::from_rgb8(240, 240, 240)),
     ]
     .spacing((4.0 * scale).max(2.0));
 
@@ -56,17 +56,17 @@ fn render_notification_card(notification: &Notification, scale: f32) -> Element<
         body = body.push(
             text(details)
                 .size((13.0 * scale).max(9.5))
-                .style(Color::from_rgb8(190, 190, 190)),
+                .color(Color::from_rgb8(190, 190, 190)),
         );
     }
 
     let close_button = button(text("✕").size((14.0 * scale).max(10.0)))
-        .style(theme::Button::Text)
+        .style(iced::widget::button::text)
         .on_press(Message::NotificationDismissed(notification.id));
 
     let content = row![icon, body.width(Length::Fill), close_button]
         .spacing(spacing)
-        .align_items(Alignment::Center);
+        .align_y(Alignment::Center);
 
     container(content)
         .padding(Padding::new(padding))

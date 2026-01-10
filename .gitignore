@@ -6,3 +6,4 @@ target/
 result
 .direnv/
 /.vedit
+CLAUDE.md

@@ -14,20 +14,20 @@ pub fn render_wine_panel() -> Element<'static, Message> {
                 fa_icon_solid("wine-glass").size(20.0).color(iced::Color::WHITE),
                 text(" Wine Integration").size(20)
             ],
-            iced::widget::Space::with_width(Length::Fill),
+            iced::widget::Space::new().width(Length::Fill),
             button(row![
                 fa_icon_solid("plus").size(14.0).color(iced::Color::WHITE),
                 text(" Create Environment")
             ])
                 .on_press(Message::WineCreateEnvironmentDialog)
         ]
-        .align_items(Alignment::Center),
+        .align_y(Alignment::Center),
 
         // Environments section
         row![
             fa_icon_solid("box").size(16.0).color(iced::Color::WHITE),
             text(" Environments").size(16),
-            iced::widget::Space::with_width(Length::Fill),
+            iced::widget::Space::new().width(Length::Fill),
             button(row![
                 fa_icon_solid("plus").size(12.0).color(iced::Color::WHITE),
                 text(" Create")
@@ -38,28 +38,28 @@ pub fn render_wine_panel() -> Element<'static, Message> {
 
         // Placeholder content
         text("No Wine environments created yet")
-            .style(iced::Color::from_rgb(0.7, 0.7, 0.7)),
+            .color(iced::Color::from_rgb(0.7, 0.7, 0.7)),
 
-        iced::widget::Space::with_height(Length::Fixed(20.0)),
+        iced::widget::Space::new().height(Length::Fixed(20.0)),
 
         // Processes section
         row![
             fa_icon_solid("gear").size(16.0).color(iced::Color::WHITE),
             text(" Processes").size(16),
-            iced::widget::Space::with_width(Length::Fill),
+            iced::widget::Space::new().width(Length::Fill),
         ]
         .spacing(10),
 
         text("No processes running")
-            .style(iced::Color::from_rgb(0.7, 0.7, 0.7)),
+            .color(iced::Color::from_rgb(0.7, 0.7, 0.7)),
 
-        iced::widget::Space::with_height(Length::Fixed(20.0)),
+        iced::widget::Space::new().height(Length::Fixed(20.0)),
 
         // Settings section
         row![
             fa_icon_solid("sliders").size(16.0).color(iced::Color::WHITE),
             text(" Settings").size(16),
-            iced::widget::Space::with_width(Length::Fill),
+            iced::widget::Space::new().width(Length::Fill),
         ]
         .spacing(10),
 
@@ -76,6 +76,6 @@ pub fn render_wine_panel() -> Element<'static, Message> {
     container(content)
         .width(Length::Fill)
         .height(Length::Fill)
-        .style(iced::theme::Container::Box)
+        .style(crate::style::panel_container())
         .into()
 }

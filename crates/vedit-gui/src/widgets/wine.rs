@@ -289,7 +289,7 @@ fn render_wine_tabs(ui_state: &WineUiState, scale: f32, spacing: f32) -> Element
     row![env_tab, process_tab, remote_tab, settings_tab]
         .spacing(spacing)
         .width(Length::Fill)
-        .align_items(Alignment::Center)
+        .align_y(Alignment::Center)
         .into()
 }
 
@@ -305,12 +305,12 @@ fn render_environments_tab(
     // Header with create button
     let header = row![
         text("Wine Environments").size(16.0 * scale).bold(),
-        Space::with_width(Length::Fill),
+        Space::new().width(Length::Fill),
         button(text("+ Create Environment").size(12.0 * scale))
             .style(button_style::primary())
             .on_press(Message::WineCreateEnvironmentDialog)
     ]
-    .align_items(Alignment::Center);
+    .align_y(Alignment::Center);
 
     content = content.push(header);
     content = content.push(horizontal_rule(1));
@@ -320,7 +320,7 @@ fn render_environments_tab(
         content = content.push(
             text("No Wine environments found. Create one to get started.")
                 .size(14.0 * scale)
-                .style(iced::Color::from_rgb(0.7, 0.7, 0.7)),
+                .color(iced::Color::from_rgb(0.7, 0.7, 0.7)),
         );
     } else {
         let mut env_list = column![].spacing(spacing);
@@ -359,15 +359,15 @@ fn render_environment_item<'a>(
 
     let header = row![
         text(format!("🍷 {}", env.name)).size(14.0 * scale).bold(),
-        Space::with_width(Length::Fill),
+        Space::new().width(Length::Fill),
         text(format!("{} processes", processes_count))
             .size(12.0 * scale)
-            .style(iced::Color::from_rgb(0.6, 0.6, 0.6)),
+            .color(iced::Color::from_rgb(0.6, 0.6, 0.6)),
         button(text(if env.is_expanded { "▼" } else { "▶" }).size(12.0 * scale))
             .style(button_style::text())
             .on_press(Message::WineEnvironmentToggled(env_id.to_string()))
     ]
-    .align_items(Alignment::Center);
+    .align_y(Alignment::Center);
 
     let mut item_content = column![header].spacing(spacing);
 
@@ -375,24 +375,24 @@ fn render_environment_item<'a>(
         let details = column![
             row![
                 text("Path:").size(12.0 * scale).bold(),
-                Space::with_width(Length::Fixed(8.0 * scale)),
+                Space::new().width(Length::Fixed(8.0 * scale)),
                 text(&env.path).size(12.0 * scale)
             ],
             row![
                 text("Architecture:").size(12.0 * scale).bold(),
-                Space::with_width(Length::Fixed(8.0 * scale)),
+                Space::new().width(Length::Fixed(8.0 * scale)),
                 text(&env.architecture).size(12.0 * scale)
             ],
             row![
                 text("Windows:").size(12.0 * scale).bold(),
-                Space::with_width(Length::Fixed(8.0 * scale)),
+                Space::new().width(Length::Fixed(8.0 * scale)),
                 text(&env.windows_version).size(12.0 * scale)
             ]
         ]
         .spacing(spacing / 2.0);
 
         item_content = item_content.push(details);
-        item_content = item_content.push(Space::with_height(Length::Fixed(spacing)));
+        item_content = item_content.push(Space::new().height(Length::Fixed(spacing)));
 
         // Action buttons
         let actions = row![
@@ -434,12 +434,12 @@ fn render_processes_tab(
     // Header
     let header = row![
         text("Running Processes").size(16.0 * scale).bold(),
-        Space::with_width(Length::Fill),
+        Space::new().width(Length::Fill),
         text(format!("{} active", state.processes.len()))
             .size(12.0 * scale)
-            .style(iced::Color::from_rgb(0.6, 0.6, 0.6))
+            .color(iced::Color::from_rgb(0.6, 0.6, 0.6))
     ]
-    .align_items(Alignment::Center);
+    .align_y(Alignment::Center);
 
     content = content.push(header);
     content = content.push(horizontal_rule(1));
@@ -449,7 +449,7 @@ fn render_processes_tab(
         content = content.push(
             text("No processes are currently running.")
                 .size(14.0 * scale)
-                .style(iced::Color::from_rgb(0.7, 0.7, 0.7)),
+                .color(iced::Color::from_rgb(0.7, 0.7, 0.7)),
         );
     } else {
         let mut process_list = column![].spacing(spacing);
@@ -491,20 +491,20 @@ fn render_process_item<'a>(
 
     let main_info = row![
         text(process_icon(&process.status)).size(16.0 * scale),
-        Space::with_width(Length::Fixed(8.0 * scale)),
+        Space::new().width(Length::Fixed(8.0 * scale)),
         column![
             text(&process.name).size(14.0 * scale).bold(),
             text(&process.executable).size(12.0 * scale)
         ]
         .spacing(2.0),
-        Space::with_width(Length::Fill),
+        Space::new().width(Length::Fill),
         column![
             text(&process.status).size(12.0 * scale).style(status_color),
             text(&process.uptime).size(11.0 * scale)
         ]
         .spacing(2.0)
     ]
-    .align_items(Alignment::Center);
+    .align_y(Alignment::Center);
 
     let actions = row![
         if process.has_remote_desktop {
@@ -539,12 +539,12 @@ fn render_remote_desktop_tab(
     // Header
     let header = row![
         text("Remote Desktop Sessions").size(16.0 * scale).bold(),
-        Space::with_width(Length::Fill),
+        Space::new().width(Length::Fill),
         text(format!("{} active", state.remote_sessions.len()))
             .size(12.0 * scale)
-            .style(iced::Color::from_rgb(0.6, 0.6, 0.6))
+            .color(iced::Color::from_rgb(0.6, 0.6, 0.6))
     ]
-    .align_items(Alignment::Center);
+    .align_y(Alignment::Center);
 
     content = content.push(header);
     content = content.push(horizontal_rule(1));
@@ -554,7 +554,7 @@ fn render_remote_desktop_tab(
         content = content.push(
             text("No remote desktop sessions are active.")
                 .size(14.0 * scale)
-                .style(iced::Color::from_rgb(0.7, 0.7, 0.7)),
+                .color(iced::Color::from_rgb(0.7, 0.7, 0.7)),
         );
     } else {
         let mut session_list = column![].spacing(spacing);
@@ -596,21 +596,21 @@ fn render_remote_session_item<'a>(
 
     let main_info = row![
         text(session_icon).size(16.0 * scale),
-        Space::with_width(Length::Fixed(8.0 * scale)),
+        Space::new().width(Length::Fixed(8.0 * scale)),
         column![
             text(format!("{} Session", session.session_type)).size(14.0 * scale).bold(),
             text(format!("Port: {} | Resolution: {}x{}", session.port, session.resolution.0, session.resolution.1))
                 .size(12.0 * scale)
         ]
         .spacing(2.0),
-        Space::with_width(Length::Fill),
+        Space::new().width(Length::Fill),
         column![
             text(&session.connection_url).size(11.0 * scale),
             text(&session.uptime).size(11.0 * scale)
         ]
         .spacing(2.0)
     ]
-    .align_items(Alignment::Center);
+    .align_y(Alignment::Center);
 
     let actions = row![
         button(text("📋 Copy URL").size(11.0 * scale))
@@ -649,12 +649,12 @@ fn render_settings_tab(
         text("General Settings").size(14.0 * scale).bold(),
         row![
             text("Wine Status:").size(12.0 * scale),
-            Space::with_width(Length::Fixed(8.0 * scale)),
-            text("✅ Available").size(12.0 * scale).style(iced::Color::from_rgb(0.2, 0.8, 0.2))
+            Space::new().width(Length::Fixed(8.0 * scale)),
+            text("✅ Available").size(12.0 * scale).color(iced::Color::from_rgb(0.2, 0.8, 0.2))
         ],
         row![
             text("System:").size(12.0 * scale),
-            Space::with_width(Length::Fixed(8.0 * scale)),
+            Space::new().width(Length::Fixed(8.0 * scale)),
             text(if std::path::Path::new("/etc/nixos").exists() {
                 "NixOS (Optimized)"
             } else {
@@ -669,12 +669,12 @@ fn render_settings_tab(
         text("Paths").size(14.0 * scale).bold(),
         row![
             text("Wine Environments:").size(12.0 * scale),
-            Space::with_width(Length::Fixed(8.0 * scale)),
+            Space::new().width(Length::Fixed(8.0 * scale)),
             text("~/.vedit/wine").size(12.0 * scale)
         ],
         row![
             text("Cache Directory:").size(12.0 * scale),
-            Space::with_width(Length::Fixed(8.0 * scale)),
+            Space::new().width(Length::Fixed(8.0 * scale)),
             text("~/.cache/vedit/wine").size(12.0 * scale)
         ]
     ]
@@ -684,21 +684,21 @@ fn render_settings_tab(
         text("Remote Desktop").size(14.0 * scale).bold(),
         row![
             text("VNC Port Range:").size(12.0 * scale),
-            Space::with_width(Length::Fixed(8.0 * scale)),
+            Space::new().width(Length::Fixed(8.0 * scale)),
             text("5900-5999").size(12.0 * scale)
         ],
         row![
             text("Default Resolution:").size(12.0 * scale),
-            Space::with_width(Length::Fixed(8.0 * scale)),
+            Space::new().width(Length::Fixed(8.0 * scale)),
             text("1920x1080").size(12.0 * scale)
         ]
     ]
     .spacing(spacing / 2.0);
 
     content = content.push(general_settings);
-    content = content.push(Space::with_height(Length::Fixed(spacing)));
+    content = content.push(Space::new().height(Length::Fixed(spacing)));
     content = content.push(path_settings);
-    content = content.push(Space::with_height(Length::Fixed(spacing)));
+    content = content.push(Space::new().height(Length::Fixed(spacing)));
     content = content.push(remote_settings);
 
     container(content)
@@ -757,7 +757,7 @@ fn render_create_env_dialog<'a>(
             button(text("Cancel").size(12.0 * scale))
                 .style(button_style::secondary())
                 .on_press(Message::WineCreateEnvironmentDialog),
-            Space::with_width(Length::Fill),
+            Space::new().width(Length::Fill),
             button(text("Create").size(12.0 * scale))
                 .style(button_style::primary())
                 .on_press(Message::WineCreateEnvironment)
@@ -804,7 +804,7 @@ fn render_spawn_process_dialog<'a>(
             button(text("Cancel").size(12.0 * scale))
                 .style(button_style::secondary())
                 .on_press(Message::WineSpawnProcessDialog),
-            Space::with_width(Length::Fill),
+            Space::new().width(Length::Fill),
             button(text("Launch").size(12.0 * scale))
                 .style(button_style::primary())
                 .on_press(Message::WineSpawnProcess)
@@ -868,7 +868,7 @@ fn render_remote_desktop_dialog<'a>(
                     .on_input(Message::WineResolutionWidthChanged)
             ]
             .width(Length::FillPortion(1)),
-            Space::with_width(Length::Fixed(spacing)),
+            Space::new().width(Length::Fixed(spacing)),
             column![
                 text("Height:").size(12.0 * scale),
                 text_input("1080", &state.ui.resolution_height)
@@ -883,7 +883,7 @@ fn render_remote_desktop_dialog<'a>(
             button(text("Cancel").size(12.0 * scale))
                 .style(button_style::secondary())
                 .on_press(Message::WineRemoteDesktopDialog),
-            Space::with_width(Length::Fill),
+            Space::new().width(Length::Fill),
             button(text("Start Session").size(12.0 * scale))
                 .style(button_style::primary())
                 .on_press(Message::WineRemoteDesktopStart)

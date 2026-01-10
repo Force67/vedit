@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 crossbeam-channel = "0.5"
-thiserror = "1.0"
+thiserror = "2.0"
 iced-x86 = "1.21"
-nix = { version = "0.27", features = ["ptrace", "signal"] }
+nix = { version = "0.30", features = ["ptrace", "signal"] }
 libc = "0.2"

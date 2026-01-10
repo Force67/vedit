@@ -21,9 +21,8 @@ use crate::views::{
     status_bar::render_status_bar,
     title_bar::render_title_bar,
 };
-use iced::widget::{column, container};
+use iced::widget::{column, container, stack};
 use iced::{Alignment, Element, Length};
-use iced_aw::Modal;
 
 pub fn view(state: &EditorState) -> Element<'_, Message> {
     let scale = state.scale_factor() as f32;
@@ -68,53 +67,42 @@ pub fn view(state: &EditorState) -> Element<'_, Message> {
             .spacing(spacing_large)
             .width(Length::Fill)
             .height(Length::Fill)
-            .align_items(Alignment::Start),
+            .align_x(Alignment::Start),
     )
     .width(Length::Fill)
     .height(Length::Fill)
-    .center_x()
-    .center_y()
+    .center_x(Length::Fill)
+    .center_y(Length::Fill)
     .style(root_container());
 
-    let base = main_content.into();
+    let base: Element<'_, Message> = main_content.into();
+
+    // Build a stack of overlays
+    let mut layers: Vec<Element<'_, Message>> = vec![base];
 
     // Overlay the search dialog on top without dimming
-    let with_search = if state.search_dialog().is_visible {
-        Modal::new(
-            base,
-            {
-                // Position search dialog at the top-right of the screen
-                let search_contents = state.search_dialog().view(scale);
-                container(search_contents)
-                    .width(Length::Fill)
-                    .height(Length::Fill)
-                    .align_x(iced::alignment::Horizontal::Right)
-                    .align_y(iced::alignment::Vertical::Top)
-                    .into()
-            },
-        )
-        .into()
-    } else {
-        base
-    };
+    if state.search_dialog().is_visible {
+        let search_contents = state.search_dialog().view(scale);
+        let search_overlay: Element<'_, Message> = container(search_contents)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .align_x(iced::alignment::Horizontal::Right)
+            .align_y(iced::alignment::Vertical::Top)
+            .into();
+        layers.push(search_overlay);
+    }
 
     // Overlay the command prompt on top without dimming
     if state.command_palette().is_open() {
-        Modal::new(
-            with_search,
-            {
-                // center the dropdown inside the modal
-                let contents = render_command_palette_contents(state);
-                container(contents)
-                    .width(Length::Fill)
-                    .height(Length::Fill)
-                    .center_x()
-                    .center_y()
-                    .into()
-            },
-        )
-        .into()
-    } else {
-        with_search
+        let contents = render_command_palette_contents(state);
+        let palette_overlay: Element<'_, Message> = container(contents)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .center_x(Length::Fill)
+            .center_y(Length::Fill)
+            .into();
+        layers.push(palette_overlay);
     }
+
+    stack(layers).into()
 }

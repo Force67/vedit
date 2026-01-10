@@ -1,8 +1,8 @@
 use crate::message::Message;
 use crate::state::EditorState;
 use crate::style::{ribbon_container, top_bar_button};
-use iced::widget::{button, container, horizontal_space, mouse_area, row, text};
-use iced::{theme, Alignment, Color, Element, Length};
+use iced::widget::{button, container, mouse_area, row, text, Space};
+use iced::{Alignment, Color, Element, Length};
 use iced_font_awesome::fa_icon_solid;
 
 pub fn render_title_bar(
@@ -15,7 +15,7 @@ pub fn render_title_bar(
     let mut row = row![
         text("vedit")
             .size((20.0 * scale).max(14.0))
-            .style(Color::from_rgb8(0, 120, 215)),
+            .color(Color::from_rgb8(0, 120, 215)),
         button(text("Open File…").size((14.0 * scale).max(10.0)))
             .style(top_bar_button())
             .on_press(Message::OpenFileRequested),
@@ -79,10 +79,10 @@ pub fn render_title_bar(
                 .style(top_bar_button())
                 .on_press(Message::DebuggerMenuToggled)
         },
-        horizontal_space().width(Length::Fill),
+        Space::new().width(Length::Fill),
     ]
     .spacing(spacing_large)
-    .align_items(Alignment::Center);
+    .align_y(Alignment::Center);
 
     let message = if state.settings().is_open() {
         Message::SettingsClosed
@@ -107,9 +107,9 @@ pub fn render_title_bar(
     ]
     .spacing(spacing_small);
 
-    row = row.push(horizontal_space().width(Length::Fill));
+    row = row.push(Space::new().width(Length::Fill));
     row = row.push(settings_button);
-    row = row.push(horizontal_space().width(Length::Fixed(20.0)));
+    row = row.push(Space::new().width(Length::Fixed(20.0)));
     row = row.push(window_buttons);
 
     let title_bar = mouse_area(row)

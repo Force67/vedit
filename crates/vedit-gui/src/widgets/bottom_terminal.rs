@@ -51,7 +51,7 @@ impl BottomTerminal {
         if self.collapsed {
             let header = button(row![
                 fa_icon_solid("angle-right").color(iced::Color::WHITE),
-                text("Terminal").style(iced::theme::Text::Color(style::TEXT))
+                text("Terminal").color(style::TEXT)
             ].spacing(4.0))
                 .style(style::custom_button())
                 .on_press(Message::ToggleCollapse);
@@ -76,13 +76,13 @@ impl BottomTerminal {
                         .style(style::custom_button())
                         .on_press(Message::ToggleCollapse)
                 )
-                .align_items(Alignment::Center);
+                .align_y(Alignment::Center);
 
             let log_view = scrollable(
                 Column::new()
                     .spacing(4)
                     .extend(self.logs.iter().map(|(msg, level)| {
-                        text(msg).style(iced::theme::Text::Color(level.color())).into()
+                        text(msg).color(level.color()).into()
                     }))
                     .padding(8)
             )
