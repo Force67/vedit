@@ -2,9 +2,12 @@
 
 use iced::theme;
 use iced::widget::button;
-use iced::{Background, Border, Color};
+use iced::{Background, Border, Color, Shadow};
 
-use super::{BG, BORDER, MUTED, PRIMARY, PRIMARY_HOVER, SUCCESS, ERROR, SURFACE, SURFACE2};
+use super::{
+    elevation, BORDER_SUBTLE, MUTED, PRIMARY, PRIMARY_HOVER, PRIMARY_PRESSED, SUCCESS, ERROR,
+    SURFACE, SURFACE2, SURFACE_HOVER, TEXT, TEXT_SECONDARY,
+};
 
 pub fn primary() -> theme::Button {
     theme::Button::Custom(Box::new(PrimaryButton))
@@ -44,11 +47,11 @@ impl button::StyleSheet for PrimaryButton {
             background: Some(Background::Color(PRIMARY)),
             text_color: Color::WHITE,
             border: Border {
-                radius: 4.0.into(),
+                radius: 6.0.into(),
                 width: 0.0,
                 color: Color::TRANSPARENT,
             },
-            shadow: Default::default(),
+            shadow: elevation::level_1(),
         }
     }
 
@@ -57,24 +60,24 @@ impl button::StyleSheet for PrimaryButton {
             background: Some(Background::Color(PRIMARY_HOVER)),
             text_color: Color::WHITE,
             border: Border {
-                radius: 4.0.into(),
+                radius: 6.0.into(),
                 width: 0.0,
                 color: Color::TRANSPARENT,
             },
-            shadow: Default::default(),
+            shadow: elevation::level_2(),
         }
     }
 
     fn pressed(&self, _style: &Self::Style) -> button::Appearance {
         button::Appearance {
-            background: Some(Background::Color(PRIMARY)),
+            background: Some(Background::Color(PRIMARY_PRESSED)),
             text_color: Color::WHITE,
             border: Border {
-                radius: 4.0.into(),
+                radius: 6.0.into(),
                 width: 0.0,
                 color: Color::TRANSPARENT,
             },
-            shadow: Default::default(),
+            shadow: Shadow::default(),
         }
     }
 }
@@ -86,40 +89,40 @@ impl button::StyleSheet for SecondaryButton {
 
     fn active(&self, _style: &Self::Style) -> button::Appearance {
         button::Appearance {
-            background: Some(Background::Color(SURFACE2)),
+            background: Some(Background::Color(SURFACE)),
             text_color: TEXT,
             border: Border {
-                radius: 4.0.into(),
+                radius: 6.0.into(),
                 width: 1.0,
-                color: BORDER,
+                color: BORDER_SUBTLE,
             },
-            shadow: Default::default(),
+            shadow: elevation::level_1(),
         }
     }
 
     fn hovered(&self, _style: &Self::Style) -> button::Appearance {
         button::Appearance {
-            background: Some(Background::Color(BORDER)),
+            background: Some(Background::Color(SURFACE_HOVER)),
             text_color: TEXT,
             border: Border {
-                radius: 4.0.into(),
+                radius: 6.0.into(),
                 width: 1.0,
-                color: BORDER,
+                color: PRIMARY,
             },
-            shadow: Default::default(),
+            shadow: elevation::level_2(),
         }
     }
 
     fn pressed(&self, _style: &Self::Style) -> button::Appearance {
         button::Appearance {
-            background: Some(Background::Color(SURFACE)),
+            background: Some(Background::Color(SURFACE2)),
             text_color: TEXT,
             border: Border {
-                radius: 4.0.into(),
+                radius: 6.0.into(),
                 width: 1.0,
-                color: BORDER,
+                color: PRIMARY,
             },
-            shadow: Default::default(),
+            shadow: Shadow::default(),
         }
     }
 }
@@ -134,11 +137,11 @@ impl button::StyleSheet for ActiveButton {
             background: Some(Background::Color(SUCCESS)),
             text_color: Color::BLACK,
             border: Border {
-                radius: 4.0.into(),
+                radius: 6.0.into(),
                 width: 0.0,
                 color: Color::TRANSPARENT,
             },
-            shadow: Default::default(),
+            shadow: elevation::level_1(),
         }
     }
 
@@ -147,11 +150,11 @@ impl button::StyleSheet for ActiveButton {
             background: Some(Background::Color(SUCCESS)),
             text_color: Color::BLACK,
             border: Border {
-                radius: 4.0.into(),
+                radius: 6.0.into(),
                 width: 0.0,
                 color: Color::TRANSPARENT,
             },
-            shadow: Default::default(),
+            shadow: elevation::level_2(),
         }
     }
 
@@ -160,11 +163,11 @@ impl button::StyleSheet for ActiveButton {
             background: Some(Background::Color(SUCCESS)),
             text_color: Color::BLACK,
             border: Border {
-                radius: 4.0.into(),
+                radius: 6.0.into(),
                 width: 0.0,
                 color: Color::TRANSPARENT,
             },
-            shadow: Default::default(),
+            shadow: Shadow::default(),
         }
     }
 }
@@ -177,39 +180,39 @@ impl button::StyleSheet for ButtonText {
     fn active(&self, _style: &Self::Style) -> button::Appearance {
         button::Appearance {
             background: None,
-            text_color: MUTED,
+            text_color: TEXT_SECONDARY,
             border: Border {
-                radius: 2.0.into(),
+                radius: 4.0.into(),
                 width: 0.0,
                 color: Color::TRANSPARENT,
             },
-            shadow: Default::default(),
+            shadow: Shadow::default(),
         }
     }
 
     fn hovered(&self, _style: &Self::Style) -> button::Appearance {
         button::Appearance {
-            background: Some(Background::Color(SURFACE2)),
+            background: Some(Background::Color(SURFACE_HOVER)),
             text_color: TEXT,
             border: Border {
-                radius: 2.0.into(),
+                radius: 4.0.into(),
                 width: 0.0,
                 color: Color::TRANSPARENT,
             },
-            shadow: Default::default(),
+            shadow: Shadow::default(),
         }
     }
 
     fn pressed(&self, _style: &Self::Style) -> button::Appearance {
         button::Appearance {
-            background: Some(Background::Color(SURFACE)),
+            background: Some(Background::Color(SURFACE2)),
             text_color: TEXT,
             border: Border {
-                radius: 2.0.into(),
+                radius: 4.0.into(),
                 width: 0.0,
                 color: Color::TRANSPARENT,
             },
-            shadow: Default::default(),
+            shadow: Shadow::default(),
         }
     }
 }
@@ -224,37 +227,45 @@ impl button::StyleSheet for DestructiveButton {
             background: Some(Background::Color(ERROR)),
             text_color: Color::WHITE,
             border: Border {
-                radius: 4.0.into(),
+                radius: 6.0.into(),
                 width: 0.0,
                 color: Color::TRANSPARENT,
             },
-            shadow: Default::default(),
+            shadow: elevation::level_1(),
         }
     }
 
     fn hovered(&self, _style: &Self::Style) -> button::Appearance {
         button::Appearance {
-            background: Some(Background::Color(Color::from_rgb(200, 90, 100))),
+            background: Some(Background::Color(Color::from_rgb(
+                235.0 / 255.0,
+                105.0 / 255.0,
+                115.0 / 255.0,
+            ))),
             text_color: Color::WHITE,
             border: Border {
-                radius: 4.0.into(),
+                radius: 6.0.into(),
                 width: 0.0,
                 color: Color::TRANSPARENT,
             },
-            shadow: Default::default(),
+            shadow: elevation::level_2(),
         }
     }
 
     fn pressed(&self, _style: &Self::Style) -> button::Appearance {
         button::Appearance {
-            background: Some(Background::Color(Color::from_rgb(150, 70, 80))),
+            background: Some(Background::Color(Color::from_rgb(
+                180.0 / 255.0,
+                70.0 / 255.0,
+                80.0 / 255.0,
+            ))),
             text_color: Color::WHITE,
             border: Border {
-                radius: 4.0.into(),
+                radius: 6.0.into(),
                 width: 0.0,
                 color: Color::TRANSPARENT,
             },
-            shadow: Default::default(),
+            shadow: Shadow::default(),
         }
     }
 }
@@ -269,37 +280,37 @@ impl button::StyleSheet for ActiveTabButton {
             background: Some(Background::Color(SURFACE)),
             text_color: TEXT,
             border: Border {
-                radius: 0.0,
-                width: 1.0,
-                color: BORDER,
+                radius: 4.0.into(),
+                width: 0.0,
+                color: Color::TRANSPARENT,
             },
-            shadow: Default::default(),
+            shadow: Shadow::default(),
         }
     }
 
     fn hovered(&self, _style: &Self::Style) -> button::Appearance {
         button::Appearance {
-            background: Some(Background::Color(SURFACE2)),
+            background: Some(Background::Color(SURFACE_HOVER)),
             text_color: TEXT,
             border: Border {
-                radius: 0.0,
-                width: 1.0,
-                color: BORDER,
+                radius: 4.0.into(),
+                width: 0.0,
+                color: Color::TRANSPARENT,
             },
-            shadow: Default::default(),
+            shadow: Shadow::default(),
         }
     }
 
     fn pressed(&self, _style: &Self::Style) -> button::Appearance {
         button::Appearance {
-            background: Some(Background::Color(SURFACE)),
+            background: Some(Background::Color(SURFACE2)),
             text_color: TEXT,
             border: Border {
-                radius: 0.0,
-                width: 1.0,
-                color: BORDER,
+                radius: 4.0.into(),
+                width: 0.0,
+                color: Color::TRANSPARENT,
             },
-            shadow: Default::default(),
+            shadow: Shadow::default(),
         }
     }
 }
@@ -312,26 +323,26 @@ impl button::StyleSheet for InactiveTabButton {
     fn active(&self, _style: &Self::Style) -> button::Appearance {
         button::Appearance {
             background: None,
-            text_color: MUTED,
+            text_color: TEXT_SECONDARY,
             border: Border {
-                radius: 0.0,
-                width: 1.0,
-                color: BORDER,
+                radius: 4.0.into(),
+                width: 0.0,
+                color: Color::TRANSPARENT,
             },
-            shadow: Default::default(),
+            shadow: Shadow::default(),
         }
     }
 
     fn hovered(&self, _style: &Self::Style) -> button::Appearance {
         button::Appearance {
-            background: Some(Background::Color(SURFACE)),
+            background: Some(Background::Color(SURFACE_HOVER)),
             text_color: TEXT,
             border: Border {
-                radius: 0.0,
-                width: 1.0,
-                color: BORDER,
+                radius: 4.0.into(),
+                width: 0.0,
+                color: Color::TRANSPARENT,
             },
-            shadow: Default::default(),
+            shadow: Shadow::default(),
         }
     }
 
@@ -340,14 +351,11 @@ impl button::StyleSheet for InactiveTabButton {
             background: Some(Background::Color(SURFACE2)),
             text_color: TEXT,
             border: Border {
-                radius: 0.0,
-                width: 1.0,
-                color: BORDER,
+                radius: 4.0.into(),
+                width: 0.0,
+                color: Color::TRANSPARENT,
             },
-            shadow: Default::default(),
+            shadow: Shadow::default(),
         }
     }
 }
-
-// Import TEXT from parent module
-use super::TEXT;

@@ -2,9 +2,9 @@
 
 use iced::theme;
 use iced::widget::container;
-use iced::{Background, Border, Color};
+use iced::{Background, Border};
 
-use super::{BG, BORDER, SURFACE, SURFACE2, OVERLAY};
+use super::{elevation, BG, BORDER_SUBTLE, PRIMARY, SURFACE, SURFACE2, OVERLAY, TEXT};
 
 pub fn card() -> theme::Container {
     theme::Container::Custom(Box::new(CardContainer))
@@ -31,12 +31,12 @@ impl container::StyleSheet for CardContainer {
         container::Appearance {
             background: Some(Background::Color(SURFACE)),
             border: Border {
-                radius: 6.0.into(),
+                radius: 8.0.into(),
                 width: 1.0,
-                color: BORDER,
+                color: BORDER_SUBTLE,
             },
-            text_color: None,
-            shadow: Default::default(),
+            text_color: Some(TEXT),
+            shadow: elevation::level_1(),
         }
     }
 }
@@ -50,12 +50,12 @@ impl container::StyleSheet for SelectedContainer {
         container::Appearance {
             background: Some(Background::Color(SURFACE2)),
             border: Border {
-                radius: 6.0.into(),
+                radius: 8.0.into(),
                 width: 2.0,
-                color: Color::from_rgb(122, 162, 247), // PRIMARY
+                color: PRIMARY,
             },
-            text_color: None,
-            shadow: Default::default(),
+            text_color: Some(TEXT),
+            shadow: elevation::level_2(),
         }
     }
 }
@@ -69,12 +69,12 @@ impl container::StyleSheet for ModalContainer {
         container::Appearance {
             background: Some(Background::Color(OVERLAY)),
             border: Border {
-                radius: 8.0.into(),
+                radius: 12.0.into(),
                 width: 1.0,
-                color: BORDER,
+                color: BORDER_SUBTLE,
             },
-            text_color: None,
-            shadow: Default::default(),
+            text_color: Some(TEXT),
+            shadow: elevation::level_3(),
         }
     }
 }
@@ -87,7 +87,7 @@ impl container::StyleSheet for RootContainer {
     fn appearance(&self, _style: &Self::Style) -> container::Appearance {
         container::Appearance {
             background: Some(Background::Color(BG)),
-            text_color: Some(Color::from_rgb(230, 234, 242)),
+            text_color: Some(TEXT),
             ..Default::default()
         }
     }

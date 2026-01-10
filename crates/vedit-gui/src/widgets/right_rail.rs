@@ -4,100 +4,52 @@ use iced_font_awesome::fa_icon_solid;
 
 use crate::message::{Message, RightRailTab};
 use crate::state::EditorState;
-use crate::style;
+use crate::style::{self, TEXT, TEXT_SECONDARY};
+
+/// Helper to create a tab button with proper styling
+fn tab_button(
+    icon: &'static str,
+    tab: RightRailTab,
+    current_tab: RightRailTab,
+) -> Element<'static, Message> {
+    let is_active = current_tab == tab;
+    let icon_color = if is_active { TEXT } else { TEXT_SECONDARY };
+    let icon_widget = fa_icon_solid(icon).size(14.0).color(icon_color);
+
+    if is_active {
+        button(icon_widget)
+            .style(style::active_document_button())
+            .on_press(Message::RightRailTabSelected(tab))
+            .padding(6)
+            .into()
+    } else {
+        button(icon_widget)
+            .style(style::document_button())
+            .on_press(Message::RightRailTabSelected(tab))
+            .padding(6)
+            .into()
+    }
+}
 
 pub fn render_right_rail(
     state: &EditorState,
     scale: f32,
     sidebar_width: f32,
 ) -> Element<'_, Message> {
+    let current_tab = state.selected_right_rail_tab();
+
     // Create the tab bar with Font Awesome icons
     let tab_bar: Row<Message, theme::Theme, iced::Renderer> = Row::with_children(vec![
-        {
-            let mut btn = button(fa_icon_solid("folder").size(14.0).color(iced::Color::WHITE))
-                .style(crate::style::custom_button())
-                .on_press(Message::RightRailTabSelected(RightRailTab::Workspace));
-            if state.selected_right_rail_tab() == RightRailTab::Workspace {
-                btn = btn.style(crate::style::active_document_button());
-            }
-            btn.into()
-        },
-        {
-            let mut btn = button(
-                fa_icon_solid("lightbulb")
-                    .size(14.0)
-                    .color(crate::style::MUTED),
-            )
-            .style(crate::style::custom_button())
-            .on_press(Message::RightRailTabSelected(RightRailTab::Solutions));
-            if state.selected_right_rail_tab() == RightRailTab::Solutions {
-                btn = btn.style(crate::style::active_document_button());
-            }
-            btn.into()
-        },
-        {
-            let mut btn = button(fa_icon_solid("list").size(14.0).color(crate::style::MUTED))
-                .style(crate::style::custom_button())
-                .on_press(Message::RightRailTabSelected(RightRailTab::Outline));
-            if state.selected_right_rail_tab() == RightRailTab::Outline {
-                btn = btn.style(crate::style::active_document_button());
-            }
-            btn.into()
-        },
-        {
-            let mut btn = button(
-                fa_icon_solid("magnifying-glass")
-                    .size(14.0)
-                    .color(crate::style::MUTED),
-            )
-            .style(crate::style::custom_button())
-            .on_press(Message::RightRailTabSelected(RightRailTab::Search));
-            if state.selected_right_rail_tab() == RightRailTab::Search {
-                btn = btn.style(crate::style::active_document_button());
-            }
-            btn.into()
-        },
-        {
-            let mut btn = button(
-                fa_icon_solid("triangle-exclamation")
-                    .size(14.0)
-                    .color(crate::style::MUTED),
-            )
-            .style(crate::style::custom_button())
-            .on_press(Message::RightRailTabSelected(RightRailTab::Problems));
-            if state.selected_right_rail_tab() == RightRailTab::Problems {
-                btn = btn.style(crate::style::active_document_button());
-            }
-            btn.into()
-        },
-        {
-            let mut btn = button(
-                fa_icon_solid("note-sticky")
-                    .size(14.0)
-                    .color(crate::style::MUTED),
-            )
-            .style(crate::style::custom_button())
-            .on_press(Message::RightRailTabSelected(RightRailTab::Notes));
-            if state.selected_right_rail_tab() == RightRailTab::Notes {
-                btn = btn.style(crate::style::active_document_button());
-            }
-            btn.into()
-        },
-        {
-            let mut btn = button(
-                fa_icon_solid("wine-glass")
-                    .size(14.0)
-                    .color(crate::style::MUTED),
-            )
-            .style(crate::style::custom_button())
-            .on_press(Message::RightRailTabSelected(RightRailTab::Wine));
-            if state.selected_right_rail_tab() == RightRailTab::Wine {
-                btn = btn.style(crate::style::active_document_button());
-            }
-            btn.into()
-        },
+        tab_button("folder", RightRailTab::Workspace, current_tab),
+        tab_button("lightbulb", RightRailTab::Solutions, current_tab),
+        tab_button("list", RightRailTab::Outline, current_tab),
+        tab_button("magnifying-glass", RightRailTab::Search, current_tab),
+        tab_button("triangle-exclamation", RightRailTab::Problems, current_tab),
+        tab_button("note-sticky", RightRailTab::Notes, current_tab),
+        tab_button("wine-glass", RightRailTab::Wine, current_tab),
     ])
-    .spacing(0);
+    .spacing(2)
+    .padding(4);
 
     // Render the content for the selected tab
     let content: Element<Message> = match state.selected_right_rail_tab() {

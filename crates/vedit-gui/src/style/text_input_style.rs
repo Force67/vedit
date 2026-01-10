@@ -4,7 +4,15 @@ use iced::theme;
 use iced::widget::text_input;
 use iced::{Background, Border, Color};
 
-use super::{BORDER, SURFACE, SURFACE2, TEXT, MUTED};
+use super::{BORDER_SUBTLE, PRIMARY, SURFACE, SURFACE_HOVER, TEXT, MUTED};
+
+/// Selection highlight color with transparency
+const SELECTION: Color = Color {
+    r: 88.0 / 255.0,
+    g: 140.0 / 255.0,
+    b: 220.0 / 255.0,
+    a: 0.35,
+};
 
 pub fn default() -> theme::TextInput {
     theme::TextInput::Custom(Box::new(DefaultInput))
@@ -19,44 +27,44 @@ impl text_input::StyleSheet for DefaultInput {
         text_input::Appearance {
             background: Background::Color(SURFACE),
             border: Border {
-                radius: 4.0.into(),
+                radius: 6.0.into(),
                 width: 1.0,
-                color: BORDER,
+                color: BORDER_SUBTLE,
             },
             icon_color: MUTED,
             text_color: TEXT,
             placeholder_color: MUTED,
-            selection_color: Color::from_rgb(122, 162, 247),
+            selection_color: SELECTION,
         }
     }
 
     fn focused(&self, _style: &Self::Style) -> text_input::Appearance {
         text_input::Appearance {
-            background: Background::Color(SURFACE2),
+            background: Background::Color(SURFACE_HOVER),
             border: Border {
-                radius: 4.0.into(),
-                width: 1.0,
-                color: Color::from_rgb(122, 162, 247),
+                radius: 6.0.into(),
+                width: 2.0, // Thicker border for focus ring
+                color: PRIMARY,
             },
-            icon_color: TEXT,
+            icon_color: PRIMARY,
             text_color: TEXT,
             placeholder_color: MUTED,
-            selection_color: Color::from_rgb(122, 162, 247),
+            selection_color: SELECTION,
         }
     }
 
     fn hovered(&self, _style: &Self::Style) -> text_input::Appearance {
         text_input::Appearance {
-            background: Background::Color(SURFACE2),
+            background: Background::Color(SURFACE_HOVER),
             border: Border {
-                radius: 4.0.into(),
+                radius: 6.0.into(),
                 width: 1.0,
-                color: BORDER,
+                color: BORDER_SUBTLE,
             },
             icon_color: TEXT,
             text_color: TEXT,
             placeholder_color: MUTED,
-            selection_color: Color::from_rgb(122, 162, 247),
+            selection_color: SELECTION,
         }
     }
 
@@ -64,14 +72,14 @@ impl text_input::StyleSheet for DefaultInput {
         text_input::Appearance {
             background: Background::Color(SURFACE),
             border: Border {
-                radius: 4.0.into(),
+                radius: 6.0.into(),
                 width: 1.0,
-                color: BORDER,
+                color: BORDER_SUBTLE,
             },
             icon_color: MUTED,
             text_color: MUTED,
             placeholder_color: MUTED,
-            selection_color: Color::from_rgb(122, 162, 247),
+            selection_color: SELECTION,
         }
     }
 }
