@@ -3,7 +3,7 @@ use crate::state::EditorState;
 use crate::style::{active_document_button, document_button, panel_container};
 use vedit_application::{SettingsCategory, SETTINGS_CATEGORIES};
 use iced::widget::{button, column, container, Space, row, text, text_input};
-use iced::{theme, Alignment, Color, Element, Length, Padding};
+use iced::{Alignment, Color, Element, Length, Padding};
 
 pub fn render_settings(
     state: &EditorState,

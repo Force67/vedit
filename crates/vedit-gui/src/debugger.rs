@@ -893,7 +893,7 @@ impl DebuggerState {
             };
 
             match event {
-                DebuggerUiEvent::SessionStarted { target } => {
+                DebuggerUiEvent::SessionStarted { target: _ } => {
                     self.status = DebugSessionStatus::Running;
                     let debugger_name = match self.debugger_type {
                         DebuggerType::Gdb => "gdb",

@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use crate::debugger::{DebugLaunchPlan, DebuggerType, DebuggerUiEvent};
 use crate::keyboard;
 use crate::message::Message;
-use crate::session::{SessionManager, SessionState, WindowState, WorkspaceState};
+use crate::session::{SessionManager, SessionState};
 use crate::state::EditorState;
 use crate::views;
 use crate::notifications::{NotificationKind, NotificationRequest};
@@ -218,7 +218,7 @@ impl EditorApp {
 
 impl EditorApp {
     fn new() -> (Self, Task<Message>) {
-        let mut app = Self::default();
+        let app = Self::default();
 
         // Load session state at startup
         let session_manager = app.session_manager.clone();
@@ -850,19 +850,19 @@ impl EditorApp {
                                 }
                                 Key::Enter => {
                                     if let Some(cursor) = explorer.cursor() {
-                                        explorer.update(crate::widgets::file_explorer::Message::Open(cursor, crate::widgets::file_explorer::OpenKind::InEditor));
+                                        let _ = explorer.update(crate::widgets::file_explorer::Message::Open(cursor, crate::widgets::file_explorer::OpenKind::InEditor));
                                     }
                                     return self.wrap_command(Task::none());
                                 }
                                 Key::Function(2) => {
                                     if let Some(cursor) = explorer.cursor() {
-                                        explorer.update(crate::widgets::file_explorer::Message::StartRename(cursor));
+                                        let _ = explorer.update(crate::widgets::file_explorer::Message::StartRename(cursor));
                                     }
                                     return self.wrap_command(Task::none());
                                 }
                                 Key::Delete => {
                                     if let Some(cursor) = explorer.cursor() {
-                                        explorer.update(crate::widgets::file_explorer::Message::Delete(cursor));
+                                        let _ = explorer.update(crate::widgets::file_explorer::Message::Delete(cursor));
                                     }
                                     return self.wrap_command(Task::none());
                                 }

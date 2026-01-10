@@ -19,7 +19,7 @@ impl<T> ObjectPool<T> {
     }
 
     /// Get an object from the pool, or create a new one if empty
-    pub fn get(&self) -> PooledObject<T> {
+    pub fn get(&self) -> PooledObject<'_, T> {
         let mut pool = self.pool.borrow_mut();
         let mut object = pool.pop_front().unwrap_or_else(|| (self.create_fn)());
         (self.reset_fn)(&mut object);

@@ -2,7 +2,7 @@ use crate::message::Message;
 use crate::state::EditorState;
 use crate::style::{floating_panel_container, panel_container};
 use iced::widget::{button, column, container, Space, row, scrollable, text, text_input};
-use iced::{Alignment, Color, Element, Length};
+use iced::{Alignment, Element, Length};
 use iced_font_awesome::fa_icon_solid;
 
 pub fn render_command_palette_contents(state: &EditorState) -> Element<'_, Message> {
@@ -11,10 +11,10 @@ pub fn render_command_palette_contents(state: &EditorState) -> Element<'_, Messa
     let filtered = palette.filtered_indices(commands);
     let selection = palette.selection_index();
     let scale = state.scale_factor() as f32;
-    let spacing_large = (16.0 * scale).max(8.0);
+    let _spacing_large = (16.0 * scale).max(8.0);
     let spacing_medium = (12.0 * scale).max(6.0);
     let spacing_small = (8.0 * scale).max(4.0);
-    let drop_width = (600.0 * scale).clamp(400.0, 800.0);
+    let _drop_width = (600.0 * scale).clamp(400.0, 800.0);
 
     let submit_message = state
         .selected_quick_command()

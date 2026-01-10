@@ -1,4 +1,4 @@
-use iced::widget::{button, container, row, text, tooltip, Row};
+use iced::widget::{button, container, text, tooltip, Row};
 use iced::{Alignment, Element, Length};
 
 use crate::style;
@@ -20,7 +20,7 @@ impl TopToolbar {
         Self
     }
 
-    pub fn view(&self) -> Element<Message> {
+    pub fn view(&self) -> Element<'_, Message> {
         let file_group = Row::new()
             .spacing(8)
             .push(

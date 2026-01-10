@@ -124,13 +124,12 @@ pub fn spawn_session(config: LaunchConfig) -> Result<VeditSession, DebuggerError
         WaitStatus::Stopped(_, Signal::SIGTRAP) => {
             // Good, child is stopped
         }
-        status => {
+        _status => {
             return Err(DebuggerError::ProcessExited);
         }
     }
 
     let breakpoints = Arc::new(Mutex::new(HashMap::new()));
-    let breakpoints_clone = breakpoints.clone();
 
     // Set up breakpoints
     for addr in &config.breakpoints {
@@ -149,7 +148,10 @@ pub fn spawn_session(config: LaunchConfig) -> Result<VeditSession, DebuggerError
     });
 
     let command_event_sender = event_sender.clone();
-    let breakpoints_for_commands = breakpoints.clone();
+    // TODO(Vince): Pass breakpoints to command handler thread for:
+    // - AddBreakpoint/RemoveBreakpoint commands
+    // - Temporarily disabling breakpoints during single-step
+    // - Listing active breakpoints
     thread::spawn(move || {
         while let Ok(command) = command_receiver.recv() {
             match command {
@@ -259,14 +261,14 @@ fn set_breakpoint(pid: Pid, addr: u64) -> Result<u8, nix::errno::Errno> {
     let original_word: i64 = ptrace::read(pid, addr as *mut _)?;
     let original_byte = (original_word & 0xFF) as u8;
     let modified_word = (original_word & !0xFF) | 0xCC;
-    unsafe { ptrace::write(pid, addr as *mut _, modified_word)?; }
+    ptrace::write(pid, addr as *mut _, modified_word)?;
     Ok(original_byte)
 }
 
 fn restore_breakpoint(pid: Pid, bp: &Breakpoint) -> Result<(), nix::errno::Errno> {
     let current_word: i64 = ptrace::read(pid, bp.address as *mut _)?;
     let restored_word = (current_word & !0xFF) | (bp.original_byte as i64);
-    unsafe { ptrace::write(pid, bp.address as *mut _, restored_word)?; }
+    ptrace::write(pid, bp.address as *mut _, restored_word)?;
     Ok(())
 }
 

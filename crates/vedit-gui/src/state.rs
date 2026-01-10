@@ -932,7 +932,7 @@ pub fn wine(&self) -> &WineState {
         let mut paths = Vec::new();
 
         // Get all documents from the editor
-        for (index, document) in self.editor().open_documents().into_iter().enumerate() {
+        for document in self.editor().open_documents().into_iter() {
             if let Some(path) = &document.path {
                 paths.push(PathBuf::from(path));
             }

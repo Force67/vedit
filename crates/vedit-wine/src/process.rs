@@ -400,11 +400,12 @@ fn serialize_instant<S>(instant: &std::time::Instant, serializer: S) -> Result<S
 where
     S: Serializer,
 {
-    // Store as system time for deserialization - this is a simplified approach
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_else(|_| std::time::Duration::from_secs(0))
-        .serialize(serializer)
+    // Instant can't be directly serialized; we store elapsed time from now
+    // so it can be reconstructed on deserialize. This loses absolute time reference
+    // but preserves relative timing information.
+    // TODO(Vince): Consider storing SystemTime alongside Instant for better serialization
+    let elapsed = instant.elapsed();
+    elapsed.serialize(serializer)
 }
 
 fn deserialize_instant<'de, D>(deserializer: D) -> Result<std::time::Instant, D::Error>

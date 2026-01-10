@@ -1,5 +1,5 @@
 use iced::widget::{button, column, container, scrollable, text, Row};
-use iced::{theme, Color, Element, Length, Padding};
+use iced::{theme, Element, Length, Padding};
 use iced_font_awesome::fa_icon_solid;
 
 use crate::message::{Message, RightRailTab};
@@ -10,7 +10,7 @@ pub fn render_right_rail(
     state: &EditorState,
     scale: f32,
     sidebar_width: f32,
-) -> Element<Message> {
+) -> Element<'_, Message> {
     // Create the tab bar with Font Awesome icons
     let tab_bar: Row<Message, theme::Theme, iced::Renderer> = Row::with_children(vec![
         {

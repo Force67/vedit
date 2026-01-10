@@ -24,6 +24,8 @@ pub use gui_integration::{WineGuiMessage, WineGuiState, WineSystemStatus, Defaul
 pub struct WineManager {
     environments: std::collections::HashMap<String, WineEnvironment>,
     active_processes: std::collections::HashMap<uuid::Uuid, WineProcess>,
+    // TODO(Vince): Use config for default environment settings, process defaults, etc.
+    #[allow(dead_code)]
     config: WineConfig,
     #[cfg(feature = "nix-support")]
     nix_manager: Option<NixWineManager>,

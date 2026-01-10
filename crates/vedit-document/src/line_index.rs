@@ -8,6 +8,10 @@ pub struct LineIndex {
     /// Maps line number to byte offset in the file
     line_to_offset: Vec<usize>,
     /// Maps byte offset to approximate line number (for fast lookups)
+    // TODO(Vince): This HashMap is populated but never queried - offset_to_line()
+    // uses binary search instead. Consider removing to save memory, or use it
+    // for O(1) lookups at line boundaries instead of binary search.
+    #[allow(dead_code)]
     offset_to_line: HashMap<usize, usize>,
     total_lines: usize,
 }

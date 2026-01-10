@@ -1,8 +1,8 @@
-use iced::widget::{button, column, container, Space, row, scrollable, text, text_input, Column, Row, Scrollable};
+use iced::widget::{button, Space, row, text, text_input, Column, Row, Scrollable};
 use iced::{Task, Element, Length, Padding, Alignment};
 use iced_font_awesome::fa_icon_solid;
 use crate::style;
-use vedit_core::{FilterState, FsWorkspaceProvider, GitStatus, Node, NodeId, NodeKind, WorkspaceProvider, WorkspaceTree};
+use vedit_core::{FilterState, FsWorkspaceProvider, Node, NodeId, NodeKind, WorkspaceTree};
 
 
 
@@ -229,7 +229,7 @@ impl FileExplorer {
                     }
                 }
             }
-            Message::Open(id, kind) => {
+            Message::Open(id, _kind) => {
                 if let Some(node) = self.tree.nodes.get(id) {
                     if matches!(node.kind, NodeKind::Folder) {
                         if self.tree.expanded.contains(&id) {
@@ -314,7 +314,7 @@ impl FileExplorer {
         self.tree.cursor
     }
 
-    pub fn view(&self) -> Element<Message> {
+    pub fn view(&self) -> Element<'_, Message> {
         let header = self.header();
         let tree_view = self.tree_view();
 
@@ -325,7 +325,7 @@ impl FileExplorer {
         content.into()
     }
 
-    fn header(&self) -> Element<Message> {
+    fn header(&self) -> Element<'_, Message> {
         let filter_input = text_input("Filter files...", &self.filter_input)
             .on_input(Message::FilterChanged);
 
@@ -345,8 +345,8 @@ impl FileExplorer {
             .into()
     }
 
-    fn tree_view(&self) -> Element<Message> {
-        let rows: Vec<Element<Message>> = self.vrows.iter().map(|&id| self.row_view(id)).collect();
+    fn tree_view(&self) -> Element<'_, Message> {
+        let rows: Vec<Element<'_, Message>> = self.vrows.iter().map(|&id| self.row_view(id)).collect();
 
         Scrollable::new(Column::new().extend(rows))
             .style(style::custom_scrollable())
@@ -374,7 +374,7 @@ impl FileExplorer {
         None
     }
 
-    fn row_view(&self, id: NodeId) -> Element<Message> {
+    fn row_view(&self, id: NodeId) -> Element<'_, Message> {
         if let Some(node) = self.tree.nodes.get(id) {
             let is_selected = self.tree.selection.contains(&id);
             let depth = self.get_node_depth(id);

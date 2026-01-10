@@ -3,7 +3,7 @@ use crate::message::Message;
 use crate::state::EditorState;
 use crate::style::panel_container;
 use iced::widget::{button, column, container, Space, row, scrollable, text, text_input};
-use iced::{theme, Alignment, Color, Element, Font, Length};
+use iced::{Alignment, Color, Element, Font, Length};
 
 pub fn render_console_panel(
     state: &EditorState,

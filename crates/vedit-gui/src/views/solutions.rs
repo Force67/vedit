@@ -4,7 +4,7 @@ use crate::state::{
     VisualStudioProjectEntry, VisualStudioSolutionEntry,
 };
 use crate::style::{document_button, TEXT, MUTED, ERROR, WARNING};
-use iced::widget::{button, column, Space, row, text, scrollable, Column};
+use iced::widget::{button, column, Space, row, text, Column};
 use iced::{Alignment, Element, Length, Padding};
 
 pub fn render_solutions_tab(state: &EditorState, scale: f32) -> Column<'_, Message> {

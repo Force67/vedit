@@ -1,13 +1,12 @@
 use crate::message::Message;
 use crate::state::EditorState;
-use crate::style::{panel_container, active_document_button, document_button};
+use crate::style::panel_container;
 use crate::syntax::{format_highlight, SyntaxHighlighter};
 use crate::widgets::text_editor::TextEditor as EditorWidget;
 use crate::views::scrollbar_style::editor_scrollbar_style;
 use crate::views::console_panel;
-use iced::widget::{button, column, container, Space, pick_list, row, scrollable, text, text_input, vertical_slider, Row};
-use iced::{Alignment, Color, Element, Font, Length, Padding, Pixels};
-use iced::widget::slider;
+use iced::widget::{column, container, row, text, vertical_slider};
+use iced::{Alignment, Color, Element, Font, Length, Pixels};
 
 pub fn render_editor_content(
     state: &EditorState,

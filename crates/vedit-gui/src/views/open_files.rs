@@ -1,19 +1,19 @@
 use crate::message::Message;
 use crate::state::EditorState;
-use crate::style::{document_button, panel_container, TEXT, MUTED};
+use crate::style::{panel_container, TEXT, MUTED};
 use iced::widget::{button, column, container, row, scrollable, text, Column};
 use iced::{Alignment, Element, Length};
 
 pub fn render_open_files_panel(
     state: &EditorState,
-    scale: f32,
+    _scale: f32,
     spacing_large: f32,
     spacing_medium: f32,
     sidebar_width: f32,
 ) -> Element<'_, Message> {
     let mut open_list = Column::new().spacing(4);
     for (index, document) in state.editor().open_documents().iter().enumerate() {
-        let is_active = index == state.editor().active_index();
+        let _is_active = index == state.editor().active_index();
         let mut title = document.display_name().to_string();
         if document.is_modified {
             title.push('*');

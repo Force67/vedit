@@ -1,4 +1,4 @@
-use iced::widget::{column, container, text, Column};
+use iced::widget::{container, text, Column};
 use iced::{Element, Length};
 
 use crate::style;
@@ -37,7 +37,7 @@ impl Toast {
         Self { message, level }
     }
 
-    pub fn view(&self) -> Element<Message> {
+    pub fn view(&self) -> Element<'_, Message> {
         let content = Column::new()
             .spacing(8)
             .push(text(&self.message).color(style::TEXT))

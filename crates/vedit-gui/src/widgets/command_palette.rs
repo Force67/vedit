@@ -1,4 +1,4 @@
-use iced::widget::{column, container, scrollable, text, text_input, Column};
+use iced::widget::{container, scrollable, text, text_input, Column};
 use iced::{Element, Length};
 
 use crate::style;
@@ -28,7 +28,7 @@ impl CommandPalette {
         }
     }
 
-    pub fn view(&self) -> Element<Message> {
+    pub fn view(&self) -> Element<'_, Message> {
         let input = text_input("Type a command...", &self.query)
             .on_input(Message::InputChanged)
             .style(style::custom_text_input());

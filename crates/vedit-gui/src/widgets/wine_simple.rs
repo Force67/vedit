@@ -1,7 +1,7 @@
 //! Simplified Wine integration widget for vedit
 
 use crate::message::Message;
-use iced::widget::{button, column, container, row, text, Scrollable};
+use iced::widget::{button, column, container, row, text};
 use iced::{Alignment, Element, Length};
 use iced_font_awesome::fa_icon_solid;
 

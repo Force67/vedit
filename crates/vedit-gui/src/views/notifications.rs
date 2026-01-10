@@ -3,7 +3,7 @@ use crate::notifications::{Notification, NotificationKind};
 use crate::state::EditorState;
 use crate::style::notification_container;
 use iced::widget::{button, column, container, Space, text, row};
-use iced::{theme, Alignment, Color, Element, Length, Padding};
+use iced::{Alignment, Color, Element, Length, Padding};
 use crate::style::NotificationTone;
 
 pub fn render_notifications(

@@ -1,4 +1,4 @@
-use iced::widget::{button, column, container, pick_list, row, scrollable, text, Column, Row};
+use iced::widget::{button, container, pick_list, row, scrollable, text, Column, Row};
 use iced::{Alignment, Element, Length};
 use iced_font_awesome::fa_icon_solid;
 
@@ -47,7 +47,7 @@ impl BottomTerminal {
         }
     }
 
-    pub fn view(&self) -> Element<Message> {
+    pub fn view(&self) -> Element<'_, Message> {
         if self.collapsed {
             let header = button(row![
                 fa_icon_solid("angle-right").color(iced::Color::WHITE),

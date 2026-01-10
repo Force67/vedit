@@ -197,7 +197,7 @@ impl RemoteDesktop {
     /// Create VNC session
     async fn create_vnc_session(
         &self,
-        session_id: Uuid,
+        _session_id: Uuid,
         port: u16,
         resolution: (u32, u32),
         password: Option<String>,
@@ -209,7 +209,9 @@ impl RemoteDesktop {
         let display_str = format!(":{}", display_num);
 
         // Start Xvfb
-        let xvfb_cmd = Command::new("Xvfb")
+        // TODO(Vince): The Xvfb process is spawned but not tracked. It needs to be stored
+        // and killed when the VNC session ends, otherwise Xvfb processes will leak.
+        let _xvfb_process = Command::new("Xvfb")
             .arg(&display_str)
             .arg("-screen")
             .arg("0")
@@ -258,7 +260,7 @@ impl RemoteDesktop {
     /// Create RDP session
     async fn create_rdp_session(
         &self,
-        session_id: Uuid,
+        _session_id: Uuid,
         port: u16,
         resolution: (u32, u32),
         password: Option<String>,
@@ -292,10 +294,10 @@ impl RemoteDesktop {
     /// Create X11 forwarding session
     async fn create_x11_session(
         &self,
-        session_id: Uuid,
+        _session_id: Uuid,
         port: u16,
         resolution: (u32, u32),
-        password: Option<String>,
+        _password: Option<String>, // X11 forwarding doesn't use password auth
     ) -> WineResult<Child> {
         tracing::info!("Creating X11 forwarding session on port {}", port);
 
@@ -322,9 +324,9 @@ impl RemoteDesktop {
     /// Create Wayland remote session
     async fn create_wayland_session(
         &self,
-        session_id: Uuid,
+        _session_id: Uuid,
         port: u16,
-        resolution: (u32, u32),
+        _resolution: (u32, u32), // TODO(Vince): wayvnc doesn't accept resolution arg; need compositor config
         password: Option<String>,
     ) -> WineResult<Child> {
         tracing::warn!("Wayland remote desktop is experimental");
@@ -365,10 +367,10 @@ impl RemoteDesktop {
         use rand::Rng;
         const CHARSET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
 
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         (0..self.config.security.password_length)
             .map(|_| {
-                let idx = rng.gen_range(0..CHARSET.len());
+                let idx = rng.random_range(0..CHARSET.len());
                 CHARSET[idx] as char
             })
             .collect()

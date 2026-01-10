@@ -125,7 +125,7 @@ pub async fn load_workspace_from_path(path: PathBuf) -> Result<Option<WorkspaceD
 
 pub async fn load_workspace_from_path_with_files(
     path: PathBuf,
-    session_state: crate::session::SessionState
+    _session_state: crate::session::SessionState
 ) -> Result<Option<WorkspaceData>, String> {
     if path.exists() && path.is_dir() {
         println!("DEBUG: Loading workspace from: {}", path.display());

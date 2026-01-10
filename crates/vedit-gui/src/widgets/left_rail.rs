@@ -1,5 +1,5 @@
-use iced::widget::{button, column, container, row, scrollable, text, Column, Row};
-use iced::{Alignment, Element, Length, Padding};
+use iced::widget::{button, container, row, scrollable, text, Column};
+use iced::{Alignment, Element, Padding};
 use iced_font_awesome::fa_icon_solid;
 
 use crate::style;
@@ -24,7 +24,7 @@ impl OpenFilesList {
         }
     }
 
-    pub fn view(&self) -> Element<Message> {
+    pub fn view(&self) -> Element<'_, Message> {
         let mut col = Column::new().spacing(4).padding(Padding::from(8));
 
         for file in &self.files {
@@ -69,7 +69,7 @@ impl RecentFiles {
         }
     }
 
-    pub fn view(&self) -> Element<Message> {
+    pub fn view(&self) -> Element<'_, Message> {
         let icon = if self.collapsed {
             fa_icon_solid("angle-right").color(iced::Color::WHITE)
         } else {

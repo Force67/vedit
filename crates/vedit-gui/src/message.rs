@@ -4,7 +4,6 @@ use iced::widget::text_editor::Action as TextEditorAction;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
-use uuid::Uuid;
 use vedit_core::{Document, FileNode};
 use vedit_application::{QuickCommandId, SettingsCategory};
 use crate::commands::WorkspaceData;

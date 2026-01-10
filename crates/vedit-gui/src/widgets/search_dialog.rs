@@ -1,5 +1,5 @@
 use iced::widget::{button, checkbox, container, row, text, text_input, column, Space};
-use iced::{Element, Color, Length, Padding, Alignment};
+use iced::{Element, Color, Length, Alignment};
 use iced_font_awesome::fa_icon_solid;
 use crate::message::Message;
 use crate::style::panel_container;
@@ -126,7 +126,7 @@ impl SearchDialog {
         self.replace_text = text;
     }
 
-    pub fn view(&self, scale: f32) -> Element<Message> {
+    pub fn view(&self, scale: f32) -> Element<'_, Message> {
         let spacing = 8.0 * scale;
 
         if !self.is_visible {

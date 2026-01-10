@@ -1,6 +1,6 @@
 use iced_graphics::text::cosmic_text::Buffer as CosmicBuffer;
 use iced::advanced::clipboard::Clipboard;
-use iced::event::{self, Event};
+use iced::event::Event;
 use iced::advanced::layout::{self, Layout};
 use iced::advanced::mouse;
 use iced::advanced::renderer;
@@ -714,7 +714,7 @@ where
         line_numbers_cache.numbers.clear();
 
         // Reset incremental state on content changes
-        let mut incremental_state = self.incremental_line_state.borrow_mut();
+        let incremental_state = self.incremental_line_state.borrow_mut();
         drop(incremental_state); // Force refresh by dropping and recreating
         *self.incremental_line_state.borrow_mut() = IncrementalLineState::new();
     }
@@ -1721,7 +1721,7 @@ fn extract_text_from_content(content: &Content) -> String {
 fn draw_debug_dots(
     renderer: &mut IcedRenderer,
     bounds: Rectangle,
-    viewport: &Rectangle,
+    _viewport: &Rectangle,
     base_padding: &Padding,
     gutter_width: f32,
     debug_dots: &[DebugDot],
@@ -1734,7 +1734,7 @@ fn draw_debug_dots(
 
     let _editor_ref = borrow_editor(content);
     let buffer = _editor_ref.buffer();
-    let font_size = font_size_override.unwrap_or(buffer.metrics().font_size);
+    let _font_size = font_size_override.unwrap_or(buffer.metrics().font_size);
     let line_height = buffer.metrics().line_height.max(1.0);
     let scroll = get_scroll_line(buffer);
 
