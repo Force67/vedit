@@ -93,6 +93,7 @@ pub enum Message {
     EditorLogShowRequested,
     MouseWheelScrolled(mouse::ScrollDelta),
     NotificationDismissed(u64),
+    WindowIdDiscovered(iced::window::Id),
     WindowMinimize,
     WindowMaximize,
     WindowClose,

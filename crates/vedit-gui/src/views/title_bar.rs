@@ -186,20 +186,23 @@ pub fn render_title_bar(
     ]
     .spacing(2.0);
 
-    // Combine everything
-    let full_row = row![
+    // Combine the draggable portion (everything except window controls)
+    let draggable_row = row![
         main_row,
         settings_button,
         Space::new().width(Length::Fixed(spacing_medium)),
         separator(scale),
         Space::new().width(Length::Fixed(spacing_medium)),
-        window_buttons,
     ]
     .align_y(Alignment::Center);
 
-    let title_bar = mouse_area(full_row).on_press(Message::WindowDragStart);
+    // Only the main content is draggable, not the window control buttons
+    let draggable_area = mouse_area(draggable_row).on_press(Message::WindowDragStart);
 
-    container(title_bar)
+    // Full row with draggable area + window buttons (not draggable)
+    let full_row = row![draggable_area, window_buttons].align_y(Alignment::Center);
+
+    container(full_row)
         .padding([spacing_medium, spacing_large])
         .width(Length::Fill)
         .style(title_bar_container())

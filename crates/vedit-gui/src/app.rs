@@ -106,7 +106,7 @@ pub fn run() -> iced::Result {
 struct EditorApp {
     state: EditorState,
     session_manager: SessionManager,
-    main_window_id: window::Id,
+    main_window_id: Option<window::Id>,
 }
 
 impl Default for EditorApp {
@@ -128,7 +128,7 @@ impl Default for EditorApp {
         Self {
             state: EditorState::default(),
             session_manager,
-            main_window_id: window::Id::unique(),
+            main_window_id: None,
         }
     }
 }
@@ -1006,29 +1006,40 @@ impl EditorApp {
             Message::NotificationDismissed(id) => {
                 self.state.dismiss_notification(id);
             }
+            Message::WindowIdDiscovered(id) => {
+                if self.main_window_id.is_none() {
+                    self.main_window_id = Some(id);
+                }
+            }
             Message::WindowMinimize => {
-                return window::minimize(self.main_window_id, true);
+                if let Some(id) = self.main_window_id {
+                    return window::minimize(id, true);
+                }
             }
             Message::WindowMaximize => {
-                if self.state.is_maximized {
-                    self.state.is_maximized = false;
-                    let mut commands = vec![window::maximize(self.main_window_id, false)];
-                    if let Some(size) = self.state.previous_size {
-                        commands.push(window::resize(self.main_window_id, size));
-                        self.state.current_window_size = size;
+                if let Some(id) = self.main_window_id {
+                    if self.state.is_maximized {
+                        self.state.is_maximized = false;
+                        let mut commands = vec![window::maximize(id, false)];
+                        if let Some(size) = self.state.previous_size {
+                            commands.push(window::resize(id, size));
+                            self.state.current_window_size = size;
+                        }
+                        return iced::Task::batch(commands);
+                    } else {
+                        self.state.is_maximized = true;
+                        self.state.previous_size = Some(self.state.current_window_size);
+                        return window::maximize(id, true);
                     }
-                    return iced::Task::batch(commands);
-                } else {
-                    self.state.is_maximized = true;
-                    self.state.previous_size = Some(self.state.current_window_size);
-                    return window::maximize(self.main_window_id, true);
                 }
             }
             Message::WindowClose => {
-                return window::close(self.main_window_id);
+                return iced::exit();
             }
             Message::WindowDragStart => {
-                return window::drag(self.main_window_id);
+                if let Some(id) = self.main_window_id {
+                    return window::drag(id);
+                }
             }
             Message::WindowResizeStart(pos) => {
                 let size = self.state.current_window_size;
@@ -1047,31 +1058,35 @@ impl EditorApp {
                 }
             }
             Message::WindowResizeMove(pos) => {
-                if let (Some(start_pos), Some(start_size), Some(dir)) = (
-                    self.state.resize_start_pos,
-                    self.state.resize_start_size,
-                    self.state.resize_direction,
-                ) {
-                    let delta = pos - start_pos;
-                    let new_width = if matches!(
-                        dir,
-                        crate::state::ResizeDirection::Right | crate::state::ResizeDirection::Both
+                if let Some(id) = self.main_window_id {
+                    if let (Some(start_pos), Some(start_size), Some(dir)) = (
+                        self.state.resize_start_pos,
+                        self.state.resize_start_size,
+                        self.state.resize_direction,
                     ) {
-                        (start_size.width + delta.x).max(200.0)
-                    } else {
-                        start_size.width
-                    };
-                    let new_height = if matches!(
-                        dir,
-                        crate::state::ResizeDirection::Bottom | crate::state::ResizeDirection::Both
-                    ) {
-                        (start_size.height + delta.y).max(100.0)
-                    } else {
-                        start_size.height
-                    };
-                    let new_size = iced::Size::new(new_width, new_height);
-                    self.state.current_window_size = new_size;
-                    return window::resize(self.main_window_id, new_size);
+                        let delta = pos - start_pos;
+                        let new_width = if matches!(
+                            dir,
+                            crate::state::ResizeDirection::Right
+                                | crate::state::ResizeDirection::Both
+                        ) {
+                            (start_size.width + delta.x).max(200.0)
+                        } else {
+                            start_size.width
+                        };
+                        let new_height = if matches!(
+                            dir,
+                            crate::state::ResizeDirection::Bottom
+                                | crate::state::ResizeDirection::Both
+                        ) {
+                            (start_size.height + delta.y).max(100.0)
+                        } else {
+                            start_size.height
+                        };
+                        let new_size = iced::Size::new(new_width, new_height);
+                        self.state.current_window_size = new_size;
+                        return window::resize(id, new_size);
+                    }
                 }
             }
             Message::WindowResizeEnd => {
@@ -1457,8 +1472,18 @@ impl EditorApp {
     }
 
     fn subscription(&self) -> Subscription<Message> {
-        let input = event::listen_with(|event, _status, _id| unsafe {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        static WINDOW_ID_SENT: AtomicBool = AtomicBool::new(false);
+        // Reset the flag when we don't have a window ID yet (app restart scenario)
+        if self.main_window_id.is_none() {
+            WINDOW_ID_SENT.store(false, Ordering::Relaxed);
+        }
+        let input = event::listen_with(|event, _status, id| unsafe {
             static mut CURSOR_POS: iced::Point = iced::Point::ORIGIN;
+            // Send window ID discovery message once
+            if !WINDOW_ID_SENT.swap(true, Ordering::Relaxed) {
+                return Some(Message::WindowIdDiscovered(id));
+            }
             match event {
                 event::Event::Keyboard(key_event) => Some(Message::Keyboard(key_event)),
                 event::Event::Mouse(mouse::Event::CursorMoved { position }) => {
