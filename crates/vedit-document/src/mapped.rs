@@ -108,11 +108,39 @@ impl MappedDocument {
     pub fn as_bytes(&self) -> &[u8] {
         &self.mmap
     }
+
+    /// Get a reference to the line index for optimized operations
+    pub fn line_index(&self) -> &LineIndex {
+        &self.line_index
+    }
+
+    /// Get a reference to the raw memory map
+    pub fn mmap(&self) -> &Mmap {
+        &self.mmap
+    }
 }
 
-/// Load content from a specific viewport of a memory-mapped file
+/// Load content from a specific viewport of a memory-mapped file.
+///
+/// **Performance note**: This function rebuilds the line index on every call.
+/// For repeated viewport loads, use `load_viewport_content_with_index` instead
+/// to avoid redundant index computation.
 pub fn load_viewport_content(mmap: &Mmap, start_line: usize, visible_lines: usize) -> String {
     let line_index = LineIndex::from_mmap(mmap);
+    load_viewport_content_with_index(mmap, &line_index, start_line, visible_lines)
+}
+
+/// Load content from a specific viewport using a pre-built line index.
+///
+/// This is the optimized version for repeated viewport loads (e.g., during scrolling).
+/// The line index should be built once and reused across viewport operations.
+#[inline]
+pub fn load_viewport_content_with_index(
+    mmap: &Mmap,
+    line_index: &LineIndex,
+    start_line: usize,
+    visible_lines: usize,
+) -> String {
     let total_lines = line_index.total_lines();
 
     if start_line >= total_lines {
@@ -128,6 +156,34 @@ pub fn load_viewport_content(mmap: &Mmap, start_line: usize, visible_lines: usiz
 
     let end = range.end.min(mmap.len());
     String::from_utf8_lossy(&mmap[range.start..end]).to_string()
+}
+
+/// Load viewport content as bytes (zero-copy when valid UTF-8).
+///
+/// Returns `Cow<str>` to avoid allocation when content is valid UTF-8.
+/// Falls back to owned String only for invalid UTF-8 sequences.
+#[inline]
+pub fn load_viewport_content_cow<'a>(
+    mmap: &'a Mmap,
+    line_index: &LineIndex,
+    start_line: usize,
+    visible_lines: usize,
+) -> std::borrow::Cow<'a, str> {
+    let total_lines = line_index.total_lines();
+
+    if start_line >= total_lines {
+        return std::borrow::Cow::Borrowed("");
+    }
+
+    let end_line = (start_line + visible_lines).min(total_lines);
+    let range = line_index.line_range(start_line, end_line);
+
+    if range.start >= mmap.len() {
+        return std::borrow::Cow::Borrowed("");
+    }
+
+    let end = range.end.min(mmap.len());
+    String::from_utf8_lossy(&mmap[range.start..end])
 }
 
 /// Count lines in a memory-mapped file

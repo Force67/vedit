@@ -1,14 +1,33 @@
-use crate::mapped::count_lines_in_mmap;
-use crate::mapped::load_viewport_content;
-use memmap2::MmapOptions;
+use crate::mapped::MappedDocument;
 use std::cmp;
 use std::fs;
 use std::hash::{Hash, Hasher};
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use vedit_config::{StickyNote, StickyNoteRecord};
 use vedit_syntax::Language;
 use vedit_text::TextBuffer;
+
+/// Threshold for using memory-mapped loading (5MB)
+const MMAP_THRESHOLD: u64 = 5 * 1024 * 1024;
+
+/// Cached state for large memory-mapped files
+#[derive(Debug)]
+struct MmapCache {
+    /// The memory-mapped document with pre-built line index
+    doc: MappedDocument,
+}
+
+impl Clone for MmapCache {
+    fn clone(&self) -> Self {
+        // Re-open the file for the clone since Mmap isn't Clone
+        // This is rare (only when Document is cloned)
+        Self {
+            doc: MappedDocument::from_path(self.doc.path()).unwrap(),
+        }
+    }
+}
 
 /// Core document structure representing a file or buffer
 #[derive(Debug, Clone)]
@@ -23,6 +42,8 @@ pub struct Document {
     pub fingerprint: Option<u64>,
     /// Sticky notes attached to the document
     pub sticky_notes: Vec<StickyNote>,
+    /// Cached memory-mapped document for large files (avoids re-opening/re-indexing)
+    mmap_cache: Option<Arc<MmapCache>>,
 }
 
 impl Document {
@@ -35,6 +56,24 @@ impl Document {
             is_modified: false,
             fingerprint,
             sticky_notes: Vec::new(),
+            mmap_cache: None,
+        }
+    }
+
+    /// Create a new document with a pre-built mmap cache (for large files)
+    fn new_with_cache(
+        path: String,
+        content: impl Into<TextBuffer>,
+        cache: MmapCache,
+    ) -> Self {
+        let fingerprint = Some(compute_fingerprint(&path));
+        Self {
+            path: Some(path),
+            buffer: content.into(),
+            is_modified: false,
+            fingerprint,
+            sticky_notes: Vec::new(),
+            mmap_cache: Some(Arc::new(cache)),
         }
     }
 
@@ -74,17 +113,22 @@ impl Document {
         self.is_modified = false;
     }
 
-    /// Load a document from a file path
+    /// Load a document from a file path.
+    ///
+    /// Uses `fs::read_to_string` for efficient single-syscall loading.
     pub fn from_path(path: impl AsRef<Path>) -> io::Result<Self> {
         let path_buf = path.as_ref().to_path_buf();
-        let contents = fs::read(&path_buf)?;
 
-        // Try to decode as UTF-8, handling invalid UTF-8 sequences gracefully
-        let contents = String::from_utf8(contents).map_err(|e| {
-            io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!("File contains invalid UTF-8: {}", e),
-            )
+        // Use read_to_string for efficient single-syscall loading with UTF-8 validation
+        let contents = fs::read_to_string(&path_buf).map_err(|e| {
+            if e.kind() == io::ErrorKind::InvalidData {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("File contains invalid UTF-8: {}", e),
+                )
+            } else {
+                e
+            }
         })?;
 
         Ok(Self::new(
@@ -93,7 +137,12 @@ impl Document {
         ))
     }
 
-    /// Open a document with automatic memory-mapping for large files
+    /// Open a document with automatic memory-mapping for large files.
+    ///
+    /// This is the recommended way to open files as it:
+    /// - Uses efficient `fs::read_to_string` for small files (<5MB)
+    /// - Uses memory-mapping with cached line index for large files (≥5MB)
+    /// - Caches the mmap and line index to avoid rebuilding on viewport changes
     pub fn from_path_smart(path: impl AsRef<Path>) -> io::Result<Self> {
         let path_buf = path.as_ref().to_path_buf();
 
@@ -101,38 +150,45 @@ impl Document {
         let metadata = fs::metadata(&path_buf)?;
         let file_size = metadata.len();
 
-        // Use memory mapping for files larger than 5MB (reduced for tests)
-        if file_size > 5 * 1024 * 1024 {
-            // Create a streaming document that loads content on demand
-            let file = fs::File::open(&path_buf)?;
-            let mmap = unsafe { MmapOptions::new().map(&file)? };
+        // Use memory mapping for files larger than threshold
+        if file_size > MMAP_THRESHOLD {
+            // Create MappedDocument which builds the line index once
+            let mapped_doc = MappedDocument::from_path(&path_buf)?;
 
-            // Load initial viewport content (first 1000 lines)
-            let initial_content = load_viewport_content(&mmap, 0, 1000);
+            // Load initial viewport content using the cached line index
+            let initial_content = mapped_doc.get_viewport_content(&crate::viewport::Viewport {
+                start_line: 0,
+                visible_lines: 1000,
+                line_height: 1.5,
+                buffer_capacity: 1000,
+            });
 
-            Ok(Self::new(
-                Some(path_buf.to_string_lossy().to_string()),
+            let cache = MmapCache { doc: mapped_doc };
+
+            Ok(Self::new_with_cache(
+                path_buf.to_string_lossy().to_string(),
                 initial_content,
+                cache,
             ))
         } else {
-            // Use regular loading for smaller files
+            // Use efficient read_to_string for smaller files
             Self::from_path(path_buf)
         }
     }
 
-    /// Load content from a specific viewport of a memory-mapped file
+    /// Load content from a specific viewport of a memory-mapped file.
+    ///
+    /// Uses cached mmap and line index for O(1) viewport extraction.
     pub fn load_viewport(&self, start_line: usize, visible_lines: usize) -> Option<String> {
-        // Check if this document is large enough to have a memory-mapped backing
-        if let Some(path) = &self.path {
-            if let Ok(file) = fs::File::open(path) {
-                if let Ok(metadata) = file.metadata() {
-                    if metadata.len() > 5 * 1024 * 1024 {
-                        if let Ok(mmap) = unsafe { MmapOptions::new().map(&file) } {
-                            return Some(load_viewport_content(&mmap, start_line, visible_lines));
-                        }
-                    }
-                }
-            }
+        // Fast path: use cached mmap if available
+        if let Some(cache) = &self.mmap_cache {
+            let viewport = crate::viewport::Viewport {
+                start_line,
+                visible_lines,
+                line_height: 1.5,
+                buffer_capacity: 1000,
+            };
+            return Some(cache.doc.get_viewport_content(&viewport));
         }
 
         // For small files, extract from current buffer
@@ -145,19 +201,15 @@ impl Document {
         Some(lines.join("\n"))
     }
 
-    /// Get total line count for the file
+    /// Get total line count for the file.
+    ///
+    /// Uses cached line index for O(1) line count on large files.
     pub fn total_lines(&self) -> Option<usize> {
-        if let Some(path) = &self.path {
-            if let Ok(file) = fs::File::open(path) {
-                if let Ok(metadata) = file.metadata() {
-                    if metadata.len() > 5 * 1024 * 1024 {
-                        if let Ok(mmap) = unsafe { MmapOptions::new().map(&file) } {
-                            return Some(count_lines_in_mmap(&mmap));
-                        }
-                    }
-                }
-            }
+        // Fast path: use cached mmap if available
+        if let Some(cache) = &self.mmap_cache {
+            return Some(cache.doc.total_lines());
         }
+
         // For regular documents, count lines in the buffer
         Some(self.buffer.to_string().lines().count())
     }
@@ -173,16 +225,12 @@ impl Document {
         }
     }
 
-    /// Check if this document is using streaming mode (large file)
+    /// Check if this document is using streaming mode (large file).
+    ///
+    /// Returns true if the document has a cached mmap (no file I/O needed).
+    #[inline]
     pub fn is_streaming(&self) -> bool {
-        if let Some(path) = &self.path {
-            if let Ok(file) = fs::File::open(path) {
-                if let Ok(metadata) = file.metadata() {
-                    return metadata.len() > 5 * 1024 * 1024;
-                }
-            }
-        }
-        false
+        self.mmap_cache.is_some()
     }
 
     /// Update the document path and refresh its fingerprint.

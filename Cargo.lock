@@ -3849,6 +3849,7 @@ name = "vedit-document"
 version = "0.1.0"
 dependencies = [
  "crossbeam",
+ "memchr",
  "memmap2",
  "parking_lot",
  "serde",

@@ -17,6 +17,9 @@ pub mod viewport;
 // Re-export main types for convenience
 pub use document::Document;
 pub use line_index::LineIndex;
-pub use mapped::MappedDocument;
+pub use mapped::{
+    load_viewport_content, load_viewport_content_cow, load_viewport_content_with_index,
+    MappedDocument,
+};
 pub use search::{BoyerMooreSearcher, contains_pattern, find_pattern, search_pattern};
 pub use viewport::Viewport;

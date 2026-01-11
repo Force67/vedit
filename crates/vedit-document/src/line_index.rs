@@ -1,18 +1,13 @@
 use memmap2::Mmap;
-use std::collections::HashMap;
 use std::ops::Range;
 
-/// Line index for fast byte offset -> line number mapping
+/// Line index for fast byte offset -> line number mapping.
+///
+/// Optimized with SIMD-accelerated newline scanning via `memchr`.
 #[derive(Debug, Clone)]
 pub struct LineIndex {
     /// Maps line number to byte offset in the file
     line_to_offset: Vec<usize>,
-    /// Maps byte offset to approximate line number (for fast lookups)
-    // TODO(Vince): This HashMap is populated but never queried - offset_to_line()
-    // uses binary search instead. Consider removing to save memory, or use it
-    // for O(1) lookups at line boundaries instead of binary search.
-    #[allow(dead_code)]
-    offset_to_line: HashMap<usize, usize>,
     total_lines: usize,
 }
 
@@ -20,27 +15,43 @@ impl LineIndex {
     pub fn new() -> Self {
         Self {
             line_to_offset: vec![0],
-            offset_to_line: HashMap::new(),
             total_lines: 0, // Empty document has 0 lines
         }
     }
 
+    /// Create a line index from a memory-mapped file.
+    ///
+    /// Uses SIMD-optimized `memchr` for fast newline scanning.
     pub fn from_mmap(mmap: &Mmap) -> Self {
-        let mut line_to_offset = vec![0];
-        let mut offset_to_line = HashMap::new();
-        let mut line_num = 1;
+        Self::from_bytes(&mmap[..])
+    }
 
-        for (offset, byte) in mmap.iter().enumerate() {
-            if *byte == b'\n' {
-                line_to_offset.push(offset + 1);
-                offset_to_line.insert(offset + 1, line_num);
-                line_num += 1;
-            }
+    /// Create from raw bytes (for non-mmap sources).
+    ///
+    /// Uses SIMD-optimized `memchr` for fast newline scanning.
+    pub fn from_bytes(bytes: &[u8]) -> Self {
+        if bytes.is_empty() {
+            return Self::new();
         }
 
-        let total_lines = if mmap.is_empty() {
-            0 // Empty file has 0 lines
-        } else if mmap[mmap.len() - 1] == b'\n' {
+        // Pre-allocate with estimated capacity to avoid reallocations
+        // Average line length ~60 chars, so estimate total_lines ≈ len/60
+        let estimated_lines = (bytes.len() / 60).max(16);
+        let mut line_to_offset = Vec::with_capacity(estimated_lines);
+        line_to_offset.push(0);
+
+        let mut line_num = 1;
+
+        // Use memchr for fast newline scanning (SIMD-optimized)
+        let mut pos = 0;
+        while let Some(newline_pos) = memchr::memchr(b'\n', &bytes[pos..]) {
+            let absolute_pos = pos + newline_pos;
+            line_to_offset.push(absolute_pos + 1);
+            line_num += 1;
+            pos = absolute_pos + 1;
+        }
+
+        let total_lines = if bytes[bytes.len() - 1] == b'\n' {
             // File ends with newline, don't count empty line after it
             line_num - 1
         } else {
@@ -50,7 +61,6 @@ impl LineIndex {
 
         Self {
             line_to_offset,
-            offset_to_line,
             total_lines,
         }
     }
@@ -59,27 +69,20 @@ impl LineIndex {
         self.line_to_offset.get(line).copied().unwrap_or(0)
     }
 
+    /// Convert byte offset to line number.
+    ///
+    /// Uses O(log N) binary search on the pre-built line offset table.
     pub fn offset_to_line(&self, offset: usize) -> usize {
-        // Binary search to find the line containing this offset
-        match self.line_to_offset.binary_search(&offset) {
-            Ok(line) => {
-                // If we're exactly at the start of a line that's beyond the last line,
-                // return the last line instead
-                if line > 0 && line >= self.total_lines() {
-                    self.total_lines().saturating_sub(1)
-                } else {
-                    line
-                }
-            }
-            Err(insert_pos) => {
-                let result = insert_pos.saturating_sub(1);
-                // If result is beyond the last valid line, return the last line
-                if result >= self.total_lines() {
-                    self.total_lines().saturating_sub(1)
-                } else {
-                    result
-                }
-            }
+        let line = match self.line_to_offset.binary_search(&offset) {
+            Ok(line) => line,
+            Err(insert_pos) => insert_pos.saturating_sub(1),
+        };
+
+        // Clamp to valid range
+        if line >= self.total_lines() {
+            self.total_lines().saturating_sub(1)
+        } else {
+            line
         }
     }
 
@@ -104,7 +107,6 @@ mod tests {
     use memmap2::MmapOptions;
     use std::fs::File;
     use std::io::{BufWriter, Write};
-    use tempfile::tempdir;
 
     fn create_test_mmap(content: &str) -> Mmap {
         let temp_file = tempfile::NamedTempFile::new().unwrap();
@@ -264,17 +266,15 @@ mod tests {
         let mmap = create_multiline_mmap(10000);
         let index = LineIndex::from_mmap(&mmap);
 
-        // Index should use reasonable memory
+        // Index should use reasonable memory (just Vec<usize> + small fixed overhead)
         let index_size = std::mem::size_of::<LineIndex>();
-        let estimated_overhead = index.line_to_offset.len() * std::mem::size_of::<usize>()
-            + index.offset_to_line.len()
-                * (std::mem::size_of::<usize>() + std::mem::size_of::<usize>());
+        let vec_overhead = index.line_to_offset.len() * std::mem::size_of::<usize>();
 
-        // Should be less than 1MB for 10k lines
+        // Should be less than 200KB for 10k lines (just ~80KB for the vec)
         assert!(
-            index_size + estimated_overhead < 1024 * 1024,
+            index_size + vec_overhead < 200 * 1024,
             "LineIndex memory usage: {} bytes",
-            index_size + estimated_overhead
+            index_size + vec_overhead
         );
     }
 

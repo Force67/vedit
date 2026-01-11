@@ -85,6 +85,25 @@ impl TextBuffer {
         }
     }
 
+    /// Creates a [`TextBuffer`] from a pre-allocated `Arc<str>`.
+    ///
+    /// This is a zero-copy optimization when the caller already has an `Arc<str>`.
+    pub fn from_arc(original: Arc<str>) -> Self {
+        let len = original.len();
+        if len == 0 {
+            return Self::new();
+        }
+
+        let pieces = vec![Piece::new(PieceSource::Original, 0, len)];
+
+        Self {
+            original,
+            added: String::new(),
+            pieces,
+            len,
+        }
+    }
+
     /// Total length of the buffer in bytes.
     pub fn len(&self) -> usize {
         self.len
