@@ -6,22 +6,22 @@ const fn rgb(r: u8, g: u8, b: u8) -> Color {
 }
 
 // Base colors - nuanced dark theme with good contrast
-pub const BG: Color = rgb(17, 18, 23);              // Editor background
-pub const BG_ELEVATED: Color = rgb(24, 26, 32);     // Title bar, elevated surfaces
-pub const SURFACE: Color = rgb(30, 33, 40);         // Panel backgrounds
-pub const SURFACE_HOVER: Color = rgb(38, 42, 50);   // Hover states
-pub const SURFACE2: Color = rgb(45, 49, 58);        // Active/selected surfaces
-pub const OVERLAY: Color = rgb(14, 15, 19);         // Modal overlays
-pub const BORDER: Color = rgb(50, 56, 68);          // Standard borders
-pub const BORDER_SUBTLE: Color = rgb(40, 45, 54);   // Subtle separators
+pub const BG: Color = rgb(17, 18, 23); // Editor background
+pub const BG_ELEVATED: Color = rgb(24, 26, 32); // Title bar, elevated surfaces
+pub const SURFACE: Color = rgb(30, 33, 40); // Panel backgrounds
+pub const SURFACE_HOVER: Color = rgb(38, 42, 50); // Hover states
+pub const SURFACE2: Color = rgb(45, 49, 58); // Active/selected surfaces
+pub const OVERLAY: Color = rgb(14, 15, 19); // Modal overlays
+pub const BORDER: Color = rgb(50, 56, 68); // Standard borders
+pub const BORDER_SUBTLE: Color = rgb(40, 45, 54); // Subtle separators
 
 // Text hierarchy
-pub const TEXT: Color = rgb(235, 238, 245);         // Primary text
+pub const TEXT: Color = rgb(235, 238, 245); // Primary text
 pub const TEXT_SECONDARY: Color = rgb(170, 180, 195); // Secondary text
-pub const MUTED: Color = rgb(110, 120, 135);        // Disabled/placeholder
+pub const MUTED: Color = rgb(110, 120, 135); // Disabled/placeholder
 
 // Accent colors with variations
-pub const PRIMARY: Color = rgb(88, 140, 220);       // Primary blue
+pub const PRIMARY: Color = rgb(88, 140, 220); // Primary blue
 pub const PRIMARY_HOVER: Color = rgb(108, 160, 240);
 pub const PRIMARY_PRESSED: Color = rgb(70, 120, 200);
 
@@ -461,4 +461,3 @@ pub fn separator_container() -> impl Fn(&Theme) -> container::Style {
         ..Default::default()
     }
 }
-

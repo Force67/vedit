@@ -92,13 +92,14 @@ pub fn run() -> iced::Result {
         .title("vedit")
         .subscription(EditorApp::subscription)
         .theme(EditorApp::theme)
-        .window_size(iced::Size::new(
-            window_state.width as f32,
-            window_state.height as f32,
-        ))
-        .centered()
-        .resizable(true)
-        .decorations(false)
+        .window(window::Settings {
+            size: iced::Size::new(window_state.width as f32, window_state.height as f32),
+            position: window::Position::Centered,
+            min_size: Some(iced::Size::new(400.0, 300.0)),
+            resizable: true,
+            decorations: false,
+            ..Default::default()
+        })
         .scale_factor(EditorApp::scale_factor)
         .run()
 }
@@ -1065,12 +1066,14 @@ impl EditorApp {
                         self.state.resize_direction,
                     ) {
                         let delta = pos - start_pos;
+                        const MIN_WIDTH: f32 = 400.0;
+                        const MIN_HEIGHT: f32 = 300.0;
                         let new_width = if matches!(
                             dir,
                             crate::state::ResizeDirection::Right
                                 | crate::state::ResizeDirection::Both
                         ) {
-                            (start_size.width + delta.x).max(200.0)
+                            (start_size.width + delta.x).max(MIN_WIDTH)
                         } else {
                             start_size.width
                         };
@@ -1079,7 +1082,7 @@ impl EditorApp {
                             crate::state::ResizeDirection::Bottom
                                 | crate::state::ResizeDirection::Both
                         ) {
-                            (start_size.height + delta.y).max(100.0)
+                            (start_size.height + delta.y).max(MIN_HEIGHT)
                         } else {
                             start_size.height
                         };
@@ -1217,6 +1220,12 @@ impl EditorApp {
             Message::SessionLoad(Ok(session_state)) => {
                 // Store session state for later use
                 self.state.set_session_state(session_state.clone());
+
+                // Sync current_window_size with session state
+                self.state.current_window_size = iced::Size::new(
+                    session_state.window.width as f32,
+                    session_state.window.height as f32,
+                );
 
                 // Debug: Log what we loaded
                 println!("DEBUG: Session loaded successfully");
@@ -1401,6 +1410,8 @@ impl EditorApp {
             // Window state tracking messages
             Message::WindowChanged(width, height) => {
                 println!("DEBUG: Window resized to {}x{}", width, height);
+                // Keep current_window_size in sync for resize operations
+                self.state.current_window_size = iced::Size::new(width as f32, height as f32);
                 // Update window state with current position and new size
                 self.state.update_window_state(0, 0, width, height, false);
 

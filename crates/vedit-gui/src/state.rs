@@ -819,7 +819,7 @@ impl EditorState {
             &mut self.wine
         }
     */
- // Temporarily disabled
+    // Temporarily disabled
 
     pub fn search_dialog_mut(&mut self) -> &mut SearchDialog {
         &mut self.search_dialog

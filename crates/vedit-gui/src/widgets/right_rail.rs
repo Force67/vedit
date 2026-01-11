@@ -119,23 +119,23 @@ fn render_notes_tab(state: &EditorState, scale: f32) -> Element<'static, Message
     }
 
     let header = row![
-        text("Notes").size((14.0 * scale).max(10.0)).color(style::TEXT),
+        text("Notes")
+            .size((14.0 * scale).max(10.0))
+            .color(style::TEXT),
         iced::widget::Space::new().width(Length::Fill),
-        button(
-            fa_icon_solid("plus")
-                .size(12.0)
-                .color(iced::Color::WHITE)
-        )
-        .style(style::custom_button())
-        .on_press(Message::StickyNoteCreateRequested)
-        .padding(4)
+        button(fa_icon_solid("plus").size(12.0).color(iced::Color::WHITE))
+            .style(style::custom_button())
+            .on_press(Message::StickyNoteCreateRequested)
+            .padding(4)
     ]
     .align_y(Alignment::Center)
     .padding(Padding::from([8.0, 8.0]));
 
     if notes.is_empty() {
         let empty_state = column![
-            text("No notes yet").color(style::MUTED).size((12.0 * scale).max(10.0)),
+            text("No notes yet")
+                .color(style::MUTED)
+                .size((12.0 * scale).max(10.0)),
             text("Click + to add a note at cursor")
                 .color(style::MUTED)
                 .size((11.0 * scale).max(9.0)),
@@ -154,34 +154,34 @@ fn render_notes_tab(state: &EditorState, scale: f32) -> Element<'static, Message
                 .size((11.0 * scale).max(9.0))
                 .color(style::MUTED);
 
-            let delete_btn = button(
-                fa_icon_solid("trash")
-                    .size(10.0)
-                    .color(style::ERROR)
-            )
-            .style(style::document_button())
-            .on_press(Message::StickyNoteDeleted(note_id))
-            .padding(2);
+            let delete_btn = button(fa_icon_solid("trash").size(10.0).color(style::ERROR))
+                .style(style::document_button())
+                .on_press(Message::StickyNoteDeleted(note_id))
+                .padding(2);
 
-            let note_header = row![line_info, iced::widget::Space::new().width(Length::Fill), delete_btn]
-                .align_y(Alignment::Center);
+            let note_header = row![
+                line_info,
+                iced::widget::Space::new().width(Length::Fill),
+                delete_btn
+            ]
+            .align_y(Alignment::Center);
 
             let content_input = text_input("Add note content...", &note.content)
                 .on_input(move |value| Message::StickyNoteContentChanged(note_id, value))
                 .size((12.0 * scale).max(10.0))
                 .padding(4);
 
-            container(
-                column![note_header, content_input].spacing(4)
-            )
-            .style(style::ribbon_container())
-            .padding(8)
-            .into()
+            container(column![note_header, content_input].spacing(4))
+                .style(style::ribbon_container())
+                .padding(8)
+                .into()
         })
         .collect();
 
     let notes_list = scrollable(
-        column(note_items).spacing(8).padding(Padding::from([0.0, 8.0]))
+        column(note_items)
+            .spacing(8)
+            .padding(Padding::from([0.0, 8.0])),
     )
     .style(style::custom_scrollable())
     .height(Length::Fill);

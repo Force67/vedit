@@ -1,8 +1,8 @@
 use crate::message::Message;
 use crate::state::EditorState;
 use crate::style::{
-    separator_container, title_bar_container, top_bar_button, window_close_button,
-    window_control_button, PRIMARY, TEXT,
+    PRIMARY, TEXT, separator_container, title_bar_container, top_bar_button, window_close_button,
+    window_control_button,
 };
 use iced::widget::{Space, button, container, mouse_area, row, text};
 use iced::{Alignment, Element, Length};
@@ -25,9 +25,7 @@ pub fn render_title_bar(
     spacing_small: f32,
 ) -> Element<'_, Message> {
     // App branding
-    let branding = text("vedit")
-        .size((18.0 * scale).max(14.0))
-        .color(PRIMARY);
+    let branding = text("vedit").size((18.0 * scale).max(14.0)).color(PRIMARY);
 
     // File actions group
     let file_actions = row![
