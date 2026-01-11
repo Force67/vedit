@@ -68,8 +68,9 @@ pub async fn pick_keymap_location(current: Option<String>) -> Result<Option<Stri
 
 pub async fn pick_document() -> Result<Option<Document>, String> {
     if let Some(path) = FileDialog::new().pick_file() {
-        let document =
-            Document::from_path(&path).map_err(|err| format!("Failed to read file: {}", err))?;
+        // Use smart loading for better performance with large files
+        let document = Document::from_path_smart(&path)
+            .map_err(|err| format!("Failed to read file: {}", err))?;
         Ok(Some(document))
     } else {
         Ok(None)
@@ -77,7 +78,8 @@ pub async fn pick_document() -> Result<Option<Document>, String> {
 }
 
 pub async fn load_document_from_path(path: String) -> Result<Document, String> {
-    Document::from_path(&path).map_err(|err| format!("Failed to read file: {}", err))
+    // Use smart loading - memory maps files >5MB for faster startup
+    Document::from_path_smart(&path).map_err(|err| format!("Failed to read file: {}", err))
 }
 
 pub async fn pick_workspace() -> Result<Option<WorkspaceData>, String> {

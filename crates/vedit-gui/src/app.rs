@@ -55,6 +55,57 @@ impl RefreshRateConfig {
     }
 }
 
+/// Detect monitor refresh rates asynchronously to avoid blocking startup
+fn detect_refresh_rates_async() -> (f32, f32) {
+    let mut highest_refresh: f32 = 60.0;
+    let mut current_refresh: f32 = 60.0;
+
+    // Method 1: Try environment variable for X11/Wayland
+    if let Ok(display) = std::env::var("DISPLAY") {
+        if !display.is_empty() {
+            // Run xrandr in background - this is the slow part
+            if let Ok(rate) = detect_x11_refresh_rate() {
+                current_refresh = rate;
+                highest_refresh = highest_refresh.max(rate);
+            }
+        }
+    }
+
+    // Method 2: Check for high refresh rate indicators (fast)
+    if std::env::var("GDK_REFRESH_RATE").is_ok() || std::env::var("QT_SCALE_FACTOR").is_ok() {
+        highest_refresh = highest_refresh.max(144.0);
+    }
+
+    (highest_refresh, current_refresh)
+}
+
+/// Detect X11 refresh rate by parsing xrandr output
+fn detect_x11_refresh_rate() -> Result<f32, Box<dyn std::error::Error + Send + Sync>> {
+    use std::process::Command;
+
+    let output = Command::new("xrandr").arg("--query").output()?;
+    let output_str = String::from_utf8_lossy(&output.stdout);
+
+    // Look for lines with active modes (marked with *)
+    for line in output_str.lines() {
+        if line.contains("*") {
+            // Parse refresh rates like "60.00*" or "144.00*+"
+            for word in line.split_whitespace() {
+                if word.contains('*') {
+                    let rate_str = word.trim_matches(|c| c == '*' || c == '+');
+                    if let Ok(rate) = rate_str.parse::<f32>() {
+                        if rate > 30.0 && rate < 500.0 {
+                            return Ok(rate);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Err("Could not detect refresh rate".into())
+}
+
 pub fn run() -> iced::Result {
     // Load session state first to get window settings
     let session_manager = SessionManager::new().unwrap_or_else(|e| {
@@ -135,101 +186,6 @@ impl Default for EditorApp {
 }
 
 impl EditorApp {
-    fn detect_monitor_refresh_rates(&self) {
-        // Try to detect refresh rates using various methods
-        let (highest_refresh, current_refresh) = self.get_system_refresh_rates();
-
-        REFRESH_RATE_CONFIG.set_refresh_rates(highest_refresh, current_refresh);
-
-        // Update timing based on detected refresh rates
-        self.update_timing_for_refresh_rate(highest_refresh);
-    }
-
-    fn get_system_refresh_rates(&self) -> (f32, f32) {
-        let mut highest_refresh: f32 = 60.0;
-        let mut current_refresh: f32 = 60.0;
-
-        // Method 1: Try environment variable (common for Linux/X11)
-        if let Ok(display) = std::env::var("DISPLAY") {
-            if let Ok(rate) = self.detect_x11_refresh_rate(&display) {
-                current_refresh = rate;
-                highest_refresh = highest_refresh.max(rate);
-            }
-        }
-
-        // Method 2: Try common refresh rate patterns (Windows/Linux)
-        let common_rates = [144.0, 165.0, 240.0, 120.0, 75.0, 60.0];
-        for &rate in &common_rates {
-            if self.test_refresh_rate_feasibility(rate) {
-                highest_refresh = highest_refresh.max(rate);
-            }
-        }
-
-        // Method 3: Check for known high refresh rate indicators
-        if std::env::var("GDK_REFRESH_RATE").is_ok() || std::env::var("QT_SCALE_FACTOR").is_ok() {
-            // Likely a modern system that supports high refresh rates
-            highest_refresh = highest_refresh.max(144.0);
-        }
-
-        (highest_refresh, current_refresh)
-    }
-
-    fn detect_x11_refresh_rate(&self, display: &str) -> Result<f32, Box<dyn std::error::Error>> {
-        // Try to parse refresh rate from xrandr output
-        use std::process::Command;
-
-        let output = Command::new("xrandr").arg("--query").output()?;
-
-        let output_str = String::from_utf8_lossy(&output.stdout);
-
-        for line in output_str.lines() {
-            if line.contains("connected") && line.contains(display) {
-                // Look for refresh rate pattern like "144.00Hz" or "144Hz"
-                if let Some(rate_str) = line
-                    .split_whitespace()
-                    .find(|s| s.ends_with("Hz") || s.ends_with("hz"))
-                {
-                    let rate_num = rate_str.trim_end_matches("Hz").trim_end_matches("hz");
-                    if let Ok(rate) = rate_num.parse::<f32>() {
-                        return Ok(rate);
-                    }
-                }
-            }
-        }
-
-        // Fallback: try to get current mode
-        for line in output_str.lines() {
-            if line.contains("*")
-                && (line.contains("144") || line.contains("165") || line.contains("240"))
-            {
-                if let Some(rate_str) = line
-                    .split_whitespace()
-                    .find(|s| s.contains("Hz") || s.contains("hz"))
-                {
-                    let rate_num_clean = rate_str
-                        .replace("Hz", "")
-                        .replace("hz", "")
-                        .trim()
-                        .to_string();
-                    if let Ok(rate) = rate_num_clean.parse::<f32>() {
-                        return Ok(rate);
-                    }
-                }
-            }
-        }
-
-        Err("Could not detect refresh rate".into())
-    }
-
-    fn test_refresh_rate_feasibility(&self, rate: f32) -> bool {
-        // Simple feasibility test based on system capabilities
-        // This is a heuristic approach
-        let frame_time_ms = 1000.0 / rate;
-
-        // If the system can handle sub-10ms frame times, it's likely capable
-        frame_time_ms >= 4.0 && frame_time_ms <= 50.0
-    }
-
     fn update_timing_for_refresh_rate(&self, refresh_rate: f32) {
         // This will be used to dynamically update the application timing
         // The actual implementation will update the subscription timing
@@ -263,8 +219,13 @@ impl EditorApp {
             Message::SessionLoad,
         );
 
-        // Trigger refresh rate detection at startup
-        let refresh_command = Task::perform(async {}, |_| Message::DetectMonitorRefreshRates);
+        // Trigger refresh rate detection asynchronously (xrandr can be slow)
+        let refresh_command = Task::perform(
+            async {
+                detect_refresh_rates_async()
+            },
+            |(highest, current)| Message::RefreshRateDetected(highest, current),
+        );
 
         let combined_command = Task::batch(vec![load_command, refresh_command]);
         (app, combined_command)
@@ -1001,8 +962,10 @@ impl EditorApp {
                 // Reset rapid scroll counter to re-enable syntax highlighting
                 self.state.reset_rapid_scroll();
             }
-            Message::DetectMonitorRefreshRates => {
-                self.detect_monitor_refresh_rates();
+            Message::RefreshRateDetected(highest_refresh, current_refresh) => {
+                // Apply the detected refresh rates (detection ran in background)
+                REFRESH_RATE_CONFIG.set_refresh_rates(highest_refresh, current_refresh);
+                self.update_timing_for_refresh_rate(highest_refresh);
             }
             Message::NotificationDismissed(id) => {
                 self.state.dismiss_notification(id);

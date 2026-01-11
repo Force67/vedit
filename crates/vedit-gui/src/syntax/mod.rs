@@ -5,7 +5,7 @@ use iced::advanced::text::highlighter::{
 use std::collections::HashMap;
 use std::fmt;
 use std::ops::Range;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use tree_sitter::Language as TsLanguage;
 use tree_sitter_highlight::{HighlightConfiguration, HighlightEvent, Highlighter as TsHighlighter};
 use vedit_core::Language;
@@ -88,192 +88,205 @@ impl LanguageConfig {
     }
 }
 
+/// Lazy language registry - builds language configs on-demand for faster startup
 struct LanguageRegistry {
     theme: Arc<SyntaxTheme>,
-    entries: HashMap<Language, LanguageConfig>,
+    // Use OnceLock for each language to build config lazily on first use
+    rust: OnceLock<Option<LanguageConfig>>,
+    c: OnceLock<Option<LanguageConfig>>,
+    cpp: OnceLock<Option<LanguageConfig>>,
+    javascript: OnceLock<Option<LanguageConfig>>,
+    jsx: OnceLock<Option<LanguageConfig>>,
+    typescript: OnceLock<Option<LanguageConfig>>,
+    tsx: OnceLock<Option<LanguageConfig>>,
+    python: OnceLock<Option<LanguageConfig>>,
+    go: OnceLock<Option<LanguageConfig>>,
+    json: OnceLock<Option<LanguageConfig>>,
+    yaml: OnceLock<Option<LanguageConfig>>,
+    html: OnceLock<Option<LanguageConfig>>,
+    css: OnceLock<Option<LanguageConfig>>,
+    lua: OnceLock<Option<LanguageConfig>>,
+    nix: OnceLock<Option<LanguageConfig>>,
 }
 
 impl LanguageRegistry {
     fn with_theme(theme: Arc<SyntaxTheme>) -> Self {
-        let mut registry = Self {
+        // Just store the theme - don't build any configs yet
+        Self {
             theme,
-            entries: HashMap::new(),
-        };
-
-        let theme_ref = &registry.theme;
-
-        if let Some(config) = build_config(
-            tree_sitter_rust::LANGUAGE.into(),
-            "rust",
-            tree_sitter_rust::HIGHLIGHTS_QUERY,
-            Some(tree_sitter_rust::INJECTIONS_QUERY),
-            None,
-            theme_ref,
-        ) {
-            registry.entries.insert(Language::Rust, config);
+            rust: OnceLock::new(),
+            c: OnceLock::new(),
+            cpp: OnceLock::new(),
+            javascript: OnceLock::new(),
+            jsx: OnceLock::new(),
+            typescript: OnceLock::new(),
+            tsx: OnceLock::new(),
+            python: OnceLock::new(),
+            go: OnceLock::new(),
+            json: OnceLock::new(),
+            yaml: OnceLock::new(),
+            html: OnceLock::new(),
+            css: OnceLock::new(),
+            lua: OnceLock::new(),
+            nix: OnceLock::new(),
         }
-
-        if let Some(config) = build_config(
-            tree_sitter_c::LANGUAGE.into(),
-            "c",
-            tree_sitter_c::HIGHLIGHT_QUERY,
-            None,
-            None,
-            theme_ref,
-        ) {
-            registry.entries.insert(Language::C, config.clone());
-            registry.entries.insert(Language::CHeader, config);
-        }
-
-        if let Some(config) = build_config(
-            tree_sitter_cpp::LANGUAGE.into(),
-            "cpp",
-            tree_sitter_cpp::HIGHLIGHT_QUERY,
-            None,
-            None,
-            theme_ref,
-        ) {
-            registry.entries.insert(Language::Cpp, config.clone());
-            registry.entries.insert(Language::CppHeader, config);
-        }
-
-        if let Some(config) = build_config(
-            tree_sitter_javascript::LANGUAGE.into(),
-            "javascript",
-            tree_sitter_javascript::HIGHLIGHT_QUERY,
-            Some(tree_sitter_javascript::INJECTIONS_QUERY),
-            Some(tree_sitter_javascript::LOCALS_QUERY),
-            theme_ref,
-        ) {
-            registry.entries.insert(Language::JavaScript, config);
-        }
-
-        if let Some(config) = build_config(
-            tree_sitter_javascript::LANGUAGE.into(),
-            "jsx",
-            tree_sitter_javascript::JSX_HIGHLIGHT_QUERY,
-            Some(tree_sitter_javascript::INJECTIONS_QUERY),
-            Some(tree_sitter_javascript::LOCALS_QUERY),
-            theme_ref,
-        ) {
-            registry.entries.insert(Language::Jsx, config);
-        }
-
-        if let Some(config) = build_config(
-            tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
-            "typescript",
-            tree_sitter_typescript::HIGHLIGHTS_QUERY,
-            None,
-            Some(tree_sitter_typescript::LOCALS_QUERY),
-            theme_ref,
-        ) {
-            registry.entries.insert(Language::TypeScript, config);
-        }
-
-        if let Some(config) = build_config(
-            tree_sitter_typescript::LANGUAGE_TSX.into(),
-            "tsx",
-            tree_sitter_typescript::HIGHLIGHTS_QUERY,
-            None,
-            Some(tree_sitter_typescript::LOCALS_QUERY),
-            theme_ref,
-        ) {
-            registry.entries.insert(Language::Tsx, config);
-        }
-
-        if let Some(config) = build_config(
-            tree_sitter_python::LANGUAGE.into(),
-            "python",
-            tree_sitter_python::HIGHLIGHTS_QUERY,
-            None,
-            None,
-            theme_ref,
-        ) {
-            registry.entries.insert(Language::Python, config);
-        }
-
-        if let Some(config) = build_config(
-            tree_sitter_go::LANGUAGE.into(),
-            "go",
-            tree_sitter_go::HIGHLIGHTS_QUERY,
-            None,
-            None,
-            theme_ref,
-        ) {
-            registry.entries.insert(Language::Go, config);
-        }
-
-        if let Some(config) = build_config(
-            tree_sitter_json::LANGUAGE.into(),
-            "json",
-            tree_sitter_json::HIGHLIGHTS_QUERY,
-            None,
-            None,
-            theme_ref,
-        ) {
-            registry.entries.insert(Language::Json, config);
-        }
-
-        if let Some(config) = build_config(
-            tree_sitter_yaml::LANGUAGE.into(),
-            "yaml",
-            tree_sitter_yaml::HIGHLIGHTS_QUERY,
-            None,
-            None,
-            theme_ref,
-        ) {
-            registry.entries.insert(Language::Yaml, config);
-        }
-
-        if let Some(config) = build_config(
-            tree_sitter_html::LANGUAGE.into(),
-            "html",
-            tree_sitter_html::HIGHLIGHTS_QUERY,
-            Some(tree_sitter_html::INJECTIONS_QUERY),
-            None,
-            theme_ref,
-        ) {
-            registry.entries.insert(Language::Html, config);
-        }
-
-        if let Some(config) = build_config(
-            tree_sitter_css::LANGUAGE.into(),
-            "css",
-            tree_sitter_css::HIGHLIGHTS_QUERY,
-            None,
-            None,
-            theme_ref,
-        ) {
-            registry.entries.insert(Language::Css, config);
-        }
-
-        if let Some(config) = build_config(
-            tree_sitter_lua::LANGUAGE.into(),
-            "lua",
-            tree_sitter_lua::HIGHLIGHTS_QUERY,
-            None,
-            None,
-            theme_ref,
-        ) {
-            registry.entries.insert(Language::Lua, config);
-        }
-
-        if let Some(config) = build_config(
-            tree_sitter_nix::LANGUAGE.into(),
-            "nix",
-            tree_sitter_nix::HIGHLIGHTS_QUERY,
-            None,
-            None,
-            theme_ref,
-        ) {
-            registry.entries.insert(Language::Nix, config);
-        }
-
-        registry
     }
 
     fn resolve(&self, language: Language) -> Option<&LanguageConfig> {
-        self.entries.get(&language)
+        match language {
+            Language::Rust => self.rust.get_or_init(|| {
+                build_config(
+                    tree_sitter_rust::LANGUAGE.into(),
+                    "rust",
+                    tree_sitter_rust::HIGHLIGHTS_QUERY,
+                    Some(tree_sitter_rust::INJECTIONS_QUERY),
+                    None,
+                    &self.theme,
+                )
+            }).as_ref(),
+            Language::C | Language::CHeader => self.c.get_or_init(|| {
+                build_config(
+                    tree_sitter_c::LANGUAGE.into(),
+                    "c",
+                    tree_sitter_c::HIGHLIGHT_QUERY,
+                    None,
+                    None,
+                    &self.theme,
+                )
+            }).as_ref(),
+            Language::Cpp | Language::CppHeader => self.cpp.get_or_init(|| {
+                build_config(
+                    tree_sitter_cpp::LANGUAGE.into(),
+                    "cpp",
+                    tree_sitter_cpp::HIGHLIGHT_QUERY,
+                    None,
+                    None,
+                    &self.theme,
+                )
+            }).as_ref(),
+            Language::JavaScript => self.javascript.get_or_init(|| {
+                build_config(
+                    tree_sitter_javascript::LANGUAGE.into(),
+                    "javascript",
+                    tree_sitter_javascript::HIGHLIGHT_QUERY,
+                    Some(tree_sitter_javascript::INJECTIONS_QUERY),
+                    Some(tree_sitter_javascript::LOCALS_QUERY),
+                    &self.theme,
+                )
+            }).as_ref(),
+            Language::Jsx => self.jsx.get_or_init(|| {
+                build_config(
+                    tree_sitter_javascript::LANGUAGE.into(),
+                    "jsx",
+                    tree_sitter_javascript::JSX_HIGHLIGHT_QUERY,
+                    Some(tree_sitter_javascript::INJECTIONS_QUERY),
+                    Some(tree_sitter_javascript::LOCALS_QUERY),
+                    &self.theme,
+                )
+            }).as_ref(),
+            Language::TypeScript => self.typescript.get_or_init(|| {
+                build_config(
+                    tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
+                    "typescript",
+                    tree_sitter_typescript::HIGHLIGHTS_QUERY,
+                    None,
+                    Some(tree_sitter_typescript::LOCALS_QUERY),
+                    &self.theme,
+                )
+            }).as_ref(),
+            Language::Tsx => self.tsx.get_or_init(|| {
+                build_config(
+                    tree_sitter_typescript::LANGUAGE_TSX.into(),
+                    "tsx",
+                    tree_sitter_typescript::HIGHLIGHTS_QUERY,
+                    None,
+                    Some(tree_sitter_typescript::LOCALS_QUERY),
+                    &self.theme,
+                )
+            }).as_ref(),
+            Language::Python => self.python.get_or_init(|| {
+                build_config(
+                    tree_sitter_python::LANGUAGE.into(),
+                    "python",
+                    tree_sitter_python::HIGHLIGHTS_QUERY,
+                    None,
+                    None,
+                    &self.theme,
+                )
+            }).as_ref(),
+            Language::Go => self.go.get_or_init(|| {
+                build_config(
+                    tree_sitter_go::LANGUAGE.into(),
+                    "go",
+                    tree_sitter_go::HIGHLIGHTS_QUERY,
+                    None,
+                    None,
+                    &self.theme,
+                )
+            }).as_ref(),
+            Language::Json => self.json.get_or_init(|| {
+                build_config(
+                    tree_sitter_json::LANGUAGE.into(),
+                    "json",
+                    tree_sitter_json::HIGHLIGHTS_QUERY,
+                    None,
+                    None,
+                    &self.theme,
+                )
+            }).as_ref(),
+            Language::Yaml => self.yaml.get_or_init(|| {
+                build_config(
+                    tree_sitter_yaml::LANGUAGE.into(),
+                    "yaml",
+                    tree_sitter_yaml::HIGHLIGHTS_QUERY,
+                    None,
+                    None,
+                    &self.theme,
+                )
+            }).as_ref(),
+            Language::Html => self.html.get_or_init(|| {
+                build_config(
+                    tree_sitter_html::LANGUAGE.into(),
+                    "html",
+                    tree_sitter_html::HIGHLIGHTS_QUERY,
+                    Some(tree_sitter_html::INJECTIONS_QUERY),
+                    None,
+                    &self.theme,
+                )
+            }).as_ref(),
+            Language::Css => self.css.get_or_init(|| {
+                build_config(
+                    tree_sitter_css::LANGUAGE.into(),
+                    "css",
+                    tree_sitter_css::HIGHLIGHTS_QUERY,
+                    None,
+                    None,
+                    &self.theme,
+                )
+            }).as_ref(),
+            Language::Lua => self.lua.get_or_init(|| {
+                build_config(
+                    tree_sitter_lua::LANGUAGE.into(),
+                    "lua",
+                    tree_sitter_lua::HIGHLIGHTS_QUERY,
+                    None,
+                    None,
+                    &self.theme,
+                )
+            }).as_ref(),
+            Language::Nix => self.nix.get_or_init(|| {
+                build_config(
+                    tree_sitter_nix::LANGUAGE.into(),
+                    "nix",
+                    tree_sitter_nix::HIGHLIGHTS_QUERY,
+                    None,
+                    None,
+                    &self.theme,
+                )
+            }).as_ref(),
+            // PlainText, Markdown, Toml and other unsupported languages
+            _ => None,
+        }
     }
 }
 

@@ -101,7 +101,7 @@ pub enum Message {
     WindowResizeStart(iced::Point),
     WindowResizeMove(iced::Point),
     WindowResizeEnd,
-    DetectMonitorRefreshRates,
+    RefreshRateDetected(f32, f32), // (highest_refresh, current_refresh)
     FileExplorer(crate::widgets::file_explorer::Message),
     RightRailTabSelected(RightRailTab),
     // Search dialog messages
