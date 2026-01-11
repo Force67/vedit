@@ -1,67 +1,138 @@
 use crate::message::Message;
 use crate::state::EditorState;
-use crate::style::status_container;
-use iced::widget::{container, row, text};
-use iced::{Alignment, Color, Element, Length, alignment::Vertical};
+use crate::style::{self, status_container};
+use iced::widget::{Space, container, row, text};
+use iced::{Alignment, Color, Element, Length, Padding, alignment::Vertical};
+use iced_font_awesome::fa_icon_solid;
+
+/// Separator element for status bar
+fn separator(scale: f32) -> Element<'static, Message> {
+    container(Space::new())
+        .width(Length::Fixed(1.0))
+        .height(Length::Fixed((12.0 * scale).max(8.0)))
+        .style(style::status_separator())
+        .into()
+}
 
 pub fn render_status_bar(
     state: &EditorState,
     scale: f32,
     spacing_small: f32,
-    spacing_large: f32,
+    _spacing_large: f32,
 ) -> Element<'_, Message> {
-    let workspace_root = state.editor().workspace_root().unwrap_or("(none)");
-    let workspace_status = if let Some(name) = state.workspace_display_name() {
-        format!("Workspace: {} ({})", name, workspace_root)
-    } else {
-        format!("Workspace: {}", workspace_root)
-    };
+    let text_size = (12.0 * scale).max(9.0);
+    let icon_size = (10.0 * scale).max(8.0);
+    let item_spacing = (8.0 * scale).max(4.0);
+    let section_spacing = (12.0 * scale).max(6.0);
 
+    // File info
+    let file_status = state.editor().status_line();
+    let file_item = row![
+        fa_icon_solid("file").size(icon_size).color(style::MUTED),
+        text(file_status)
+            .size(text_size)
+            .color(style::TEXT_SECONDARY),
+    ]
+    .spacing(4)
+    .align_y(Alignment::Center);
+
+    // Language
     let active_language = state
         .editor()
         .active_document()
         .map(|doc| doc.language().display_name())
         .unwrap_or("Plain Text");
 
+    let lang_item = row![
+        fa_icon_solid("code").size(icon_size).color(style::MUTED),
+        text(active_language)
+            .size(text_size)
+            .color(style::TEXT_SECONDARY),
+    ]
+    .spacing(4)
+    .align_y(Alignment::Center);
+
+    // Character count
+    let char_count = state
+        .editor()
+        .active_document()
+        .map(|doc| doc.buffer.char_count())
+        .unwrap_or(0);
+
+    let chars_item = text(format!("{} chars", char_count))
+        .size(text_size)
+        .color(style::MUTED);
+
+    // Workspace (shortened)
+    let workspace_item = if let Some(name) = state.workspace_display_name() {
+        row![
+            fa_icon_solid("folder")
+                .size(icon_size)
+                .color(style::FOLDER_ICON),
+            text(name).size(text_size).color(style::TEXT_SECONDARY),
+        ]
+        .spacing(4)
+        .align_y(Alignment::Center)
+    } else {
+        row![text("No workspace").size(text_size).color(style::MUTED)].align_y(Alignment::Center)
+    };
+
+    // FPS with color coding
+    let fps = state.fps_counter().fps();
+    let fps_color = if fps >= 120.0 {
+        style::SUCCESS
+    } else if fps >= 90.0 {
+        Color::from_rgb(0.5, 0.85, 0.5)
+    } else if fps >= 60.0 {
+        style::WARNING
+    } else {
+        style::ERROR
+    };
+
+    let fps_item = text(format!("{:.0} fps", fps))
+        .size(text_size)
+        .color(fps_color);
+
+    // Error/Notice (if any)
+    let notice_item: Element<'_, Message> = match (state.error(), state.workspace_notice()) {
+        (Some(err), _) => row![
+            fa_icon_solid("circle-exclamation")
+                .size(icon_size)
+                .color(style::ERROR),
+            text(err).size(text_size).color(style::ERROR),
+        ]
+        .spacing(4)
+        .align_y(Alignment::Center)
+        .into(),
+        (None, Some(notice)) => text(notice).size(text_size).color(style::PRIMARY).into(),
+        _ => Space::new().width(0).into(),
+    };
+
+    // Build status bar with separators
+    let left_section = row![
+        file_item,
+        separator(scale),
+        lang_item,
+        separator(scale),
+        chars_item,
+    ]
+    .spacing(section_spacing)
+    .align_y(Alignment::Center);
+
+    let right_section = row![workspace_item, separator(scale), fps_item, notice_item,]
+        .spacing(section_spacing)
+        .align_y(Alignment::Center);
+
     container(
         row![
-            text(format!("File: {}", state.editor().status_line())).size((14.0 * scale).max(10.0)),
-            text(format!("Language: {}", active_language)).size((14.0 * scale).max(10.0)),
-            text(workspace_status).size((14.0 * scale).max(10.0)),
-            text(format!(
-                "Chars: {}",
-                state
-                    .editor()
-                    .active_document()
-                    .map(|doc| doc.buffer.char_count())
-                    .unwrap_or(0)
-            ))
-            .size((14.0 * scale).max(10.0)),
-            text(state.format_scale_factor()).size((14.0 * scale).max(10.0)),
-            text(state.format_code_font_zoom()).size((14.0 * scale).max(10.0)),
-            text(format!("FPS: {:.0}", state.fps_counter().fps()))
-                .size((18.0 * scale).max(12.0)) // Bigger font for FPS
-                .color(if state.fps_counter().fps() >= 120.0 {
-                    Color::from_rgb(0.0, 1.0, 0.0) // Green for 144Hz+ target
-                } else if state.fps_counter().fps() >= 90.0 {
-                    Color::from_rgb(0.2, 0.8, 0.2) // Light green for good FPS
-                } else if state.fps_counter().fps() >= 60.0 {
-                    Color::from_rgb(1.0, 1.0, 0.0) // Yellow for acceptable FPS
-                } else {
-                    Color::from_rgb(1.0, 0.0, 0.0) // Red for low FPS
-                }),
-            match (state.error(), state.workspace_notice()) {
-                (Some(err), _) => text(format!("Error: {}", err)).size((14.0 * scale).max(10.0)),
-                (None, Some(notice)) => text(notice)
-                    .size((14.0 * scale).max(10.0))
-                    .color(Color::from_rgb8(38, 139, 210)),
-                _ => text("").size(14),
-            },
+            left_section,
+            Space::new().width(Length::Fill),
+            right_section,
         ]
-        .spacing((24.0 * scale).max(12.0))
+        .spacing(item_spacing)
         .align_y(Alignment::Center),
     )
-    .padding([spacing_small, spacing_large])
+    .padding(Padding::from([spacing_small, (10.0 * scale).max(6.0)]))
     .width(Length::Fill)
     .align_y(Vertical::Center)
     .style(status_container())

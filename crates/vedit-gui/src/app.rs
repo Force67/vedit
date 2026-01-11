@@ -221,9 +221,7 @@ impl EditorApp {
 
         // Trigger refresh rate detection asynchronously (xrandr can be slow)
         let refresh_command = Task::perform(
-            async {
-                detect_refresh_rates_async()
-            },
+            async { detect_refresh_rates_async() },
             |(highest, current)| Message::RefreshRateDetected(highest, current),
         );
 
@@ -305,6 +303,13 @@ impl EditorApp {
             Message::DocumentSelected(index) => {
                 self.state.editor_mut().set_active(index);
                 self.state.sync_buffer_from_editor();
+            }
+            Message::CloseDocument(index) => {
+                let editor = self.state.editor_mut();
+                if editor.open_documents().len() > 1 {
+                    editor.close_document(index);
+                    self.state.sync_buffer_from_editor();
+                }
             }
             Message::WorkspaceOpenRequested => {
                 return self.wrap_command(Task::perform(

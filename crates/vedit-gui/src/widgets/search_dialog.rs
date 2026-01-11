@@ -2,9 +2,9 @@
 #![allow(dead_code)]
 
 use crate::message::Message;
-use crate::style::panel_container;
-use iced::widget::{Space, button, checkbox, column, container, row, text, text_input};
-use iced::{Alignment, Color, Element, Length};
+use crate::style::{self, floating_panel_container};
+use iced::widget::{Space, button, column, container, row, text, text_input};
+use iced::{Alignment, Element, Length, Padding};
 use iced_font_awesome::fa_icon_solid;
 
 #[derive(Debug, Clone)]
@@ -130,237 +130,169 @@ impl SearchDialog {
     }
 
     pub fn view(&self, scale: f32) -> Element<'_, Message> {
-        let spacing = 8.0 * scale;
+        let spacing = (6.0 * scale).max(4.0);
+        let text_size = (12.0 * scale).max(10.0);
+        let icon_size = (11.0 * scale).max(9.0);
 
         if !self.is_visible {
             return container(text("")).into();
         }
 
-        // Search input field
-        let search_input = text_input("Find", &self.search_query)
+        // Header with title, match count, and close
+        let match_count_text = match self.search_state {
+            SearchState::Complete if self.total_matches > 0 => match self.current_match {
+                Some(current) => format!("{}/{}", current + 1, self.total_matches),
+                None => format!("{} found", self.total_matches),
+            },
+            SearchState::NoMatches => "No results".to_string(),
+            SearchState::Searching => "...".to_string(),
+            _ => String::new(),
+        };
+
+        let match_color = match self.search_state {
+            SearchState::Complete if self.total_matches > 0 => style::SUCCESS,
+            SearchState::NoMatches => style::ERROR,
+            _ => style::MUTED,
+        };
+
+        let close_button = button(fa_icon_solid("xmark").size(icon_size).color(style::MUTED))
+            .style(style::close_button())
+            .padding(Padding::from([2, 4]))
+            .on_press(Message::SearchClose);
+
+        let header = row![
+            fa_icon_solid("magnifying-glass")
+                .size(icon_size)
+                .color(style::PRIMARY),
+            text("Find").size(text_size).color(style::TEXT),
+            Space::new().width(Length::Fill),
+            text(match_count_text).size(text_size).color(match_color),
+            close_button,
+        ]
+        .spacing(spacing)
+        .align_y(Alignment::Center);
+
+        // Search input with nav buttons
+        let search_input = text_input("Search...", &self.search_query)
             .id(self.search_input_id.clone())
             .on_input(Message::SearchQueryChanged)
             .on_paste(Message::SearchQueryChanged)
             .on_submit(Message::SearchExecute)
-            .size(14.0 * scale)
-            .padding(4.0 * scale);
+            .size(text_size)
+            .padding(Padding::from([4, 8]));
 
-        let search_row = row![
-            text("Find:").size(14.0 * scale),
-            search_input,
+        let nav_buttons = row![
             button(
                 fa_icon_solid("chevron-up")
-                    .size(14.0 * scale)
-                    .color(Color::from_rgb8(180, 180, 180))
+                    .size(icon_size)
+                    .color(style::TEXT_SECONDARY)
             )
-            .on_press(Message::SearchPrevious)
-            .padding(4.0 * scale)
-            .width(Length::Fixed(30.0 * scale)),
+            .style(style::chevron_button())
+            .padding(Padding::from([4, 6]))
+            .on_press(Message::SearchPrevious),
             button(
                 fa_icon_solid("chevron-down")
-                    .size(14.0 * scale)
-                    .color(Color::from_rgb8(180, 180, 180))
+                    .size(icon_size)
+                    .color(style::TEXT_SECONDARY)
             )
-            .on_press(Message::SearchNext)
-            .padding(4.0 * scale)
-            .width(Length::Fixed(30.0 * scale)),
+            .style(style::chevron_button())
+            .padding(Padding::from([4, 6]))
+            .on_press(Message::SearchNext),
         ]
-        .spacing(spacing)
-        .align_y(Alignment::Center);
+        .spacing(2);
 
-        // Replace input row (visible when replace mode is enabled)
-        let replace_row = if self.replace_mode {
-            let replace_input = text_input("Replace", &self.replace_text)
-                .on_input(Message::ReplaceTextChanged)
-                .on_paste(Message::ReplaceTextChanged)
-                .size(14.0 * scale)
-                .padding(4.0 * scale);
+        let search_row = row![search_input, nav_buttons]
+            .spacing(spacing)
+            .align_y(Alignment::Center);
 
-            Some(
-                row![
-                    text("Replace:").size(14.0 * scale),
-                    replace_input,
-                    button(
-                        row![
-                            fa_icon_solid("file")
-                                .size(12.0 * scale)
-                                .color(Color::from_rgb8(180, 180, 180)),
-                            text("Replace").size(12.0 * scale)
-                        ]
-                        .spacing(4.0 * scale)
-                        .align_y(Alignment::Center)
-                    )
-                    .on_press(Message::ReplaceOne)
-                    .padding(4.0 * scale),
-                    button(
-                        row![
-                            fa_icon_solid("file")
-                                .size(12.0 * scale)
-                                .color(Color::from_rgb8(180, 180, 180)),
-                            text("All").size(12.0 * scale)
-                        ]
-                        .spacing(4.0 * scale)
-                        .align_y(Alignment::Center)
-                    )
-                    .on_press(Message::ReplaceAll)
-                    .padding(4.0 * scale),
-                ]
-                .spacing(spacing)
-                .align_y(Alignment::Center),
-            )
-        } else {
-            None
-        };
-
-        // Options row
-        let case_checkbox = checkbox(self.case_sensitive)
-            .label("")
-            .on_toggle(Message::SearchCaseSensitive)
-            .spacing(4.0 * scale)
-            .size(14.0 * scale);
-
-        let whole_word_checkbox = checkbox(self.whole_word)
-            .label("")
-            .on_toggle(Message::SearchWholeWord)
-            .spacing(4.0 * scale)
-            .size(14.0 * scale);
-
-        let regex_checkbox = checkbox(self.use_regex)
-            .label("")
-            .on_toggle(Message::SearchUseRegex)
-            .spacing(4.0 * scale)
-            .size(14.0 * scale);
-
+        // Options as toggle buttons (more compact than checkboxes)
         let options_row = row![
-            case_checkbox,
-            text("Match Case").size(12.0 * scale),
-            whole_word_checkbox,
-            text("Whole Word").size(12.0 * scale),
-            regex_checkbox,
-            text("Regex").size(12.0 * scale),
-        ]
-        .spacing(spacing * 1.5)
-        .align_y(Alignment::Center);
-
-        // Results text
-        let results_text = match self.search_state {
-            SearchState::Searching => "Searching...".to_string(),
-            SearchState::Complete => {
-                if self.total_matches == 0 {
-                    "No matches found".to_string()
-                } else {
-                    match self.current_match {
-                        Some(current) => format!("Match {} of {}", current + 1, self.total_matches),
-                        None => format!("{} matches found", self.total_matches),
-                    }
-                }
-            }
-            SearchState::NoMatches => "No matches found".to_string(),
-            SearchState::Idle => {
-                if self.search_query.is_empty() {
-                    "Enter search text".to_string()
-                } else {
-                    "Ready to search".to_string()
-                }
-            }
-        };
-
-        let results_color = match self.search_state {
-            SearchState::Searching => Color::from_rgb8(100, 150, 255), // Blue
-            SearchState::Complete => Color::from_rgb8(100, 200, 100),  // Green
-            SearchState::NoMatches => Color::from_rgb8(255, 100, 100), // Red
-            SearchState::Idle => Color::from_rgb8(160, 160, 160),      // Lighter gray
-        };
-
-        let results_label = text(results_text).size(12.0 * scale).color(results_color);
-
-        // Close button
-        let close_button = button(
-            fa_icon_solid("xmark")
-                .size(14.0 * scale)
-                .color(Color::from_rgb8(180, 180, 180)),
-        )
-        .on_press(Message::SearchClose)
-        .padding(4.0 * scale)
-        .width(Length::Fixed(24.0 * scale))
-        .height(Length::Fixed(24.0 * scale));
-
-        // Header row with title and close button
-        let header_row = row![
-            text("Search").size(16.0 * scale),
+            button(text("Aa").size(text_size))
+                .style(style::search_toggle(self.case_sensitive))
+                .padding(Padding::from([3, 8]))
+                .on_press(Message::SearchCaseSensitive(!self.case_sensitive)),
+            button(text("W").size(text_size))
+                .style(style::search_toggle(self.whole_word))
+                .padding(Padding::from([3, 8]))
+                .on_press(Message::SearchWholeWord(!self.whole_word)),
+            button(text(".*").size(text_size))
+                .style(style::search_toggle(self.use_regex))
+                .padding(Padding::from([3, 8]))
+                .on_press(Message::SearchUseRegex(!self.use_regex)),
             Space::new().width(Length::Fill),
-            close_button,
+            button(
+                row![
+                    fa_icon_solid("arrow-right-arrow-left")
+                        .size(icon_size)
+                        .color(style::TEXT_SECONDARY),
+                    text("Replace").size(text_size).color(style::TEXT_SECONDARY),
+                ]
+                .spacing(4)
+                .align_y(Alignment::Center)
+            )
+            .style(style::chevron_button())
+            .padding(Padding::from([3, 6]))
+            .on_press(Message::SearchToggleReplace),
         ]
+        .spacing(4)
         .align_y(Alignment::Center);
 
-        // Main content column
-        let mut content = column![header_row, search_row, options_row, results_label,]
+        // Replace row (if enabled)
+        let mut content = column![header, search_row, options_row]
             .spacing(spacing)
             .width(Length::Fill);
 
-        // Add replace row if in replace mode
-        if let Some(replace_row) = replace_row {
+        if self.replace_mode {
+            let replace_input = text_input("Replace with...", &self.replace_text)
+                .on_input(Message::ReplaceTextChanged)
+                .on_paste(Message::ReplaceTextChanged)
+                .size(text_size)
+                .padding(Padding::from([4, 8]));
+
+            let replace_buttons = row![
+                button(text("Replace").size(text_size))
+                    .style(style::chevron_button())
+                    .padding(Padding::from([4, 8]))
+                    .on_press(Message::ReplaceOne),
+                button(text("All").size(text_size))
+                    .style(style::chevron_button())
+                    .padding(Padding::from([4, 8]))
+                    .on_press(Message::ReplaceAll),
+            ]
+            .spacing(4);
+
+            let replace_row = row![replace_input, replace_buttons]
+                .spacing(spacing)
+                .align_y(Alignment::Center);
+
             content = content.push(replace_row);
         }
 
-        // Action buttons row
-        let mut action_buttons = row![
-            button(
-                row![
-                    fa_icon_solid("gear")
-                        .size(12.0 * scale)
-                        .color(Color::from_rgb8(180, 180, 180)),
-                    text("Toggle Replace").size(12.0 * scale)
-                ]
-                .spacing(4.0 * scale)
-                .align_y(Alignment::Center)
-            )
-            .on_press(Message::SearchToggleReplace)
-            .padding(6.0 * scale),
+        // Keyboard shortcut hints
+        let hints = row![
+            text("Enter")
+                .size((10.0 * scale).max(8.0))
+                .color(style::MUTED),
+            text("search")
+                .size((10.0 * scale).max(8.0))
+                .color(style::MUTED),
+            text("  Esc")
+                .size((10.0 * scale).max(8.0))
+                .color(style::MUTED),
+            text("close")
+                .size((10.0 * scale).max(8.0))
+                .color(style::MUTED),
         ]
-        .spacing(spacing)
+        .spacing(4)
         .align_y(Alignment::Center);
 
-        // Add Next Match button if there are multiple matches
-        if self.search_state == SearchState::Complete && self.total_matches > 1 {
-            action_buttons = action_buttons.push(
-                button(
-                    row![
-                        fa_icon_solid("angle-down")
-                            .size(12.0 * scale)
-                            .color(Color::from_rgb8(180, 180, 180)),
-                        text("Next Match").size(12.0 * scale)
-                    ]
-                    .spacing(4.0 * scale)
-                    .align_y(Alignment::Center),
-                )
-                .on_press(Message::SearchNext)
-                .padding(6.0 * scale),
-            );
-        }
+        content = content.push(hints);
 
-        action_buttons = action_buttons.push(
-            button(
-                row![
-                    fa_icon_solid("xmark")
-                        .size(12.0 * scale)
-                        .color(Color::from_rgb8(180, 180, 180)),
-                    text("Close").size(12.0 * scale)
-                ]
-                .spacing(4.0 * scale)
-                .align_y(Alignment::Center),
-            )
-            .on_press(Message::SearchClose)
-            .padding(6.0 * scale),
-        );
-
-        content = content.push(action_buttons);
-
-        // Wrap in container with styling
+        // Wrap in floating container
         container(content)
-            .padding(spacing)
-            .style(panel_container())
-            .width(Length::Fill)
+            .padding(Padding::from([8, 10]))
+            .width(Length::Fixed((320.0 * scale).clamp(280.0, 400.0)))
+            .style(floating_panel_container())
             .into()
     }
 }

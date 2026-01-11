@@ -31,6 +31,7 @@ pub enum Message {
     OpenFileRequested,
     FileLoaded(Result<Option<Document>, String>),
     DocumentSelected(usize),
+    CloseDocument(usize),
     WorkspaceOpenRequested,
     SolutionOpenRequested,
     SolutionSelected(String),

@@ -34,15 +34,15 @@ use std::cell::{Cell, Ref, RefCell};
 use std::collections::VecDeque;
 use std::rc::Rc; // For zero-allocation integer to string conversion
 
-const DEFAULT_GUTTER_WIDTH: f32 = 60.0;
+use crate::style;
+
+const DEFAULT_GUTTER_WIDTH: f32 = 56.0; // Slightly tighter
 const DEFAULT_LINE_COLOR: Color = Color::from_rgba(0.7, 0.7, 0.7, 1.0);
-const GUTTER_TEXT_PADDING: f32 = 12.0;
-const GUTTER_BACKGROUND: Color = Color::from_rgba(0.05, 0.05, 0.05, 1.0);
-const GUTTER_BORDER_COLOR: Color = Color::from_rgba(0.3, 0.3, 0.3, 1.0);
+const GUTTER_TEXT_PADDING: f32 = 10.0;
 const GUTTER_BORDER_WIDTH: f32 = 1.0;
-const DEBUG_DOT_COLOR: Color = Color::from_rgb(1.0, 0.0, 0.0); // Red color for debug dots
 const DEBUG_DOT_RADIUS: f32 = 5.0;
 const DEBUG_DOT_PADDING: f32 = 4.0;
+const DEBUG_DOT_GLOW_RADIUS: f32 = 8.0; // Outer glow for breakpoints
 
 /// Prefix-sum wrap index for O(log N) scroll-to-line mapping
 #[derive(Debug, Clone)]
@@ -580,7 +580,7 @@ impl<'a, Message> TextEditor<'a, Message, highlighter::PlainText> {
             current_line_highlight: None,
             search_highlight_line: None,
             indent_guides: None,
-            gutter_background: Some(GUTTER_BACKGROUND),
+            gutter_background: Some(style::GUTTER_BG),
             show_minimap: false,
             font_size: None,
             debug_dots: Vec::new(),
@@ -842,8 +842,16 @@ where
         let min = limits.min();
 
         // Use max dimensions, falling back to min or reasonable defaults
-        let width = if max.width.is_finite() { max.width } else { min.width.max(800.0) };
-        let height = if max.height.is_finite() { max.height } else { min.height.max(600.0) };
+        let width = if max.width.is_finite() {
+            max.width
+        } else {
+            min.width.max(800.0)
+        };
+        let height = if max.height.is_finite() {
+            max.height
+        } else {
+            min.height.max(600.0)
+        };
 
         // Still run inner layout to set up tree state, but ignore its size
         let _inner_node = self.inner.layout(tree, renderer, limits);
@@ -924,7 +932,7 @@ where
             &self.base_padding,
             self.gutter_width,
             self.line_color,
-            self.gutter_background.unwrap_or(GUTTER_BACKGROUND),
+            self.gutter_background.unwrap_or(style::GUTTER_BG),
             self.content,
             self.font_size.map(|p| p.0),
             &self.cached_line_numbers,
@@ -1437,7 +1445,7 @@ fn draw_line_numbers(
             shadow: iced::Shadow::default(),
             snap: true,
         },
-        GUTTER_BACKGROUND,
+        style::GUTTER_BG,
     );
 
     // Draw gutter border (separator line)
@@ -1459,7 +1467,7 @@ fn draw_line_numbers(
             shadow: iced::Shadow::default(),
             snap: true,
         },
-        GUTTER_BORDER_COLOR,
+        style::GUTTER_BORDER,
     );
 
     // Calculate text positioning
@@ -1633,7 +1641,7 @@ fn draw_line_numbers_optimized_with_background(
             shadow: iced::Shadow::default(),
             snap: true,
         },
-        GUTTER_BORDER_COLOR,
+        style::GUTTER_BORDER,
     );
 
     // Always render gutter numbers from the cached numbers vector
@@ -1876,7 +1884,27 @@ fn draw_debug_dots(
         let dot_bottom = dot_y + DEBUG_DOT_RADIUS;
 
         if dot_top >= buffer_top && dot_bottom <= buffer_bottom {
-            // Draw the red dot only when within proper buffer area
+            // Draw outer glow first (semi-transparent larger circle)
+            renderer.fill_quad(
+                renderer::Quad {
+                    bounds: Rectangle {
+                        x: dot_x - DEBUG_DOT_GLOW_RADIUS,
+                        y: dot_y - DEBUG_DOT_GLOW_RADIUS,
+                        width: DEBUG_DOT_GLOW_RADIUS * 2.0,
+                        height: DEBUG_DOT_GLOW_RADIUS * 2.0,
+                    },
+                    border: iced::Border {
+                        color: Color::TRANSPARENT,
+                        width: 0.0,
+                        radius: DEBUG_DOT_GLOW_RADIUS.into(),
+                    },
+                    shadow: iced::Shadow::default(),
+                    snap: true,
+                },
+                style::BREAKPOINT_GLOW,
+            );
+
+            // Draw the solid red dot on top
             renderer.fill_quad(
                 renderer::Quad {
                     bounds: Rectangle {
@@ -1893,7 +1921,7 @@ fn draw_debug_dots(
                     shadow: iced::Shadow::default(),
                     snap: true,
                 },
-                DEBUG_DOT_COLOR,
+                style::BREAKPOINT_COLOR,
             );
         }
     }

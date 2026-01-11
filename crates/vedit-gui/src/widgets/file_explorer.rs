@@ -138,7 +138,7 @@ impl FileExplorer {
             provider,
             root_path: root_path.clone(),
             vrows,
-            row_height: 28,
+            row_height: 22, // Compact VS-style row height
             scroll_offset: 0.0,
             renaming: None,
             filter_input: String::new(),
@@ -342,22 +342,52 @@ impl FileExplorer {
     }
 
     fn header(&self) -> Element<'_, Message> {
-        let filter_input =
-            text_input("Filter files...", &self.filter_input).on_input(Message::FilterChanged);
+        let filter_input = text_input("Filter...", &self.filter_input)
+            .size(12)
+            .on_input(Message::FilterChanged);
 
+        // Compact icon-only action buttons
         let actions = Row::new()
-            .push(button(text("New")).style(style::custom_button()))
-            .push(button(text("Refresh")).style(style::custom_button()))
-            .push(button(text("Collapse All")).style(style::custom_button()))
-            .push(button(text("Reveal Active")).style(style::custom_button()))
-            .spacing(4);
+            .push(
+                button(
+                    fa_icon_solid("plus")
+                        .size(11.0)
+                        .color(style::TEXT_SECONDARY),
+                )
+                .style(style::chevron_button())
+                .padding(Padding::from([3, 5])),
+            )
+            .push(
+                button(
+                    fa_icon_solid("rotate")
+                        .size(11.0)
+                        .color(style::TEXT_SECONDARY),
+                )
+                .style(style::chevron_button())
+                .padding(Padding::from([3, 5])),
+            )
+            .push(
+                button(
+                    fa_icon_solid("minus")
+                        .size(11.0)
+                        .color(style::TEXT_SECONDARY),
+                )
+                .style(style::chevron_button())
+                .padding(Padding::from([3, 5])),
+            )
+            .spacing(2);
 
         Column::new()
-            .push(text("Workspace: /path/to/root").color(style::TEXT))
-            .push(actions)
+            .push(
+                Row::new()
+                    .push(text("EXPLORER").size(11).color(style::MUTED))
+                    .push(Space::new().width(Length::Fill))
+                    .push(actions)
+                    .align_y(Alignment::Center),
+            )
             .push(filter_input)
-            .spacing(8)
-            .padding(Padding::from([8, 16]))
+            .spacing(6)
+            .padding(Padding::from([6, 8]))
             .into()
     }
 
@@ -396,63 +426,67 @@ impl FileExplorer {
             let is_selected = self.tree.selection.contains(&id);
             let depth = self.get_node_depth(id);
 
+            // VS-style colored icons
             let icon = match node.kind {
-                NodeKind::Folder => fa_icon_solid("folder").color(iced::Color::WHITE).size(14.0),
-                NodeKind::File => fa_icon_solid("file").color(iced::Color::WHITE).size(14.0),
-                NodeKind::Symlink(_) => fa_icon_solid("link").color(iced::Color::WHITE).size(14.0),
+                NodeKind::Folder => fa_icon_solid("folder").color(style::FOLDER_ICON).size(13.0),
+                NodeKind::File => fa_icon_solid("file").color(style::FILE_ICON).size(13.0),
+                NodeKind::Symlink(_) => fa_icon_solid("link")
+                    .color(style::TEXT_SECONDARY)
+                    .size(13.0),
             };
 
+            // Subtle chevron colors
             let chevron = if matches!(node.kind, NodeKind::Folder) {
                 if self.tree.expanded.contains(&id) {
                     fa_icon_solid("chevron-down")
-                        .color(iced::Color::WHITE)
-                        .size(12.0)
+                        .color(style::CHEVRON_COLOR)
+                        .size(10.0)
                 } else {
                     fa_icon_solid("chevron-right")
-                        .color(iced::Color::WHITE)
-                        .size(12.0)
+                        .color(style::CHEVRON_COLOR)
+                        .size(10.0)
                 }
             } else {
                 fa_icon_solid("chevron-right")
                     .color(iced::Color::TRANSPARENT)
-                    .size(12.0)
+                    .size(10.0)
             };
 
-            let name_button = button(text(&node.name).color(if is_selected {
-                style::PRIMARY
-            } else {
+            // Name text - subtle highlight for selected
+            let name_text = text(&node.name).size(13).color(if is_selected {
                 style::TEXT
-            }))
-            .style(style::custom_button())
-            .on_press(Message::RowClick(id));
-
-            // Create indentation based on depth
-            let indent_width = depth * 16; // 16 pixels per level
-            let indent = if indent_width > 0 {
-                Space::new()
-                    .width(Length::Fill)
-                    .width(Length::Fixed(indent_width as f32))
             } else {
-                Space::new().width(Length::Fill).width(Length::Fixed(0.0))
-            };
+                style::TEXT_SECONDARY
+            });
 
+            // Create indentation based on depth - tighter indent
+            let indent_width = depth * 12; // 12 pixels per level (VS-style)
+            let indent = Space::new().width(Length::Fixed(indent_width as f32));
+
+            // Compact chevron toggle
             let chevron_element: Element<Message> = if matches!(node.kind, NodeKind::Folder) {
-                button(chevron.size(12.0))
-                    .style(style::custom_button())
+                button(chevron)
+                    .style(style::chevron_button())
+                    .padding(Padding::from([2, 2]))
                     .on_press(Message::TreeToggle(id))
                     .into()
             } else {
-                Space::new()
-                    .width(Length::Fill)
-                    .width(Length::Fixed(12.0))
-                    .into()
+                Space::new().width(Length::Fixed(14.0)).into()
             };
 
-            let row = row![indent, chevron_element, icon.size(14.0), name_button,]
-                .spacing(4)
+            // Build row content
+            let row_content = row![indent, chevron_element, icon, name_text]
+                .spacing(3)
                 .align_y(Alignment::Center);
 
-            row.into()
+            // Wrap in full-width button for hover/selection
+            let row_button = button(row_content)
+                .style(style::tree_row_button(is_selected))
+                .padding(Padding::from([1, 4]))
+                .width(Length::Fill)
+                .on_press(Message::RowClick(id));
+
+            row_button.into()
         } else {
             text("Invalid node").into()
         }

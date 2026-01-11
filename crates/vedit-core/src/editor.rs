@@ -65,6 +65,18 @@ impl Editor {
         }
     }
 
+    pub fn close_document(&mut self, index: usize) {
+        if index < self.open_documents.len() && self.open_documents.len() > 1 {
+            self.open_documents.remove(index);
+            // Adjust active index if needed
+            if self.active_index >= self.open_documents.len() {
+                self.active_index = self.open_documents.len().saturating_sub(1);
+            } else if self.active_index > index {
+                self.active_index = self.active_index.saturating_sub(1);
+            }
+        }
+    }
+
     pub fn document_count(&self) -> usize {
         self.open_documents.len()
     }

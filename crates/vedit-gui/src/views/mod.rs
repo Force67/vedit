@@ -1,5 +1,6 @@
 pub mod command_palette;
 pub mod console_panel;
+pub mod document_tabs;
 pub mod editor_content;
 pub mod notifications;
 pub mod open_files;

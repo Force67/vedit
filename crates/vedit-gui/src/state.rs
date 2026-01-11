@@ -197,7 +197,8 @@ pub struct EditorState {
     debug_dots: Vec<DebugDot>,
     session_state: Option<SessionState>,
     pending_files_to_restore: Vec<PathBuf>,
-    // wine: WineState, // Temporarily disabled
+    tabs_at_top: bool, // Tab bar location: true = top, false = sidebar
+                       // wine: WineState, // Temporarily disabled
 }
 
 impl Default for EditorState {
@@ -243,7 +244,8 @@ impl Default for EditorState {
             debug_dots: Vec::new(),
             session_state: None,
             pending_files_to_restore: Vec::new(),
-            // wine: WineState::new(), // Temporarily disabled
+            tabs_at_top: true, // Default to top tabs (VS-style)
+                               // wine: WineState::new(), // Temporarily disabled
         };
 
         // Set up console state for logging
@@ -273,6 +275,18 @@ impl EditorState {
 
     pub fn buffer_content(&self) -> &Content {
         &self.buffer_content
+    }
+
+    pub fn tabs_at_top(&self) -> bool {
+        self.tabs_at_top
+    }
+
+    pub fn set_tabs_at_top(&mut self, value: bool) {
+        self.tabs_at_top = value;
+    }
+
+    pub fn toggle_tabs_location(&mut self) {
+        self.tabs_at_top = !self.tabs_at_top;
     }
 
     pub fn buffer_scroll_metrics(&self) -> ScrollMetrics {

@@ -1,9 +1,10 @@
 use crate::console::{ConsoleKind, ConsoleLineKind, ConsoleStatus};
 use crate::message::Message;
 use crate::state::EditorState;
-use crate::style::panel_container;
+use crate::style::{self, panel_container};
 use iced::widget::{Space, button, column, container, row, scrollable, text, text_input};
-use iced::{Alignment, Color, Element, Font, Length};
+use iced::{Alignment, Color, Element, Font, Length, Padding};
+use iced_font_awesome::fa_icon_solid;
 
 pub fn render_console_panel(
     state: &EditorState,
@@ -13,38 +14,66 @@ pub fn render_console_panel(
     spacing_small: f32,
 ) -> Element<'_, Message> {
     let console = state.console();
-    let tab_width = (160.0 * scale).max(120.0);
+    let text_size = (12.0 * scale).max(10.0);
+    let icon_size = (11.0 * scale).max(9.0);
 
-    let mut tab_column = column![text("Terminals").size((16.0 * scale).max(12.0))]
-        .spacing(spacing_small)
-        .width(Length::Fill);
+    // Horizontal tab bar instead of vertical
+    let mut tab_row = row![].spacing(0).align_y(Alignment::Center);
 
     for tab in console.tabs() {
-        let label = text(tab.title()).size((14.0 * scale).max(10.0));
         let tab_id = tab.id();
-        let mut button = button(label)
-            .width(Length::Fill)
-            .padding((6.0 * scale).max(4.0));
-        if Some(tab_id) == console.active_tab_id() {
-            button = button.style(iced::widget::button::primary);
-        } else {
-            button = button.style(iced::widget::button::text);
-        }
-        tab_column = tab_column.push(button.on_press(Message::ConsoleTabSelected(tab_id)));
+        let is_active = Some(tab_id) == console.active_tab_id();
+
+        // Icon based on console type
+        let icon = match tab.kind() {
+            ConsoleKind::Shell => "terminal",
+            ConsoleKind::Debug => "bug",
+            ConsoleKind::EditorLog => "file-lines",
+        };
+
+        let tab_content = row![
+            fa_icon_solid(icon).size(icon_size).color(if is_active {
+                style::TEXT
+            } else {
+                style::MUTED
+            }),
+            text(tab.title()).size(text_size).color(if is_active {
+                style::TEXT
+            } else {
+                style::TEXT_SECONDARY
+            }),
+        ]
+        .spacing(6)
+        .align_y(Alignment::Center);
+
+        let tab_button = button(tab_content)
+            .style(style::console_tab(is_active))
+            .padding(Padding::from([6, 12]))
+            .on_press(Message::ConsoleTabSelected(tab_id));
+
+        tab_row = tab_row.push(tab_button);
     }
 
-    tab_column = tab_column.push(
-        button(text("+ New").size((14.0 * scale).max(10.0)))
-            .padding((6.0 * scale).max(4.0))
-            .width(Length::Fill)
-            .style(iced::widget::button::secondary)
-            .on_press(Message::ConsoleNewRequested),
-    );
+    // New tab button
+    let new_tab_btn = button(
+        row![
+            fa_icon_solid("plus").size(icon_size).color(style::MUTED),
+            text("New").size(text_size).color(style::TEXT_SECONDARY),
+        ]
+        .spacing(4)
+        .align_y(Alignment::Center),
+    )
+    .style(style::chevron_button())
+    .padding(Padding::from([6, 10]))
+    .on_press(Message::ConsoleNewRequested);
 
-    let tabs_panel = container(tab_column)
-        .padding(spacing_medium)
-        .width(Length::Fixed(tab_width))
-        .style(panel_container());
+    tab_row = tab_row.push(new_tab_btn);
+    tab_row = tab_row.push(Space::new().width(Length::Fill));
+
+    let tab_bar = container(tab_row)
+        .padding(Padding::from([0, spacing_small as u16]))
+        .width(Length::Fill)
+        .style(style::tab_bar_container());
 
     let content_panel: Element<'_, Message> = if let Some(active) = console.active_tab() {
         let tab_id = active.id();
@@ -55,10 +84,10 @@ pub fn render_console_panel(
 
         for entry in active.lines() {
             let color = match entry.kind {
-                ConsoleLineKind::Output => Color::from_rgb8(210, 210, 210),
-                ConsoleLineKind::Error => Color::from_rgb8(255, 160, 160),
-                ConsoleLineKind::Info => Color::from_rgb8(180, 220, 180),
-                ConsoleLineKind::Command => Color::from_rgb8(156, 220, 254),
+                ConsoleLineKind::Output => style::TEXT_SECONDARY,
+                ConsoleLineKind::Error => style::ERROR,
+                ConsoleLineKind::Info => style::SUCCESS,
+                ConsoleLineKind::Command => style::PRIMARY,
             };
 
             let text_value = if entry.text.is_empty() {
@@ -160,8 +189,9 @@ pub fn render_console_panel(
         .into()
     };
 
-    row![tabs_panel, content_panel]
-        .spacing(spacing_large)
+    // Vertical layout: tab bar on top, content below
+    column![tab_bar, content_panel]
+        .spacing(0)
         .width(Length::Fill)
         .into()
 }

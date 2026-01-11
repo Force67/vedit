@@ -30,6 +30,11 @@ pub const SUCCESS: Color = rgb(72, 195, 130);
 pub const WARNING: Color = rgb(235, 190, 80);
 pub const ERROR: Color = rgb(225, 95, 105);
 
+// File tree colors (VS-style)
+pub const FOLDER_ICON: Color = rgb(220, 180, 90); // Yellow/gold for folders
+pub const FILE_ICON: Color = rgb(160, 170, 185); // Muted for generic files
+pub const CHEVRON_COLOR: Color = rgb(120, 130, 145); // Subtle chevrons
+
 // Focus indicators
 pub const FOCUS_RING: Color = Color {
     r: 88.0 / 255.0,
@@ -461,3 +466,480 @@ pub fn separator_container() -> impl Fn(&Theme) -> container::Style {
         ..Default::default()
     }
 }
+
+/// Compact tree row button - minimal padding, full-width hover
+pub fn tree_row_button(is_selected: bool) -> impl Fn(&Theme, button::Status) -> button::Style {
+    move |_theme, status| {
+        let bg_active = if is_selected {
+            Some(Background::Color(SURFACE2))
+        } else {
+            None
+        };
+
+        let base = button::Style {
+            background: bg_active,
+            text_color: TEXT,
+            border: Border {
+                radius: 2.0.into(),
+                width: 0.0,
+                color: Color::TRANSPARENT,
+            },
+            shadow: Shadow::default(),
+            snap: true,
+        };
+
+        match status {
+            button::Status::Active | button::Status::Disabled => base,
+            button::Status::Hovered => button::Style {
+                background: Some(Background::Color(if is_selected {
+                    SURFACE2
+                } else {
+                    SURFACE_HOVER
+                })),
+                ..base
+            },
+            button::Status::Pressed => button::Style {
+                background: Some(Background::Color(SURFACE2)),
+                ..base
+            },
+        }
+    }
+}
+
+/// Compact open file item - tight spacing, subtle hover
+pub fn open_file_button(is_active: bool) -> impl Fn(&Theme, button::Status) -> button::Style {
+    move |_theme, status| {
+        let base = button::Style {
+            background: if is_active {
+                Some(Background::Color(SURFACE2))
+            } else {
+                None
+            },
+            text_color: if is_active { TEXT } else { TEXT_SECONDARY },
+            border: Border {
+                radius: 3.0.into(),
+                width: 0.0,
+                color: Color::TRANSPARENT,
+            },
+            shadow: Shadow::default(),
+            snap: true,
+        };
+
+        match status {
+            button::Status::Active | button::Status::Disabled => base,
+            button::Status::Hovered => button::Style {
+                background: Some(Background::Color(SURFACE_HOVER)),
+                text_color: TEXT,
+                ..base
+            },
+            button::Status::Pressed => button::Style {
+                background: Some(Background::Color(SURFACE2)),
+                text_color: TEXT,
+                ..base
+            },
+        }
+    }
+}
+
+/// Tiny close button for file items
+pub fn close_button() -> impl Fn(&Theme, button::Status) -> button::Style {
+    |_theme, status| {
+        let base = button::Style {
+            background: None,
+            text_color: MUTED,
+            border: Border {
+                radius: 3.0.into(),
+                width: 0.0,
+                color: Color::TRANSPARENT,
+            },
+            shadow: Shadow::default(),
+            snap: true,
+        };
+
+        match status {
+            button::Status::Active | button::Status::Disabled => base,
+            button::Status::Hovered => button::Style {
+                background: Some(Background::Color(ERROR)),
+                text_color: TEXT,
+                ..base
+            },
+            button::Status::Pressed => button::Style {
+                background: Some(Background::Color(rgb(180, 70, 80))),
+                text_color: TEXT,
+                ..base
+            },
+        }
+    }
+}
+
+/// Chevron toggle button - invisible background, compact
+pub fn chevron_button() -> impl Fn(&Theme, button::Status) -> button::Style {
+    |_theme, status| {
+        let base = button::Style {
+            background: None,
+            text_color: CHEVRON_COLOR,
+            border: Border {
+                radius: 2.0.into(),
+                width: 0.0,
+                color: Color::TRANSPARENT,
+            },
+            shadow: Shadow::default(),
+            snap: true,
+        };
+
+        match status {
+            button::Status::Active | button::Status::Disabled => base,
+            button::Status::Hovered => button::Style {
+                background: Some(Background::Color(SURFACE_HOVER)),
+                text_color: TEXT_SECONDARY,
+                ..base
+            },
+            button::Status::Pressed => button::Style {
+                background: Some(Background::Color(SURFACE2)),
+                text_color: TEXT,
+                ..base
+            },
+        }
+    }
+}
+
+// ============================================================================
+// Document Tab Bar Styles
+// ============================================================================
+
+/// Container for the tab bar
+pub fn tab_bar_container() -> impl Fn(&Theme) -> container::Style {
+    |_theme| container::Style {
+        background: Some(Background::Color(BG_ELEVATED)),
+        border: Border {
+            radius: 0.0.into(),
+            width: 0.0,
+            color: Color::TRANSPARENT,
+        },
+        text_color: Some(TEXT),
+        ..Default::default()
+    }
+}
+
+/// Individual document tab button
+pub fn document_tab(is_active: bool) -> impl Fn(&Theme, button::Status) -> button::Style {
+    move |_theme, status| {
+        let base = button::Style {
+            background: if is_active {
+                Some(Background::Color(SURFACE))
+            } else {
+                None
+            },
+            text_color: if is_active { TEXT } else { TEXT_SECONDARY },
+            border: Border {
+                radius: 4.0.into(),
+                width: if is_active { 2.0 } else { 0.0 },
+                color: if is_active {
+                    PRIMARY
+                } else {
+                    Color::TRANSPARENT
+                },
+            },
+            shadow: Shadow::default(),
+            snap: true,
+        };
+
+        match status {
+            button::Status::Active | button::Status::Disabled => base,
+            button::Status::Hovered => button::Style {
+                background: Some(Background::Color(SURFACE_HOVER)),
+                text_color: TEXT,
+                ..base
+            },
+            button::Status::Pressed => button::Style {
+                background: Some(Background::Color(SURFACE2)),
+                text_color: TEXT,
+                ..base
+            },
+        }
+    }
+}
+
+/// Close button on tabs - smaller, more subtle
+pub fn tab_close_button() -> impl Fn(&Theme, button::Status) -> button::Style {
+    |_theme, status| {
+        let base = button::Style {
+            background: None,
+            text_color: MUTED,
+            border: Border {
+                radius: 3.0.into(),
+                width: 0.0,
+                color: Color::TRANSPARENT,
+            },
+            shadow: Shadow::default(),
+            snap: true,
+        };
+
+        match status {
+            button::Status::Active | button::Status::Disabled => base,
+            button::Status::Hovered => button::Style {
+                background: Some(Background::Color(ERROR)),
+                text_color: TEXT,
+                ..base
+            },
+            button::Status::Pressed => button::Style {
+                background: Some(Background::Color(rgb(180, 70, 80))),
+                text_color: TEXT,
+                ..base
+            },
+        }
+    }
+}
+
+/// Invisible scrollable for tab bar horizontal scroll
+pub fn invisible_scrollable() -> impl Fn(&Theme, scrollable::Status) -> scrollable::Style {
+    |_theme, _status| {
+        let rail = scrollable::Rail {
+            background: None,
+            border: Border::default(),
+            scroller: scrollable::Scroller {
+                background: Background::Color(Color::TRANSPARENT),
+                border: Border::default(),
+            },
+        };
+
+        scrollable::Style {
+            container: container::Style::default(),
+            vertical_rail: rail,
+            horizontal_rail: rail,
+            gap: None,
+            auto_scroll: scrollable::AutoScroll {
+                background: Background::Color(Color::TRANSPARENT),
+                border: Border::default(),
+                shadow: Shadow::default(),
+                icon: Color::TRANSPARENT,
+            },
+        }
+    }
+}
+
+// ============================================================================
+// Thin Scrollbar Styles
+// ============================================================================
+
+/// Thin scrollbar that expands on hover
+pub fn thin_scrollable() -> impl Fn(&Theme, scrollable::Status) -> scrollable::Style {
+    |_theme, status| {
+        let (scroller_color, width_multiplier) = match status {
+            scrollable::Status::Active { .. } => (MUTED, 1.0),
+            scrollable::Status::Hovered { .. } => (PRIMARY, 1.5),
+            scrollable::Status::Dragged { .. } => (PRIMARY_HOVER, 1.5),
+        };
+
+        let rail = scrollable::Rail {
+            background: Some(Background::Color(Color::from_rgba(0.0, 0.0, 0.0, 0.1))),
+            border: Border {
+                radius: (3.0 * width_multiplier).into(),
+                width: 0.0,
+                color: Color::TRANSPARENT,
+            },
+            scroller: scrollable::Scroller {
+                background: Background::Color(scroller_color),
+                border: Border {
+                    radius: (3.0 * width_multiplier).into(),
+                    width: 0.0,
+                    color: Color::TRANSPARENT,
+                },
+            },
+        };
+
+        scrollable::Style {
+            container: container::Style {
+                background: None,
+                text_color: Some(TEXT),
+                ..Default::default()
+            },
+            vertical_rail: rail,
+            horizontal_rail: rail,
+            gap: None,
+            auto_scroll: scrollable::AutoScroll {
+                background: Background::Color(SURFACE_HOVER),
+                border: Border {
+                    radius: 4.0.into(),
+                    width: 1.0,
+                    color: BORDER_SUBTLE,
+                },
+                shadow: elevation::level_1(),
+                icon: TEXT,
+            },
+        }
+    }
+}
+
+// ============================================================================
+// Console Panel Styles
+// ============================================================================
+
+/// Console tab button with bottom border indicator
+pub fn console_tab(is_active: bool) -> impl Fn(&Theme, button::Status) -> button::Style {
+    move |_theme, status| {
+        let base = button::Style {
+            background: None,
+            text_color: if is_active { TEXT } else { TEXT_SECONDARY },
+            border: Border {
+                radius: 0.0.into(),
+                width: 0.0,
+                color: Color::TRANSPARENT,
+            },
+            shadow: Shadow::default(),
+            snap: true,
+        };
+
+        match status {
+            button::Status::Active | button::Status::Disabled => button::Style {
+                border: Border {
+                    radius: 0.0.into(),
+                    width: if is_active { 2.0 } else { 0.0 },
+                    color: if is_active {
+                        PRIMARY
+                    } else {
+                        Color::TRANSPARENT
+                    },
+                },
+                ..base
+            },
+            button::Status::Hovered => button::Style {
+                background: Some(Background::Color(SURFACE_HOVER)),
+                text_color: TEXT,
+                border: Border {
+                    radius: 0.0.into(),
+                    width: if is_active { 2.0 } else { 0.0 },
+                    color: if is_active {
+                        PRIMARY
+                    } else {
+                        Color::TRANSPARENT
+                    },
+                },
+                ..base
+            },
+            button::Status::Pressed => button::Style {
+                background: Some(Background::Color(SURFACE2)),
+                text_color: TEXT,
+                ..base
+            },
+        }
+    }
+}
+
+// ============================================================================
+// Status Bar Styles
+// ============================================================================
+
+/// Status bar item - subtle hover effect
+pub fn status_item() -> impl Fn(&Theme, button::Status) -> button::Style {
+    |_theme, status| {
+        let base = button::Style {
+            background: None,
+            text_color: TEXT_SECONDARY,
+            border: Border {
+                radius: 3.0.into(),
+                width: 0.0,
+                color: Color::TRANSPARENT,
+            },
+            shadow: Shadow::default(),
+            snap: true,
+        };
+
+        match status {
+            button::Status::Active | button::Status::Disabled => base,
+            button::Status::Hovered => button::Style {
+                background: Some(Background::Color(SURFACE_HOVER)),
+                text_color: TEXT,
+                ..base
+            },
+            button::Status::Pressed => button::Style {
+                background: Some(Background::Color(SURFACE2)),
+                text_color: TEXT,
+                ..base
+            },
+        }
+    }
+}
+
+/// Vertical separator for status bar
+pub fn status_separator() -> impl Fn(&Theme) -> container::Style {
+    |_theme| container::Style {
+        background: Some(Background::Color(BORDER_SUBTLE)),
+        ..Default::default()
+    }
+}
+
+// ============================================================================
+// Search Dialog Styles
+// ============================================================================
+
+/// Compact toggle button for search options
+pub fn search_toggle(is_active: bool) -> impl Fn(&Theme, button::Status) -> button::Style {
+    move |_theme, status| {
+        let base = button::Style {
+            background: if is_active {
+                Some(Background::Color(PRIMARY))
+            } else {
+                Some(Background::Color(SURFACE))
+            },
+            text_color: if is_active { TEXT } else { TEXT_SECONDARY },
+            border: Border {
+                radius: 4.0.into(),
+                width: 1.0,
+                color: if is_active { PRIMARY } else { BORDER_SUBTLE },
+            },
+            shadow: Shadow::default(),
+            snap: true,
+        };
+
+        match status {
+            button::Status::Active | button::Status::Disabled => base,
+            button::Status::Hovered => button::Style {
+                background: Some(Background::Color(if is_active {
+                    PRIMARY_HOVER
+                } else {
+                    SURFACE_HOVER
+                })),
+                text_color: TEXT,
+                border: Border {
+                    radius: 4.0.into(),
+                    width: 1.0,
+                    color: PRIMARY,
+                },
+                ..base
+            },
+            button::Status::Pressed => button::Style {
+                background: Some(Background::Color(PRIMARY_PRESSED)),
+                text_color: TEXT,
+                ..base
+            },
+        }
+    }
+}
+
+// ============================================================================
+// Gutter / Editor Theme Colors
+// ============================================================================
+
+/// Gutter background color
+pub const GUTTER_BG: Color = rgb(22, 24, 30);
+
+/// Gutter line number color
+pub const GUTTER_LINE_NUMBER: Color = rgb(90, 95, 110);
+
+/// Gutter line number color for current line
+pub const GUTTER_LINE_NUMBER_ACTIVE: Color = rgb(180, 185, 195);
+
+/// Gutter border/separator color
+pub const GUTTER_BORDER: Color = rgb(35, 40, 48);
+
+/// Breakpoint dot color with glow
+pub const BREAKPOINT_COLOR: Color = rgb(255, 80, 80);
+
+/// Breakpoint glow color (for outer ring)
+pub const BREAKPOINT_GLOW: Color = Color {
+    r: 1.0,
+    g: 0.3,
+    b: 0.3,
+    a: 0.3,
+};

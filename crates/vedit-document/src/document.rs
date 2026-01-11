@@ -61,11 +61,7 @@ impl Document {
     }
 
     /// Create a new document with a pre-built mmap cache (for large files)
-    fn new_with_cache(
-        path: String,
-        content: impl Into<TextBuffer>,
-        cache: MmapCache,
-    ) -> Self {
+    fn new_with_cache(path: String, content: impl Into<TextBuffer>, cache: MmapCache) -> Self {
         let fingerprint = Some(compute_fingerprint(&path));
         Self {
             path: Some(path),
