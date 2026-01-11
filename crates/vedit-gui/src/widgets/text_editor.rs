@@ -563,7 +563,8 @@ impl<'a, Message> TextEditor<'a, Message, highlighter::PlainText> {
         let gutter_width = DEFAULT_GUTTER_WIDTH;
         let mut inner = text_editor::TextEditor::new(content);
         let effective = add_gutter(base_padding, gutter_width);
-        inner = inner.padding(effective);
+        // Set a large width to make the editor fill available space
+        inner = inner.padding(effective).width(10000.0);
         let pointer_correction = Rc::new(Cell::new(pointer_correction_value(
             base_padding,
             gutter_width,
@@ -836,7 +837,19 @@ where
         renderer: &IcedRenderer,
         limits: &layout::Limits,
     ) -> layout::Node {
-        self.inner.layout(tree, renderer, limits)
+        // Force the widget to fill all available space
+        let max = limits.max();
+        let min = limits.min();
+
+        // Use max dimensions, falling back to min or reasonable defaults
+        let width = if max.width.is_finite() { max.width } else { min.width.max(800.0) };
+        let height = if max.height.is_finite() { max.height } else { min.height.max(600.0) };
+
+        // Still run inner layout to set up tree state, but ignore its size
+        let _inner_node = self.inner.layout(tree, renderer, limits);
+
+        // Return a node that fills the space - no children, inner will draw at our bounds
+        layout::Node::new(Size::new(width, height))
     }
 
     fn update(

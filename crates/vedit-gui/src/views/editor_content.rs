@@ -5,8 +5,8 @@ use crate::syntax::{SyntaxHighlighter, format_highlight};
 use crate::views::console_panel;
 use crate::views::scrollbar_style::editor_scrollbar_style;
 use crate::widgets::text_editor::TextEditor as EditorWidget;
-use iced::widget::{column, container, row, text, vertical_slider};
-use iced::{Alignment, Color, Element, Font, Length, Pixels};
+use iced::widget::{column, container, row, vertical_slider};
+use iced::{Color, Element, Font, Length, Pixels};
 
 pub fn render_editor_content(
     state: &EditorState,
@@ -44,35 +44,19 @@ pub fn render_editor_content(
         .on_action(Message::BufferAction)
         .height(Length::Fill);
 
-    let buffer_panel: Element<'_, Message> = container(buffer)
-        .padding((4.0 * scale).max(2.0))
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .style(panel_container())
-        .into();
-
-    let scrollbar_track: Element<'_, Message> = container(scrollbar)
-        .width(Length::Fixed(scrollbar_width))
-        .height(Length::Fill)
-        .center_x(Length::Fill)
-        .into();
-
-    let buffer_content = row![buffer_panel, scrollbar_track,]
-        .spacing((6.0 * scale).max(3.0))
-        .align_y(Alignment::Start)
+    // Put buffer and scrollbar together in a row, then wrap in styled container
+    let buffer_with_scrollbar = row![buffer, scrollbar]
+        .spacing(4.0)
         .width(Length::Fill)
         .height(Length::Fill);
 
-    let editor_panel = column![
-        text("Active Buffer").size((16.0 * scale).max(12.0)),
-        buffer_content,
-    ]
-    .spacing(spacing_medium)
-    .padding(spacing_large)
-    .width(Length::Fill)
-    .height(Length::Fill);
+    let editor_panel = container(buffer_with_scrollbar)
+        .padding((4.0 * scale).max(2.0))
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .style(panel_container());
 
-    let sidebar_width = (240.0 / state.scale_factor()).clamp(180.0, 320.0) as f32;
+    let sidebar_width = (200.0 / state.scale_factor()).clamp(140.0, 240.0) as f32;
 
     let open_panel = crate::views::open_files::render_open_files_panel(
         state,
@@ -86,7 +70,7 @@ pub fn render_editor_content(
         crate::widgets::right_rail::render_right_rail(state, scale, sidebar_width);
 
     let content_row = row![open_panel, editor_panel, workspace_panel]
-        .spacing(spacing_large)
+        .spacing(spacing_small)
         .width(Length::Fill)
         .height(Length::Fill);
 
