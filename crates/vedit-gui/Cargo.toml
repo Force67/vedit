@@ -45,6 +45,8 @@ tree-sitter-html = "0.23"
 tree-sitter-css = "0.25"
 tree-sitter-lua = "0.4"
 tree-sitter-nix = "0.3"
+tree-sitter-md = "0.3"
+tree-sitter-toml-ng = "0.7"
 itoa = "1.0"
 chrono = "0.4"
 

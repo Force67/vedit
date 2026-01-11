@@ -107,6 +107,8 @@ struct LanguageRegistry {
     css: OnceLock<Option<LanguageConfig>>,
     lua: OnceLock<Option<LanguageConfig>>,
     nix: OnceLock<Option<LanguageConfig>>,
+    markdown: OnceLock<Option<LanguageConfig>>,
+    toml: OnceLock<Option<LanguageConfig>>,
 }
 
 impl LanguageRegistry {
@@ -129,6 +131,8 @@ impl LanguageRegistry {
             css: OnceLock::new(),
             lua: OnceLock::new(),
             nix: OnceLock::new(),
+            markdown: OnceLock::new(),
+            toml: OnceLock::new(),
         }
     }
 
@@ -329,7 +333,33 @@ impl LanguageRegistry {
                     )
                 })
                 .as_ref(),
-            // PlainText, Markdown, Toml and other unsupported languages
+            Language::Markdown => self
+                .markdown
+                .get_or_init(|| {
+                    build_config(
+                        tree_sitter_md::LANGUAGE.into(),
+                        "markdown",
+                        tree_sitter_md::HIGHLIGHT_QUERY_BLOCK,
+                        Some(tree_sitter_md::INJECTION_QUERY_BLOCK),
+                        None,
+                        &self.theme,
+                    )
+                })
+                .as_ref(),
+            Language::Toml => self
+                .toml
+                .get_or_init(|| {
+                    build_config(
+                        tree_sitter_toml_ng::LANGUAGE.into(),
+                        "toml",
+                        tree_sitter_toml_ng::HIGHLIGHTS_QUERY,
+                        None,
+                        None,
+                        &self.theme,
+                    )
+                })
+                .as_ref(),
+            // PlainText and other unsupported languages
             _ => None,
         }
     }
