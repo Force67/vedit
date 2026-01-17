@@ -43,7 +43,7 @@ pub fn render_editor_content(
         .debug_dots(state.get_debug_dots().to_vec())
         .sticky_notes(state.active_sticky_notes())
         .on_gutter_click(|line_number| Message::GutterClicked(line_number))
-        .on_right_click(|x, y| Message::EditorContextMenuShow(x, y))
+        .on_right_click(|x, y, pos| Message::EditorContextMenuShow(x, y, pos))
         .on_hover(|pos, x, y| Message::EditorHover(pos, x, y))
         .padding(editor_padding)
         .on_action(Message::BufferAction)

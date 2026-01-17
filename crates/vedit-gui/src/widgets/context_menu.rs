@@ -5,11 +5,51 @@ use iced::{Element, Length};
 use iced_font_awesome::fa_icon_solid;
 
 /// Render the editor context menu at the given position
-pub fn render_context_menu(_x: f32, _y: f32, scale: f32) -> Element<'static, Message> {
+pub fn render_context_menu(
+    _x: f32,
+    _y: f32,
+    scale: f32,
+    has_definition: bool,
+) -> Element<'static, Message> {
     let item_padding = (6.0 * scale) as u16;
     let icon_size = 12.0 * scale;
     let text_size = 13.0 * scale;
-    let menu_width = 180.0 * scale;
+    let menu_width = 200.0 * scale;
+
+    let mut menu_items: Vec<Element<'static, Message>> = Vec::new();
+
+    // Jump to Definition item (only shown when a symbol with definition is under cursor)
+    if has_definition {
+        let goto_item = {
+            let icon_el = fa_icon_solid("arrow-right")
+                .size(icon_size)
+                .color(style::TEXT_SECONDARY);
+            let label_el = text("Jump to Definition").size(text_size);
+            let shortcut_el = text("F12").size(text_size * 0.85).color(style::MUTED);
+
+            let content = row![
+                icon_el,
+                label_el,
+                Space::new().width(Length::Fill),
+                shortcut_el
+            ]
+            .spacing(8)
+            .align_y(iced::Alignment::Center);
+
+            button(content)
+                .padding(item_padding)
+                .width(Length::Fill)
+                .style(style::tree_row_button(false))
+                .on_press(Message::EditorContextMenuGotoDefinition)
+        };
+        menu_items.push(goto_item.into());
+
+        // Separator after goto definition
+        let separator = container(Space::new().width(Length::Fill).height(Length::Fixed(1.0)))
+            .style(style::separator_container())
+            .padding([4, 0]);
+        menu_items.push(separator.into());
+    }
 
     // Add Sticky Note item
     let sticky_note_item = {
@@ -28,6 +68,13 @@ pub fn render_context_menu(_x: f32, _y: f32, scale: f32) -> Element<'static, Mes
             .style(style::tree_row_button(false))
             .on_press(Message::EditorContextMenuAddStickyNote)
     };
+    menu_items.push(sticky_note_item.into());
+
+    // Separator
+    let separator = container(Space::new().width(Length::Fill).height(Length::Fixed(1.0)))
+        .style(style::separator_container())
+        .padding([4, 0]);
+    menu_items.push(separator.into());
 
     // Select All item
     let select_all_item = {
@@ -52,13 +99,9 @@ pub fn render_context_menu(_x: f32, _y: f32, scale: f32) -> Element<'static, Mes
             .style(style::tree_row_button(false))
             .on_press(Message::EditorContextMenuSelectAll)
     };
+    menu_items.push(select_all_item.into());
 
-    // Separator
-    let separator = container(Space::new().width(Length::Fill).height(Length::Fixed(1.0)))
-        .style(style::separator_container())
-        .padding([4, 0]);
-
-    let menu = column![sticky_note_item, separator, select_all_item]
+    let menu = column(menu_items)
         .spacing(2)
         .width(Length::Fixed(menu_width));
 
@@ -79,6 +122,7 @@ pub fn render_context_menu_overlay(
     y: f32,
     scale: f32,
     window_size: iced::Size,
+    has_definition: bool,
 ) -> Element<'static, Message> {
     use iced::widget::stack;
 
@@ -91,12 +135,12 @@ pub fn render_context_menu_overlay(
     .on_press(Message::EditorContextMenuHide);
 
     // The actual menu
-    let menu = render_context_menu(x, y, scale);
+    let menu = render_context_menu(x, y, scale, has_definition);
 
     // Position the menu using padding from top-left
     // Clamp position so menu stays on screen
-    let menu_width = 180.0 * scale;
-    let menu_height = 100.0 * scale; // Approximate height
+    let menu_width = 200.0 * scale;
+    let menu_height = if has_definition { 140.0 } else { 100.0 } * scale;
 
     let clamped_x = x.min(window_size.width - menu_width - 10.0).max(0.0);
     let clamped_y = y.min(window_size.height - menu_height - 10.0).max(0.0);

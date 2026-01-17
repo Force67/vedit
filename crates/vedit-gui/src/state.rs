@@ -220,6 +220,7 @@ pub struct EditorState {
     // Context menu state
     context_menu_visible: bool,
     context_menu_position: (f32, f32),
+    context_menu_definition: Option<vedit_symbols::DefinitionLocation>,
     // Solution explorer tree state
     solution_expanded_nodes: HashSet<String>,
     // Hover-to-definition state
@@ -279,6 +280,7 @@ impl Default for EditorState {
             tabs_at_top: true, // Default to top tabs (VS-style)
             context_menu_visible: false,
             context_menu_position: (0.0, 0.0),
+            context_menu_definition: None,
             solution_expanded_nodes: HashSet::new(),
             symbol_index: vedit_symbols::SymbolIndex::new(),
             hover_info: None,
@@ -735,13 +737,36 @@ impl EditorState {
     }
 
     // Context menu methods
-    pub fn show_context_menu(&mut self, x: f32, y: f32) {
+    pub fn show_context_menu(
+        &mut self,
+        x: f32,
+        y: f32,
+        hover_pos: Option<crate::widgets::text_editor::HoverPosition>,
+    ) {
         self.context_menu_visible = true;
         self.context_menu_position = (x, y);
+
+        // Look up symbol at the right-click position
+        self.context_menu_definition = if let Some(pos) = hover_pos {
+            use vedit_symbols::{line_column_to_byte_offset, symbol_at_offset};
+
+            self.editor().active_document().and_then(|doc| {
+                let content = doc.buffer.to_string();
+                let byte_offset = line_column_to_byte_offset(&content, pos.line, pos.column)?;
+                let hover_symbol = symbol_at_offset(&content, byte_offset)?;
+
+                // Look up the definition in the symbol index
+                let definitions = self.symbol_index.find_definition(&hover_symbol.name);
+                definitions.first().map(|def| (*def).clone())
+            })
+        } else {
+            None
+        };
     }
 
     pub fn hide_context_menu(&mut self) {
         self.context_menu_visible = false;
+        self.context_menu_definition = None;
     }
 
     pub fn context_menu_visible(&self) -> bool {
@@ -750,6 +775,10 @@ impl EditorState {
 
     pub fn context_menu_position(&self) -> (f32, f32) {
         self.context_menu_position
+    }
+
+    pub fn context_menu_definition(&self) -> Option<&vedit_symbols::DefinitionLocation> {
+        self.context_menu_definition.as_ref()
     }
 
     // Hover-to-definition methods

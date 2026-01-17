@@ -122,7 +122,9 @@ pub fn view(state: &EditorState) -> Element<'_, Message> {
     // Overlay the editor context menu
     if state.context_menu_visible() {
         let (x, y) = state.context_menu_position();
-        let context_menu = render_context_menu_overlay(x, y, scale, state.current_window_size);
+        let has_definition = state.context_menu_definition().is_some();
+        let context_menu =
+            render_context_menu_overlay(x, y, scale, state.current_window_size, has_definition);
         layers.push(context_menu);
     }
 

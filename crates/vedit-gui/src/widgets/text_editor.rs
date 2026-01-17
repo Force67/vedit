@@ -566,7 +566,7 @@ where
     debug_dots: Vec<DebugDot>,
     sticky_notes: Vec<StickyNote>,
     on_gutter_click: Option<Rc<dyn Fn(usize) -> Message>>,
-    on_right_click: Option<Rc<dyn Fn(f32, f32) -> Message>>,
+    on_right_click: Option<Rc<dyn Fn(f32, f32, Option<HoverPosition>) -> Message>>, // (x, y, position)
     on_hover: Option<Rc<dyn Fn(HoverPosition, f32, f32) -> Message>>, // (position, x, y)
     hover_line: Option<usize>,
     cached_line_numbers: Rc<RefCell<CachedLineNumbers>>,
@@ -769,7 +769,7 @@ where
 
     pub fn on_right_click<F>(mut self, f: F) -> Self
     where
-        F: Fn(f32, f32) -> Message + 'a + 'static,
+        F: Fn(f32, f32, Option<HoverPosition>) -> Message + 'a + 'static,
     {
         self.on_right_click = Some(Rc::new(f));
         self
@@ -986,7 +986,9 @@ where
             (&self.on_right_click, cursor.position_over(layout.bounds()))
         {
             if let Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Right)) = event {
-                shell.publish(right_click_handler(cursor_pos.x, cursor_pos.y));
+                // Calculate hover position for symbol lookup
+                let hover_pos = self.get_hover_position(cursor_pos, layout.bounds());
+                shell.publish(right_click_handler(cursor_pos.x, cursor_pos.y, hover_pos));
                 return;
             }
         }

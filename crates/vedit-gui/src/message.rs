@@ -124,13 +124,14 @@ pub enum Message {
     GutterClicked(usize), // Line number clicked in gutter
 
     // Editor context menu messages
-    EditorContextMenuShow(f32, f32), // (x, y) position
+    EditorContextMenuShow(f32, f32, Option<crate::widgets::text_editor::HoverPosition>), // (x, y, position)
     EditorContextMenuHide,
     EditorContextMenuAddStickyNote,
     EditorContextMenuCut,
     EditorContextMenuCopy,
     EditorContextMenuPaste,
     EditorContextMenuSelectAll,
+    EditorContextMenuGotoDefinition,
 
     // Session management messages
     SessionLoad(Result<crate::session::SessionState, String>),

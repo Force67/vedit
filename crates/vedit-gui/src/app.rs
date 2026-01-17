@@ -568,8 +568,8 @@ impl EditorApp {
                 }
             }
             // Context menu messages
-            Message::EditorContextMenuShow(x, y) => {
-                self.state.show_context_menu(x, y);
+            Message::EditorContextMenuShow(x, y, hover_pos) => {
+                self.state.show_context_menu(x, y, hover_pos);
             }
             Message::EditorContextMenuHide => {
                 self.state.hide_context_menu();
@@ -604,6 +604,20 @@ impl EditorApp {
                 self.state.hide_context_menu();
                 self.state
                     .apply_buffer_action(iced::widget::text_editor::Action::SelectAll);
+            }
+            Message::EditorContextMenuGotoDefinition => {
+                // Get the definition before hiding the menu (which clears it)
+                let definition = self.state.context_menu_definition().cloned();
+                self.state.hide_context_menu();
+
+                if let Some(def) = definition {
+                    // Reuse the HoverGotoDefinition logic
+                    let path_str = def.file_path.to_string_lossy().to_string();
+                    return self.wrap_command(Task::perform(
+                        commands::load_document_from_path(path_str.clone()),
+                        move |result| Message::FileLoaded(result.map(Some)),
+                    ));
+                }
             }
 
             // Hover-to-definition messages
