@@ -133,6 +133,9 @@ pub struct RemoteDesktopSession {
     /// Process handle for the desktop server
     server_process: Option<Child>,
 
+    /// Process handle for Xvfb (used by VNC sessions)
+    xvfb_process: Option<Child>,
+
     /// Session start time
     pub start_time: std::time::Instant,
 
@@ -169,22 +172,28 @@ impl RemoteDesktop {
             None
         };
 
-        let session = match session_type {
+        let (server_process, xvfb_process) = match session_type {
             DesktopType::Vnc => {
                 self.create_vnc_session(session_id, port, resolution, password.clone())
                     .await?
             }
             DesktopType::Rdp => {
-                self.create_rdp_session(session_id, port, resolution, password.clone())
-                    .await?
+                let process = self
+                    .create_rdp_session(session_id, port, resolution, password.clone())
+                    .await?;
+                (process, None)
             }
             DesktopType::X11 => {
-                self.create_x11_session(session_id, port, resolution, password.clone())
-                    .await?
+                let process = self
+                    .create_x11_session(session_id, port, resolution, password.clone())
+                    .await?;
+                (process, None)
             }
             DesktopType::Wayland => {
-                self.create_wayland_session(session_id, port, resolution, password.clone())
-                    .await?
+                let process = self
+                    .create_wayland_session(session_id, port, resolution, password.clone())
+                    .await?;
+                (process, None)
             }
         };
 
@@ -196,7 +205,8 @@ impl RemoteDesktop {
             port,
             resolution,
             password,
-            server_process: Some(session),
+            server_process: Some(server_process),
+            xvfb_process,
             start_time: std::time::Instant::now(),
             connection_url,
             wine_process_id,
@@ -206,14 +216,14 @@ impl RemoteDesktop {
         Ok(session_id)
     }
 
-    /// Create VNC session
+    /// Create VNC session, returning (vnc_process, xvfb_process)
     async fn create_vnc_session(
         &self,
         _session_id: Uuid,
         port: u16,
         resolution: (u32, u32),
         password: Option<String>,
-    ) -> WineResult<Child> {
+    ) -> WineResult<(Child, Option<Child>)> {
         tracing::info!(
             "Creating VNC session on port {} with resolution {:?}",
             port,
@@ -224,10 +234,8 @@ impl RemoteDesktop {
         let display_num = port - 5900;
         let display_str = format!(":{}", display_num);
 
-        // Start Xvfb
-        // TODO(Vince): The Xvfb process is spawned but not tracked. It needs to be stored
-        // and killed when the VNC session ends, otherwise Xvfb processes will leak.
-        let _xvfb_process = Command::new("Xvfb")
+        // Start Xvfb - store the process handle so it can be killed when the session ends
+        let xvfb_process = Command::new("Xvfb")
             .arg(&display_str)
             .arg("-screen")
             .arg("0")
@@ -272,7 +280,7 @@ impl RemoteDesktop {
         // Give VNC server a moment to start
         tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
 
-        Ok(vnc_process)
+        Ok((vnc_process, Some(xvfb_process)))
     }
 
     /// Create RDP session
@@ -441,11 +449,18 @@ impl RemoteDesktop {
 
     /// Close a remote desktop session
     pub async fn close_session(&mut self, session_id: &Uuid) -> WineResult<()> {
-        if let Some(session) = self.sessions.remove(session_id) {
+        if let Some(mut session) = self.sessions.remove(session_id) {
+            // Kill the main server process (e.g., x11vnc)
             if let Some(mut process) = session.server_process {
                 process.kill().await.map_err(|e| {
                     WineError::RemoteDesktopError(format!("Failed to kill server process: {}", e))
                 })?;
+            }
+            // Kill the Xvfb process if present (used by VNC sessions)
+            if let Some(mut xvfb) = session.xvfb_process.take() {
+                if let Err(e) = xvfb.kill().await {
+                    tracing::warn!("Failed to kill Xvfb process: {}", e);
+                }
             }
             tracing::info!("Closed remote desktop session: {}", session_id);
         }

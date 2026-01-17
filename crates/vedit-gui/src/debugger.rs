@@ -1040,6 +1040,25 @@ impl DebuggerRuntime {
                 VeditEvent::Disassembly(_) => DebuggerUiEvent::SessionError {
                     message: "disassembly".to_string(),
                 },
+                VeditEvent::BreakpointAdded { address, success } => DebuggerUiEvent::SessionError {
+                    message: format!(
+                        "breakpoint {}: 0x{:x}",
+                        if success { "added" } else { "failed to add" },
+                        address
+                    ),
+                },
+                VeditEvent::BreakpointRemoved { address, success } => {
+                    DebuggerUiEvent::SessionError {
+                        message: format!(
+                            "breakpoint {}: 0x{:x}",
+                            if success { "removed" } else { "failed to remove" },
+                            address
+                        ),
+                    }
+                }
+                VeditEvent::BreakpointList(breakpoints) => DebuggerUiEvent::SessionError {
+                    message: format!("active breakpoints: {}", breakpoints.len()),
+                },
             }),
         }
     }

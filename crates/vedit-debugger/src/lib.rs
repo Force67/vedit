@@ -48,6 +48,9 @@ pub enum DebuggerCommand {
     Kill,
     ReadMemory(u64, usize),  // address, size
     Disassemble(u64, usize), // address, instruction count
+    AddBreakpoint(u64),      // address
+    RemoveBreakpoint(u64),   // address
+    ListBreakpoints,
 }
 
 #[derive(Debug, Clone)]
@@ -58,6 +61,9 @@ pub enum DebuggerEvent {
     Error(String),
     MemoryRead(Vec<u8>),
     Disassembly(Vec<String>),
+    BreakpointAdded { address: u64, success: bool },
+    BreakpointRemoved { address: u64, success: bool },
+    BreakpointList(Vec<Breakpoint>),
 }
 
 #[derive(Debug, Clone)]
@@ -150,10 +156,7 @@ pub fn spawn_session(config: LaunchConfig) -> Result<VeditSession, DebuggerError
     });
 
     let command_event_sender = event_sender.clone();
-    // TODO(Vince): Pass breakpoints to command handler thread for:
-    // - AddBreakpoint/RemoveBreakpoint commands
-    // - Temporarily disabling breakpoints during single-step
-    // - Listing active breakpoints
+    let breakpoints_for_commands = breakpoints.clone();
     thread::spawn(move || {
         while let Ok(command) = command_receiver.recv() {
             match command {
@@ -195,6 +198,81 @@ pub fn spawn_session(config: LaunchConfig) -> Result<VeditSession, DebuggerError
                                 command_event_sender.send(DebuggerEvent::Error(err.to_string()));
                         }
                     }
+                }
+                DebuggerCommand::AddBreakpoint(addr) => {
+                    let mut bps = breakpoints_for_commands.lock().unwrap();
+                    if bps.contains_key(&addr) {
+                        // Breakpoint already exists at this address
+                        let _ = command_event_sender.send(DebuggerEvent::BreakpointAdded {
+                            address: addr,
+                            success: true,
+                        });
+                    } else {
+                        match set_breakpoint(child_pid, addr) {
+                            Ok(original_byte) => {
+                                bps.insert(
+                                    addr,
+                                    Breakpoint {
+                                        address: addr,
+                                        original_byte,
+                                        enabled: true,
+                                    },
+                                );
+                                let _ = command_event_sender.send(DebuggerEvent::BreakpointAdded {
+                                    address: addr,
+                                    success: true,
+                                });
+                            }
+                            Err(err) => {
+                                let _ = command_event_sender.send(DebuggerEvent::Error(format!(
+                                    "Failed to set breakpoint at 0x{:x}: {}",
+                                    addr, err
+                                )));
+                                let _ = command_event_sender.send(DebuggerEvent::BreakpointAdded {
+                                    address: addr,
+                                    success: false,
+                                });
+                            }
+                        }
+                    }
+                }
+                DebuggerCommand::RemoveBreakpoint(addr) => {
+                    let mut bps = breakpoints_for_commands.lock().unwrap();
+                    if let Some(bp) = bps.remove(&addr) {
+                        match restore_breakpoint(child_pid, &bp) {
+                            Ok(()) => {
+                                let _ =
+                                    command_event_sender.send(DebuggerEvent::BreakpointRemoved {
+                                        address: addr,
+                                        success: true,
+                                    });
+                            }
+                            Err(err) => {
+                                // Put it back since we failed to restore
+                                bps.insert(addr, bp);
+                                let _ = command_event_sender.send(DebuggerEvent::Error(format!(
+                                    "Failed to remove breakpoint at 0x{:x}: {}",
+                                    addr, err
+                                )));
+                                let _ =
+                                    command_event_sender.send(DebuggerEvent::BreakpointRemoved {
+                                        address: addr,
+                                        success: false,
+                                    });
+                            }
+                        }
+                    } else {
+                        // No breakpoint at this address
+                        let _ = command_event_sender.send(DebuggerEvent::BreakpointRemoved {
+                            address: addr,
+                            success: false,
+                        });
+                    }
+                }
+                DebuggerCommand::ListBreakpoints => {
+                    let bps = breakpoints_for_commands.lock().unwrap();
+                    let list: Vec<Breakpoint> = bps.values().cloned().collect();
+                    let _ = command_event_sender.send(DebuggerEvent::BreakpointList(list));
                 }
             }
         }
