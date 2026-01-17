@@ -16,8 +16,8 @@ pub use vedit_keybinds::{
 pub use vedit_syntax::Language;
 pub use vedit_text::TextBuffer;
 pub use vedit_workspace::{
-    DirEntryMeta, FileMeta, FileNode, FilterState, FsWorkspaceProvider, GitStatus, LegacyNodeKind,
-    Node, NodeId, NodeKind, WorkspaceProvider, WorkspaceTree,
+    DirEntryMeta, FileMeta, FilterState, FsWorkspaceProvider, GitStatus, Node, NodeId, NodeKind,
+    WorkspaceProvider, WorkspaceTree,
 };
 
 // Re-export document types from vedit-document

@@ -17,7 +17,6 @@ use crate::widgets::text_editor::{DebugDot, ScrollMetrics, buffer_scroll_metrics
 use iced::keyboard;
 use iced::widget::text_editor::{Action as TextEditorAction, Content};
 use std::cmp::Ordering;
-use std::collections::HashSet;
 use std::env;
 use std::ffi::OsStr;
 use std::fs;
@@ -26,7 +25,7 @@ use std::time::{Duration, Instant};
 use vedit_application::{
     AppState, CommandPaletteState, QuickCommand, QuickCommandId, SettingsState,
 };
-use vedit_core::{Editor, FileNode, KeyEvent, Language, StickyNote, TextBuffer, WorkspaceConfig};
+use vedit_core::{Editor, KeyEvent, Language, StickyNote, TextBuffer, WorkspaceConfig};
 use vedit_make::Makefile;
 use vedit_vs::{Solution as VsSolution, VcxProject};
 
@@ -101,17 +100,6 @@ pub enum ResizeDirection {
     Both,
 }
 
-fn collect_directory_paths(nodes: &[FileNode], output: &mut Vec<String>) {
-    for node in nodes {
-        if node.is_directory {
-            output.push(node.path.clone());
-            if !node.children.is_empty() {
-                collect_directory_paths(&node.children, output);
-            }
-        }
-    }
-}
-
 impl ZoomConfig {
     fn load() -> Self {
         let mut config = Self {
@@ -170,8 +158,6 @@ pub struct EditorState {
     scale_factor: f64,
     code_font_zoom: f64,
     syntax: SyntaxSystem,
-    workspace_collapsed: HashSet<String>,
-    workspace_collapsed_version: u64,
     file_explorer: Option<FileExplorer>,
     solution_browser: Vec<SolutionBrowserEntry>,
     pub recent_files: Vec<String>,
@@ -217,8 +203,6 @@ impl Default for EditorState {
             scale_factor: initial_scale,
             code_font_zoom: 1.0,
             syntax: SyntaxSystem::new(),
-            workspace_collapsed: HashSet::new(),
-            workspace_collapsed_version: 0,
             file_explorer: None,
             solution_browser: Vec::new(),
             recent_files: vec![],
@@ -493,41 +477,6 @@ impl EditorState {
         self.app.workspace_display_name()
     }
 
-    pub fn workspace_collapsed_paths(&self) -> Vec<String> {
-        let mut paths: Vec<String> = self.workspace_collapsed.iter().cloned().collect();
-        paths.sort();
-        paths
-    }
-
-    pub fn workspace_collapsed_version(&self) -> u64 {
-        self.workspace_collapsed_version
-    }
-
-    pub fn toggle_workspace_directory(&mut self, path: String) -> Result<(), String> {
-        if self.workspace_collapsed.remove(&path) {
-            let result = {
-                let editor = self.app.editor_mut();
-                editor.load_workspace_directory(&path)
-            };
-
-            match result {
-                Ok(new_directories) => {
-                    for directory in new_directories {
-                        self.workspace_collapsed.insert(directory);
-                    }
-                }
-                Err(err) => {
-                    self.workspace_collapsed.insert(path);
-                    return Err(format!("Failed to read directory: {}", err));
-                }
-            }
-        } else {
-            self.workspace_collapsed.insert(path);
-        }
-        self.workspace_collapsed_version = self.workspace_collapsed_version.wrapping_add(1);
-        Ok(())
-    }
-
     pub fn keymap_path_display(&self) -> Option<String> {
         self.app.keymap_path_display()
     }
@@ -627,11 +576,10 @@ impl EditorState {
     pub fn install_workspace(
         &mut self,
         root: String,
-        tree: Vec<FileNode>,
         config: WorkspaceConfig,
         metadata: WorkspaceMetadata,
     ) {
-        self.app.install_workspace(root, tree, config, metadata);
+        self.app.install_workspace(root, config, metadata);
         let recent_targets = self.app.workspace_recent_debug_targets();
         let last_target = self.app.workspace_last_debug_target();
         self.debugger
@@ -639,16 +587,6 @@ impl EditorState {
         if let Err(err) = self.restore_console_from_metadata() {
             self.set_error(Some(err));
         }
-        self.workspace_collapsed.clear();
-        // Don't collapse directories by default - let users expand them manually
-        // if let Some(nodes) = self.app.editor().workspace_tree() {
-        //     let mut directories = Vec::new();
-        //     collect_directory_paths(nodes, &mut directories);
-        //     for path in directories {
-        //         self.workspace_collapsed.insert(path);
-        //     }
-        // }
-        self.workspace_collapsed_version = self.workspace_collapsed_version.wrapping_add(1);
         if let Err(err) = self.refresh_debug_targets() {
             self.set_error(Some(err));
         }

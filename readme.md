@@ -1,59 +1,10 @@
-# Minimal Text Editor (Rust) — with first-class debugging
-
-> Fast. Native. No jank. A tiny editor where the **debugger is a first-class citizen**—not a bolted-on afterthought.
+# Vedit
 
 ## Why?!?
+Simple Editor with a simple workflow loop. Set breakpoints like in visual studio. No visual studio bloat. Works great on Linux (in fact i primarily use it there). Loads your makefiles and/or your visual studio projects directly. I mainly made this editor so i can directly modify it on a whim for my personal workflow.
 
-I want the Visual Studio vibe (hit F5, set breakpoints, hover to inspect, just debug) **without** the VS bloat or separate processes. On Linux especially, I’m tired of juggling terminals and glue scripts just to step through code. I want to click “run,” start debugging from the editor, and get on with it.
+Its fast, cause its written in rust (lol). While iced is not "super" responsive, i try to get the best performance out of it.
 
-Also: editors should be **fast**. This one is written in **Rust** with **iced** for the GUI, because latency kills flow. My day-to-day languages are **C++** and **Rust**, so the editor should feel great for those—**no fuss**.
+It also supports a few extra "me specific" usecases, such as being able to debug windows programs on linux via wine.
 
-## Goal?
-
-- Start and control debugging **from the editor**.
-- Set breakpoints inline.
-- Hover variables to see values and state.
-- Keep the UI snappy and minimal.
-- Be a good time for C++ and Rust projects.
-
-> TL;DR: VS-style debugging UX, Linux-friendly, tiny and quick.
-
-## Features (List in progress)
-- Workspace specific settings
-
-## Getting Started
-
-### The easy way (Nix)
-
-```bash
-# Enter the dev shell
-nix develop
-
-# Run the editor
-cargo run
-````
-
-If you hit system-lib issues, the Nix dev shell is the smooth path for now.
-
-## Performance notes
-
-* Rust + iced for predictable latency.
-* Minimal UI, no electron weight.
-* Focused feature set so the hot path stays hot.
-
-## Roadmap (rough cut)
-
-* [ ] Launch/debug sessions from the editor (Rust & C++)
-* [ ] Inline breakpoints + gutter markers
-* [ ] Hover-to-inspect variables / scopes view
-* [ ] Call stack + watch panes
-* [ ] Rust and C++ build/run presets
-* [ ] Keybindings that don’t fight you
-
-## Contributing
-
-Bug reports, ideas, and PRs welcome—especially around debugging backends and Linux packaging. Keep it small and focused.
-
-## License
-
-TBD
+Also, im still in the finding phase, so bear with me while i figure out the degree of "ide" that this editor should have.

@@ -6,7 +6,7 @@ use rfd::FileDialog;
 use std::fs;
 use std::path::PathBuf;
 use vedit_config::{WorkspaceConfig, WorkspaceMetadata};
-use vedit_core::{Document, Editor, FileNode};
+use vedit_core::Document;
 use vedit_debugger_gdb::{
     Breakpoint as DebuggerBreakpoint, GdbSession, LaunchConfig as DebuggerLaunchConfig,
 };
@@ -27,7 +27,6 @@ pub struct SaveKeymapRequest {
 #[derive(Debug, Clone)]
 pub struct WorkspaceData {
     pub root: String,
-    pub tree: Vec<FileNode>,
     pub config: WorkspaceConfig,
     pub metadata: WorkspaceMetadata,
 }
@@ -94,11 +93,8 @@ pub async fn pick_workspace() -> Result<Option<WorkspaceData>, String> {
                 config.name = Some(name.to_string());
             }
         }
-        let tree = Editor::build_workspace_tree(&path, Some(&config))
-            .map_err(|err| format!("Failed to read folder: {}", err))?;
         Ok(Some(WorkspaceData {
             root: root_string,
-            tree,
             config,
             metadata,
         }))
@@ -119,11 +115,8 @@ pub async fn load_workspace_from_path(path: PathBuf) -> Result<Option<WorkspaceD
                 config.name = Some(name.to_string());
             }
         }
-        let tree = Editor::build_workspace_tree(&path, Some(&config))
-            .map_err(|err| format!("Failed to read folder: {}", err))?;
         Ok(Some(WorkspaceData {
             root: root_string,
-            tree,
             config,
             metadata,
         }))
@@ -149,12 +142,9 @@ pub async fn load_workspace_from_path_with_files(
                 config.name = Some(name.to_string());
             }
         }
-        let tree = Editor::build_workspace_tree(&path, Some(&config))
-            .map_err(|err| format!("Failed to read folder: {}", err))?;
 
         Ok(Some(WorkspaceData {
             root: root_string,
-            tree,
             config,
             metadata,
         }))
@@ -165,9 +155,6 @@ pub async fn load_workspace_from_path_with_files(
 
 pub async fn pick_solution() -> Result<Option<WorkspaceData>, String> {
     if let Some(path) = FileDialog::new().pick_file() {
-        let tree = Editor::build_solution_tree(&path)
-            .map_err(|err| format!("Failed to load solution: {}", err))?;
-
         let root_dir = path
             .parent()
             .map(PathBuf::from)
@@ -185,7 +172,6 @@ pub async fn pick_solution() -> Result<Option<WorkspaceData>, String> {
 
         Ok(Some(WorkspaceData {
             root: root_string,
-            tree,
             config,
             metadata,
         }))
@@ -313,8 +299,6 @@ pub async fn start_debug_session(request: DebugSessionRequest) -> Result<DebugSe
 
 pub async fn load_solution_from_path(path: String) -> Result<Option<WorkspaceData>, String> {
     let path_buf = PathBuf::from(&path);
-    let tree = Editor::build_solution_tree(&path_buf)
-        .map_err(|err| format!("Failed to load solution: {}", err))?;
 
     let root_dir = path_buf
         .parent()
@@ -333,7 +317,6 @@ pub async fn load_solution_from_path(path: String) -> Result<Option<WorkspaceDat
 
     Ok(Some(WorkspaceData {
         root: root_string,
-        tree,
         config,
         metadata,
     }))

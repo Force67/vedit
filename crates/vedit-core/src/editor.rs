@@ -1,13 +1,7 @@
-use std::io;
-use std::sync::Arc;
 use vedit_config::StickyNote;
 use vedit_config::{WorkspaceConfig, WorkspaceMetadata};
 use vedit_document::Document;
 use vedit_text::TextBuffer;
-use vedit_workspace::{
-    self, FileNode, build_solution_tree, build_tree, build_tree_with_ignored, find_node_mut,
-    load_directory_children,
-};
 
 /// High-level editor session managing open documents and workspace state.
 #[derive(Debug)]
@@ -15,8 +9,6 @@ pub struct Editor {
     open_documents: Vec<Document>,
     active_index: usize,
     workspace_root: Option<String>,
-    workspace_tree: Arc<Vec<FileNode>>,
-    workspace_generation: u64,
     workspace_config: Option<WorkspaceConfig>,
     workspace_metadata: Option<WorkspaceMetadata>,
     workspace_metadata_dirty: bool,
@@ -28,8 +20,6 @@ impl Default for Editor {
             open_documents: vec![Document::default()],
             active_index: 0,
             workspace_root: None,
-            workspace_tree: Arc::new(Vec::new()),
-            workspace_generation: 0,
             workspace_config: None,
             workspace_metadata: None,
             workspace_metadata_dirty: false,
@@ -253,14 +243,6 @@ impl Editor {
         self.workspace_root.as_deref()
     }
 
-    pub fn workspace_tree(&self) -> Option<&[FileNode]> {
-        if self.workspace_root.is_some() {
-            Some(self.workspace_tree.as_slice())
-        } else {
-            None
-        }
-    }
-
     pub fn workspace_config(&self) -> Option<&WorkspaceConfig> {
         self.workspace_config.as_ref()
     }
@@ -290,14 +272,11 @@ impl Editor {
     pub fn set_workspace(
         &mut self,
         root: String,
-        tree: Vec<FileNode>,
         config: WorkspaceConfig,
         metadata: WorkspaceMetadata,
     ) {
         self.workspace_root = Some(root);
-        self.workspace_tree = Arc::new(tree);
         self.workspace_config = Some(config);
-        self.workspace_generation = self.workspace_generation.wrapping_add(1);
         self.workspace_metadata = Some(metadata);
         self.workspace_metadata_dirty = false;
         self.apply_metadata_to_documents();
@@ -305,21 +284,11 @@ impl Editor {
 
     pub fn clear_workspace(&mut self) {
         self.workspace_root = None;
-        self.workspace_tree = Arc::new(Vec::new());
         self.workspace_config = None;
         self.workspace_metadata = None;
         self.workspace_metadata_dirty = false;
         for doc in &mut self.open_documents {
             doc.clear_sticky_notes();
-        }
-        self.workspace_generation = self.workspace_generation.wrapping_add(1);
-    }
-
-    pub fn workspace_snapshot(&self) -> Option<(u64, Arc<Vec<FileNode>>)> {
-        if self.workspace_root.is_some() {
-            Some((self.workspace_generation, Arc::clone(&self.workspace_tree)))
-        } else {
-            None
         }
     }
 
@@ -376,60 +345,6 @@ impl Editor {
         if metadata.set_notes_for_file(path, doc.to_sticky_records(path)) {
             self.workspace_metadata_dirty = true;
         }
-    }
-
-    /// Build a workspace tree for the provided directory.
-    pub fn build_workspace_tree(
-        root: impl AsRef<std::path::Path>,
-        config: Option<&WorkspaceConfig>,
-    ) -> io::Result<Vec<FileNode>> {
-        if let Some(config) = config {
-            let ignored: Vec<String> = config
-                .ignored_directories()
-                .map(|entry| entry.to_string())
-                .collect();
-            build_tree_with_ignored(root, &ignored)
-        } else {
-            build_tree(root)
-        }
-    }
-
-    pub fn build_solution_tree(path: impl AsRef<std::path::Path>) -> io::Result<Vec<FileNode>> {
-        build_solution_tree(path)
-            .map_err(|err| io::Error::new(io::ErrorKind::Other, err.to_string()))
-    }
-
-    pub fn load_workspace_directory(&mut self, path: &str) -> io::Result<Vec<String>> {
-        if self.workspace_root.is_none() {
-            return Ok(Vec::new());
-        }
-
-        let ignored: Vec<String> = self
-            .workspace_config
-            .as_ref()
-            .map(|config| {
-                config
-                    .ignored_directories()
-                    .map(|entry| entry.to_ascii_lowercase())
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        let tree = Arc::make_mut(&mut self.workspace_tree);
-        if let Some(node) = find_node_mut(tree.as_mut_slice(), path) {
-            if load_directory_children(node, &ignored)? {
-                self.workspace_generation = self.workspace_generation.wrapping_add(1);
-                let directories = node
-                    .children
-                    .iter()
-                    .filter(|child| child.is_directory)
-                    .map(|child| child.path.clone())
-                    .collect();
-                return Ok(directories);
-            }
-        }
-
-        Ok(Vec::new())
     }
 
     /// Returns a human-friendly status line reflecting the current editor state.

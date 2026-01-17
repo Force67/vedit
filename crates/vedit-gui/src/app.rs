@@ -332,12 +332,11 @@ impl EditorApp {
             Message::WorkspaceLoaded(result) => match result {
                 Ok(Some(WorkspaceData {
                     root,
-                    tree,
                     config,
                     metadata,
                 })) => {
                     self.state
-                        .install_workspace(root.clone(), tree, config, metadata);
+                        .install_workspace(root.clone(), config, metadata);
                     self.state.refresh_file_explorer();
                     self.state.clear_error();
 
@@ -409,12 +408,11 @@ impl EditorApp {
             Message::SolutionLoaded(result) => match result {
                 Ok(Some(WorkspaceData {
                     root,
-                    tree,
                     config,
                     metadata,
                 })) => {
                     self.state
-                        .install_workspace(root.clone(), tree, config, metadata);
+                        .install_workspace(root.clone(), config, metadata);
                     self.state.refresh_file_explorer();
                     self.state.clear_error();
 
@@ -492,11 +490,6 @@ impl EditorApp {
                     commands::load_document_from_path(path),
                     |result| Message::FileLoaded(result.map(Some)),
                 ));
-            }
-            Message::WorkspaceDirectoryToggled(path) => {
-                if let Err(err) = self.state.toggle_workspace_directory(path) {
-                    self.state.set_error(Some(err));
-                }
             }
             Message::BufferAction(action) => {
                 self.state.apply_buffer_action(action);

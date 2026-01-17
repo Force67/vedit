@@ -3,7 +3,7 @@ use crate::settings::SettingsState;
 use std::env;
 use std::path::{Path, PathBuf};
 use vedit_config::{DebugTargetRecord, WorkspaceConfig, WorkspaceMetadata};
-use vedit_core::{Editor, FileNode, KeyCombination, KeyEvent, Keymap, KeymapError, StickyNote};
+use vedit_core::{Editor, KeyCombination, KeyEvent, Keymap, KeymapError, StickyNote};
 
 /// Core application state that owns the editor session, keymap, and workspace logic.
 #[derive(Debug)]
@@ -233,11 +233,10 @@ impl AppState {
     pub fn install_workspace(
         &mut self,
         root: String,
-        tree: Vec<FileNode>,
         config: WorkspaceConfig,
         metadata: WorkspaceMetadata,
     ) {
-        self.editor.set_workspace(root, tree, config, metadata);
+        self.editor.set_workspace(root, config, metadata);
         self.workspace_notice = None;
     }
 
