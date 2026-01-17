@@ -275,6 +275,11 @@ impl Editor {
         config: WorkspaceConfig,
         metadata: WorkspaceMetadata,
     ) {
+        // Clear all documents when switching to a new workspace
+        self.open_documents.clear();
+        self.open_documents.push(Document::default());
+        self.active_index = 0;
+
         self.workspace_root = Some(root);
         self.workspace_config = Some(config);
         self.workspace_metadata = Some(metadata);

@@ -3,7 +3,7 @@ use crate::state::EditorState;
 use crate::style;
 use iced::widget::{Space, button, container, row, scrollable, text};
 use iced::{Alignment, Element, Length, Padding};
-use iced_font_awesome::fa_icon_solid;
+use iced_font_awesome::{fa_icon_brands, fa_icon_solid};
 
 /// Renders the document tab bar at the top of the editor
 pub fn render_document_tabs(state: &EditorState, scale: f32) -> Element<'_, Message> {
@@ -20,13 +20,18 @@ pub fn render_document_tabs(state: &EditorState, scale: f32) -> Element<'_, Mess
         }
 
         // File icon based on extension
-        let icon = get_file_icon(&title);
-
-        let icon_element = fa_icon_solid(icon).size(11.0).color(if is_active {
+        let (icon, is_brand) = get_file_icon(&title);
+        let icon_color = if is_active {
             style::TEXT
         } else {
             style::FILE_ICON
-        });
+        };
+
+        let icon_element: Element<'_, Message> = if is_brand {
+            fa_icon_brands(icon).size(11.0).color(icon_color).into()
+        } else {
+            fa_icon_solid(icon).size(11.0).color(icon_color).into()
+        };
 
         let title_text = text(title)
             .size((12.0 * scale).max(10.0))
@@ -72,58 +77,59 @@ pub fn render_document_tabs(state: &EditorState, scale: f32) -> Element<'_, Mess
 }
 
 /// Get appropriate icon for file type
-fn get_file_icon(filename: &str) -> &'static str {
+/// Returns (icon_name, is_brand_icon)
+fn get_file_icon(filename: &str) -> (&'static str, bool) {
     let filename_lower = filename.to_lowercase();
 
     if filename_lower.ends_with(".rs") {
-        "rust"
+        ("rust", true)
     } else if filename_lower.ends_with(".py") {
-        "python"
+        ("python", true)
     } else if filename_lower.ends_with(".js") || filename_lower.ends_with(".jsx") {
-        "js"
+        ("js", true)
     } else if filename_lower.ends_with(".ts") || filename_lower.ends_with(".tsx") {
-        "code"
+        ("js", true) // TypeScript uses JS icon (no dedicated TS brand icon)
     } else if filename_lower.ends_with(".html") || filename_lower.ends_with(".htm") {
-        "html5"
+        ("html5", true)
     } else if filename_lower.ends_with(".css") || filename_lower.ends_with(".scss") {
-        "css3"
+        ("css3", true)
     } else if filename_lower.ends_with(".json") {
-        "brackets-curly"
+        ("brackets-curly", false)
     } else if filename_lower.ends_with(".md") || filename_lower.ends_with(".markdown") {
-        "markdown"
+        ("markdown", true)
     } else if filename_lower.ends_with(".toml")
         || filename_lower.ends_with(".yaml")
         || filename_lower.ends_with(".yml")
     {
-        "gear"
+        ("gear", false)
     } else if filename_lower.ends_with(".c") || filename_lower.ends_with(".h") {
-        "c"
+        ("c", false) // solid "c" icon
     } else if filename_lower.ends_with(".cpp")
         || filename_lower.ends_with(".hpp")
         || filename_lower.ends_with(".cc")
     {
-        "code"
+        ("code", false)
     } else if filename_lower.ends_with(".go") {
-        "golang"
+        ("golang", true)
     } else if filename_lower.ends_with(".lua") {
-        "moon"
+        ("moon", false)
     } else if filename_lower.ends_with(".nix") {
-        "snowflake"
+        ("snowflake", false)
     } else if filename_lower.ends_with(".sh") || filename_lower.ends_with(".bash") {
-        "terminal"
+        ("terminal", false)
     } else if filename_lower.ends_with(".sql") {
-        "database"
+        ("database", false)
     } else if filename_lower.ends_with(".xml") {
-        "code"
+        ("code", false)
     } else if filename_lower.ends_with(".txt") {
-        "file-lines"
+        ("file-lines", false)
     } else if filename_lower.contains("makefile") || filename_lower.contains("cmake") {
-        "hammer"
+        ("hammer", false)
     } else if filename_lower.contains("dockerfile") {
-        "docker"
+        ("docker", true)
     } else if filename_lower.contains("gitignore") || filename_lower.contains("git") {
-        "code-branch"
+        ("git-alt", true) // brand icon for git
     } else {
-        "file"
+        ("file", false)
     }
 }
