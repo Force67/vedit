@@ -167,10 +167,20 @@ impl LanguageRegistry {
             Language::Cpp | Language::CppHeader => self
                 .cpp
                 .get_or_init(|| {
+                    // C++ grammar extends C, so we need both C and C++ highlight queries
+                    // Leak the combined string since this is one-time initialization
+                    let combined_query: &'static str = Box::leak(
+                        format!(
+                            "{}\n{}",
+                            tree_sitter_c::HIGHLIGHT_QUERY,
+                            tree_sitter_cpp::HIGHLIGHT_QUERY
+                        )
+                        .into_boxed_str(),
+                    );
                     build_config(
                         tree_sitter_cpp::LANGUAGE.into(),
                         "cpp",
-                        tree_sitter_cpp::HIGHLIGHT_QUERY,
+                        combined_query,
                         None,
                         None,
                         &self.theme,
