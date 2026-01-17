@@ -235,6 +235,8 @@ impl EditorApp {
         self.handle_debugger_events(debugger_events);
         match message {
             Message::OpenFileRequested => {
+                // Push current location to navigation history before opening new file
+                self.state.push_navigation();
                 return self.wrap_command(Task::perform(
                     commands::pick_document(),
                     Message::FileLoaded,
@@ -301,6 +303,8 @@ impl EditorApp {
                 }
             },
             Message::DocumentSelected(index) => {
+                // Push current location to navigation history before switching
+                self.state.push_navigation();
                 self.state.editor_mut().set_active(index);
                 self.state.sync_buffer_from_editor();
             }
@@ -481,6 +485,9 @@ impl EditorApp {
                 }
             },
             Message::WorkspaceFileActivated(path) => {
+                // Push current location to navigation history before opening new file
+                self.state.push_navigation();
+
                 // Add to recent files
                 self.state.recent_files.retain(|p| p != &path);
                 self.state.recent_files.insert(0, path.clone());
@@ -636,7 +643,9 @@ impl EditorApp {
                 self.state.hide_context_menu();
 
                 if let Some(def) = definition {
-                    // Reuse the HoverGotoDefinition logic
+                    // Push current location to navigation history before jumping
+                    self.state.push_navigation();
+
                     let path_str = def.file_path.to_string_lossy().to_string();
                     return self.wrap_command(Task::perform(
                         commands::load_document_from_path(path_str.clone()),
@@ -727,6 +736,9 @@ impl EditorApp {
             Message::HoverGotoDefinition(file_path, _line, _column) => {
                 self.state.force_hide_hover_tooltip();
 
+                // Push current location to navigation history before jumping
+                self.state.push_navigation();
+
                 // Open the file and navigate to line
                 let path_str = file_path.to_string_lossy().to_string();
                 return self.wrap_command(Task::perform(
@@ -754,6 +766,26 @@ impl EditorApp {
                     editor_log_error!("SYMBOLS", "Symbol index update failed: {}", e);
                 }
             },
+
+            // Navigation history (back/forward)
+            Message::NavigateBack => {
+                println!("DEBUG: NavigateBack pressed");
+                if let Some(entry) = self.state.navigate_back() {
+                    println!("DEBUG: Navigating back to: {:?}, line {}", entry.file_path, entry.line);
+                    return self.navigate_to_entry(entry);
+                } else {
+                    println!("DEBUG: No navigation history to go back to");
+                }
+            }
+            Message::NavigateForward => {
+                println!("DEBUG: NavigateForward pressed");
+                if let Some(entry) = self.state.navigate_forward() {
+                    println!("DEBUG: Navigating forward to: {:?}, line {}", entry.file_path, entry.line);
+                    return self.navigate_to_entry(entry);
+                } else {
+                    println!("DEBUG: No navigation history to go forward to");
+                }
+            }
 
             Message::SettingsOpened => {
                 self.state.close_debugger_menu();
@@ -1286,6 +1318,8 @@ impl EditorApp {
             }
             Message::FileExplorer(msg) => {
                 if let crate::widgets::file_explorer::Message::OpenFile(path) = &msg {
+                    // Push current location to navigation history before opening new file
+                    self.state.push_navigation();
                     return self.wrap_command(Task::perform(
                         commands::load_document_from_path(path.clone()),
                         |result| Message::FileLoaded(result.map(Some)),
@@ -1775,6 +1809,45 @@ impl EditorApp {
         } else {
             command
         }
+    }
+
+    /// Navigate to a saved navigation entry (for back/forward)
+    fn navigate_to_entry(&mut self, entry: crate::state::NavigationEntry) -> Task<Message> {
+        // Check if document is already open by path
+        if let Some(ref path) = entry.file_path {
+            let docs = self.state.editor().open_documents();
+            println!("DEBUG: Looking for path '{}' in {} open docs", path, docs.len());
+            for (i, doc) in docs.iter().enumerate() {
+                println!("DEBUG:   Doc {}: {:?}", i, doc.path);
+            }
+            if let Some(index) = docs.iter().position(|doc| doc.path.as_ref() == Some(path)) {
+                // Document is already open - just switch to it
+                println!("DEBUG: Found at index {}, switching", index);
+                self.state.editor_mut().set_active(index);
+                self.state.sync_buffer_from_editor();
+                self.state.move_cursor_to(entry.line, entry.column);
+                return Task::none();
+            }
+
+            // Document not open - need to load it
+            println!("DEBUG: Document not open, loading from disk");
+            let path_clone = path.clone();
+            return self.wrap_command(Task::perform(
+                commands::load_document_from_path(path_clone),
+                move |result| Message::FileLoaded(result.map(Some)),
+            ));
+        }
+
+        // No file path - try to use document index (for scratch buffers)
+        println!("DEBUG: No file path, using document index {}", entry.document_index);
+        let num_docs = self.state.editor().open_documents().len();
+        if entry.document_index < num_docs {
+            self.state.editor_mut().set_active(entry.document_index);
+            self.state.sync_buffer_from_editor();
+            self.state.move_cursor_to(entry.line, entry.column);
+        }
+
+        Task::none()
     }
 
     fn execute_quick_command(&mut self, command: QuickCommandId) -> Task<Message> {

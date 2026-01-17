@@ -169,6 +169,10 @@ pub enum Message {
     HoverCursorMoved(f32, f32),                            // Cursor position for tooltip stickiness
     SymbolIndexRefresh,
     SymbolIndexUpdated(Result<usize, String>), // number of files indexed
+
+    // Navigation history (back/forward like VS)
+    NavigateBack,
+    NavigateForward,
 }
 
 /// Information about a hover target for the tooltip

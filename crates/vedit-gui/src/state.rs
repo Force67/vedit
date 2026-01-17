@@ -40,6 +40,81 @@ const IGNORED_DIRECTORIES: [&str; 4] = ["target", ".git", ".hg", ".svn"];
 /// Maximum number of undo states to keep per document
 const MAX_UNDO_STACK_SIZE: usize = 100;
 
+/// Maximum number of navigation history entries
+const MAX_NAVIGATION_HISTORY_SIZE: usize = 50;
+
+/// A location in the editor for navigation history (like VS back/forward)
+#[derive(Debug, Clone)]
+pub struct NavigationEntry {
+    /// File path (if the document has one)
+    pub file_path: Option<String>,
+    /// Document index at time of navigation
+    pub document_index: usize,
+    /// Line number (0-indexed)
+    pub line: usize,
+    /// Column number (0-indexed)
+    pub column: usize,
+}
+
+/// Manages back/forward navigation history
+#[derive(Debug, Default)]
+pub struct NavigationHistory {
+    /// Stack of locations we can go back to
+    back_stack: Vec<NavigationEntry>,
+    /// Stack of locations we can go forward to
+    forward_stack: Vec<NavigationEntry>,
+}
+
+impl NavigationHistory {
+    pub fn new() -> Self {
+        Self {
+            back_stack: Vec::new(),
+            forward_stack: Vec::new(),
+        }
+    }
+
+    /// Push current location before navigating away
+    pub fn push(&mut self, entry: NavigationEntry) {
+        self.back_stack.push(entry);
+        self.forward_stack.clear();
+
+        // Limit stack size
+        if self.back_stack.len() > MAX_NAVIGATION_HISTORY_SIZE {
+            self.back_stack.remove(0);
+        }
+    }
+
+    /// Go back to previous location, returning the entry to navigate to
+    pub fn go_back(&mut self, current: NavigationEntry) -> Option<NavigationEntry> {
+        if let Some(entry) = self.back_stack.pop() {
+            self.forward_stack.push(current);
+            Some(entry)
+        } else {
+            None
+        }
+    }
+
+    /// Go forward to next location, returning the entry to navigate to
+    pub fn go_forward(&mut self, current: NavigationEntry) -> Option<NavigationEntry> {
+        if let Some(entry) = self.forward_stack.pop() {
+            self.back_stack.push(current);
+            Some(entry)
+        } else {
+            None
+        }
+    }
+
+    /// Check if we can go back
+    pub fn can_go_back(&self) -> bool {
+        !self.back_stack.is_empty()
+    }
+
+    /// Check if we can go forward
+    pub fn can_go_forward(&self) -> bool {
+        !self.forward_stack.is_empty()
+    }
+}
+
 /// A snapshot of the editor state for undo/redo
 #[derive(Debug, Clone)]
 struct UndoState {
@@ -329,6 +404,8 @@ pub struct EditorState {
     hover_cursor_in_tooltip: bool,      // Is cursor inside the tooltip?
     // Undo/redo state
     undo_stack: UndoStack,
+    // Navigation history (back/forward like VS)
+    navigation_history: NavigationHistory,
     // wine: WineState, // Temporarily disabled
 }
 
@@ -387,6 +464,7 @@ impl Default for EditorState {
             hover_tooltip_rect: None,
             hover_cursor_in_tooltip: false,
             undo_stack: UndoStack::new(),
+            navigation_history: NavigationHistory::new(),
             // wine: WineState::new(), // Temporarily disabled
         };
 
@@ -796,6 +874,73 @@ impl EditorState {
     /// Clear undo/redo history (e.g., when switching documents)
     pub fn clear_undo_history(&mut self) {
         self.undo_stack.clear();
+    }
+
+    // Navigation history methods (back/forward like VS)
+
+    /// Get the current navigation entry (current cursor position)
+    pub fn current_navigation_entry(&self) -> NavigationEntry {
+        let cursor = self.buffer_content.cursor();
+        let doc_index = self.editor().active_index();
+        let file_path = self
+            .editor()
+            .active_document()
+            .and_then(|doc| doc.path.clone());
+
+        NavigationEntry {
+            file_path,
+            document_index: doc_index,
+            line: cursor.position.line,
+            column: cursor.position.column,
+        }
+    }
+
+    /// Push current location to navigation history before navigating away
+    pub fn push_navigation(&mut self) {
+        let entry = self.current_navigation_entry();
+        println!(
+            "DEBUG: Pushing navigation: {:?}, line {}, col {}",
+            entry.file_path, entry.line, entry.column
+        );
+        self.navigation_history.push(entry);
+    }
+
+    /// Check if we can navigate back
+    pub fn can_navigate_back(&self) -> bool {
+        self.navigation_history.can_go_back()
+    }
+
+    /// Check if we can navigate forward
+    pub fn can_navigate_forward(&self) -> bool {
+        self.navigation_history.can_go_forward()
+    }
+
+    /// Navigate back, returning the entry to navigate to
+    pub fn navigate_back(&mut self) -> Option<NavigationEntry> {
+        let current = self.current_navigation_entry();
+        self.navigation_history.go_back(current)
+    }
+
+    /// Navigate forward, returning the entry to navigate to
+    pub fn navigate_forward(&mut self) -> Option<NavigationEntry> {
+        let current = self.current_navigation_entry();
+        self.navigation_history.go_forward(current)
+    }
+
+    /// Move cursor to a specific line and column position
+    pub fn move_cursor_to(&mut self, line: usize, column: usize) {
+        use iced::widget::text_editor::{Cursor, Position};
+        self.buffer_content.move_to(Cursor {
+            position: Position { line, column },
+            selection: None,
+        });
+
+        // Scroll to make cursor visible (center it roughly)
+        let target_scroll = line.saturating_sub(10) as i32;
+        self.buffer_content
+            .perform(iced::widget::text_editor::Action::Scroll {
+                lines: target_scroll,
+            });
     }
 
     pub fn quick_commands(&self) -> &'static [QuickCommand] {

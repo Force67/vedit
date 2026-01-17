@@ -27,6 +27,28 @@ pub fn render_title_bar(
     // App branding
     let branding = text("vedit").size((18.0 * scale).max(14.0)).color(PRIMARY);
 
+    // Navigation buttons group (back/forward like VS)
+    // Always clickable - handlers check if navigation is possible
+    let nav_buttons = row![
+        button(
+            fa_icon_solid("arrow-left")
+                .size((12.0 * scale).max(10.0))
+                .color(TEXT),
+        )
+        .style(top_bar_button())
+        .padding([4.0, 8.0])
+        .on_press(Message::NavigateBack),
+        button(
+            fa_icon_solid("arrow-right")
+                .size((12.0 * scale).max(10.0))
+                .color(TEXT),
+        )
+        .style(top_bar_button())
+        .padding([4.0, 8.0])
+        .on_press(Message::NavigateForward),
+    ]
+    .spacing(spacing_small);
+
     // File actions group
     let file_actions = row![
         button(text("Open File…").size((13.0 * scale).max(10.0)))
@@ -128,6 +150,10 @@ pub fn render_title_bar(
     let main_row = row![
         branding,
         Space::new().width(Length::Fixed(spacing_large)),
+        separator(scale),
+        Space::new().width(Length::Fixed(spacing_medium)),
+        nav_buttons,
+        Space::new().width(Length::Fixed(spacing_medium)),
         separator(scale),
         Space::new().width(Length::Fixed(spacing_medium)),
         file_actions,
