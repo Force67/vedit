@@ -10,14 +10,18 @@ use vedit_config::{DebugTargetRecord, MAX_RECENT_DEBUG_TARGETS};
 use vedit_debugger::{DebuggerCommand as VeditCommand, DebuggerEvent as VeditEvent, VeditSession};
 use vedit_debugger_gdb::{DebuggerCommand as GdbCommand, DebuggerEvent as GdbEvent, GdbSession};
 use vedit_make::Makefile;
-use vedit_vs::{Solution, VcxProject};
+use vedit_vs::{ConfigurationPlatform, ConfigurationType, Solution, VcxProject};
 
 const IGNORED_DIRECTORIES: [&str; 4] = ["target", ".git", ".hg", ".svn"];
 const MAX_CONSOLE_ENTRIES: usize = 200;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DebugTargetSource {
-    Vcxproj { project_path: PathBuf },
+    Vcxproj {
+        project_path: PathBuf,
+        configuration: Option<String>,
+        platform: Option<String>,
+    },
     Makefile { path: PathBuf },
     Manual,
 }
@@ -25,8 +29,17 @@ pub enum DebugTargetSource {
 impl fmt::Display for DebugTargetSource {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            DebugTargetSource::Vcxproj { project_path } => {
-                write!(f, "vcxproj ({})", display_path(project_path))
+            DebugTargetSource::Vcxproj {
+                project_path,
+                configuration,
+                platform,
+            } => {
+                let config_str = match (configuration, platform) {
+                    (Some(c), Some(p)) => format!(" [{}|{}]", c, p),
+                    (Some(c), None) => format!(" [{}]", c),
+                    _ => String::new(),
+                };
+                write!(f, "vcxproj{} ({})", config_str, display_path(project_path))
             }
             DebugTargetSource::Makefile { path } => {
                 write!(f, "makefile ({})", display_path(path))
@@ -556,25 +569,41 @@ impl DebuggerState {
                     if !project.produces_executable {
                         continue;
                     }
-                    let id = self.allocate_target_id();
-                    let target = DebugTarget {
-                        id,
-                        name: project.name.clone(),
-                        executable: guess_vcx_executable(&project_path, &project.name),
-                        working_directory: project_path
-                            .parent()
-                            .map(Path::to_path_buf)
-                            .unwrap_or_else(|| workspace_root.clone()),
-                        args: Vec::new(),
-                        source: DebugTargetSource::Vcxproj {
-                            project_path: project_path.clone(),
-                        },
-                        notes: Some(format!(
-                            "Target generated from {}. Adjust the executable if your configuration differs.",
-                            display_path(&project_path)
-                        )),
-                    };
-                    self.targets.push(target);
+
+                    let working_directory = project_path
+                        .parent()
+                        .map(Path::to_path_buf)
+                        .unwrap_or_else(|| workspace_root.clone());
+
+                    // Create targets for each configuration that produces an executable
+                    let targets_created =
+                        create_vcx_targets(&project, &project_path, &working_directory, || {
+                            self.allocate_target_id()
+                        });
+
+                    if targets_created.is_empty() {
+                        // Fallback: create a single target with guessed path
+                        let id = self.allocate_target_id();
+                        let target = DebugTarget {
+                            id,
+                            name: project.name.clone(),
+                            executable: guess_vcx_executable(&project_path, &project.name),
+                            working_directory,
+                            args: Vec::new(),
+                            source: DebugTargetSource::Vcxproj {
+                                project_path: project_path.clone(),
+                                configuration: None,
+                                platform: None,
+                            },
+                            notes: Some(format!(
+                                "Target generated from {}. Adjust the executable path.",
+                                display_path(&project_path)
+                            )),
+                        };
+                        self.targets.push(target);
+                    } else {
+                        self.targets.extend(targets_created);
+                    }
                 }
                 Err(err) => {
                     self.push_console(DebuggerConsoleEntry::error(err.to_string()));
@@ -1238,4 +1267,171 @@ fn looks_like_library(path: &Path) -> bool {
     }
 
     file_name.starts_with("lib")
+}
+
+/// Create debug targets from a vcxproj file, one per configuration that produces an executable.
+fn create_vcx_targets<F>(
+    project: &VcxProject,
+    project_path: &Path,
+    working_directory: &Path,
+    mut allocate_id: F,
+) -> Vec<DebugTarget>
+where
+    F: FnMut() -> u64,
+{
+    let mut targets = Vec::new();
+
+    // Prioritize Debug configurations for debugging
+    let configs: Vec<&ConfigurationPlatform> = {
+        let mut configs: Vec<_> = project.configurations.iter().collect();
+        configs.sort_by(|a, b| {
+            // Sort Debug configs first, then by name
+            let a_is_debug = a.configuration.to_lowercase().contains("debug");
+            let b_is_debug = b.configuration.to_lowercase().contains("debug");
+            match (a_is_debug, b_is_debug) {
+                (true, false) => std::cmp::Ordering::Less,
+                (false, true) => std::cmp::Ordering::Greater,
+                _ => a.as_str().cmp(&b.as_str()),
+            }
+        });
+        configs
+    };
+
+    for config in configs {
+        let settings = match project.settings_for(config) {
+            Some(s) => s,
+            None => continue,
+        };
+
+        // Only create targets for Application configurations
+        let is_executable = settings
+            .configuration_type
+            .map(|ct| ct == ConfigurationType::Application)
+            .unwrap_or(false);
+
+        if !is_executable {
+            continue;
+        }
+
+        // Try to get the output path from project settings
+        let executable = compute_vcx_output_path(project, config, project_path);
+
+        let id = allocate_id();
+        let name = format!("{} ({})", project.name, config);
+
+        // Build notes with useful info
+        let mut notes_parts = Vec::new();
+        if let Some(toolset) = &project.globals.platform_toolset {
+            notes_parts.push(format!("Toolset: {}", toolset));
+        }
+        if let Some(opt) = &settings.compiler.optimization {
+            notes_parts.push(format!("Optimization: {}", opt));
+        }
+        if let Some(runtime) = &settings.compiler.runtime_library {
+            notes_parts.push(format!("Runtime: {}", runtime));
+        }
+        if !settings.compiler.include_dirs.is_empty() {
+            notes_parts.push(format!(
+                "Include dirs: {}",
+                settings.compiler.include_dirs.len()
+            ));
+        }
+        let notes = if notes_parts.is_empty() {
+            format!("From {}", display_path(project_path))
+        } else {
+            format!("{}. From {}", notes_parts.join(", "), display_path(project_path))
+        };
+
+        targets.push(DebugTarget {
+            id,
+            name,
+            executable,
+            working_directory: working_directory.to_path_buf(),
+            args: Vec::new(),
+            source: DebugTargetSource::Vcxproj {
+                project_path: project_path.to_path_buf(),
+                configuration: Some(config.configuration.clone()),
+                platform: Some(config.platform.clone()),
+            },
+            notes: Some(notes),
+        });
+    }
+
+    targets
+}
+
+/// Compute the output executable path for a vcxproj configuration.
+fn compute_vcx_output_path(
+    project: &VcxProject,
+    config: &ConfigurationPlatform,
+    project_path: &Path,
+) -> PathBuf {
+    let project_dir = project_path.parent().unwrap_or(Path::new("."));
+    let project_name = &project.name;
+
+    // Try to use the project's output_path method first
+    if let Some(output) = project.output_path(config) {
+        // The output path may contain MSBuild variables - try to resolve or use as hint
+        let output_str = output.to_string_lossy();
+        if !output_str.contains("$(") {
+            return output;
+        }
+    }
+
+    // Get settings for this configuration
+    if let Some(settings) = project.settings_for(config) {
+        // Try to build path from OutDir + TargetName + TargetExt
+        let target_name = settings
+            .target_name
+            .as_deref()
+            .unwrap_or(project_name);
+
+        #[cfg(windows)]
+        let default_ext = ".exe";
+        #[cfg(not(windows))]
+        let default_ext = "";
+
+        let target_ext = settings.target_ext.as_deref().unwrap_or(default_ext);
+
+        // Common output directory patterns based on configuration
+        let config_name = &config.configuration;
+        let platform = &config.platform;
+
+        // Try common paths in order of likelihood
+        let candidates = [
+            // VS default: $(SolutionDir)$(Platform)\$(Configuration)\
+            project_dir
+                .join(platform)
+                .join(config_name)
+                .join(format!("{}{}", target_name, target_ext)),
+            // Alternative: $(SolutionDir)$(Configuration)\
+            project_dir
+                .join(config_name)
+                .join(format!("{}{}", target_name, target_ext)),
+            // CMake style: build/$(Configuration)/
+            project_dir
+                .join("build")
+                .join(config_name)
+                .join(format!("{}{}", target_name, target_ext)),
+            // Flat: same dir as project
+            project_dir.join(format!("{}{}", target_name, target_ext)),
+            // bin folder
+            project_dir
+                .join("bin")
+                .join(config_name)
+                .join(format!("{}{}", target_name, target_ext)),
+        ];
+
+        for candidate in &candidates {
+            if candidate.exists() {
+                return candidate.clone();
+            }
+        }
+
+        // Return first candidate as best guess
+        return candidates[0].clone();
+    }
+
+    // Ultimate fallback
+    guess_vcx_executable(project_path, project_name)
 }

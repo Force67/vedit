@@ -27,7 +27,7 @@ use vedit_application::{
 };
 use vedit_core::{Editor, KeyEvent, Language, StickyNote, TextBuffer, WorkspaceConfig};
 use vedit_make::Makefile;
-use vedit_vs::{Solution as VsSolution, VcxProject};
+use vedit_vs::{ConfigurationType, Solution as VsSolution, VcxProject};
 
 use crate::commands::DebugSession;
 use crate::message::RightRailTab;
@@ -50,6 +50,24 @@ pub struct VisualStudioProjectEntry {
     pub path: String,
     pub files: Vec<SolutionTreeNode>,
     pub load_error: Option<String>,
+    /// Build configurations available (e.g., "Debug|x64", "Release|x64")
+    pub configurations: Vec<String>,
+    /// Project type (Application, DynamicLibrary, StaticLibrary, etc.)
+    pub project_type: Option<String>,
+    /// Platform toolset (e.g., v143, v142)
+    pub platform_toolset: Option<String>,
+    /// Project references (dependencies)
+    pub references: Vec<ProjectReferenceEntry>,
+    /// Include directories (first few for display)
+    pub include_dirs: Vec<String>,
+    /// Key preprocessor definitions
+    pub preprocessor_defs: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ProjectReferenceEntry {
+    pub name: String,
+    pub path: String,
 }
 
 #[derive(Debug, Clone)]
@@ -58,6 +76,20 @@ pub struct VisualStudioSolutionEntry {
     pub path: String,
     pub projects: Vec<VisualStudioProjectEntry>,
     pub warnings: Vec<String>,
+    /// Solution-level configurations (e.g., "Debug|x64")
+    pub configurations: Vec<String>,
+    /// Visual Studio version
+    pub vs_version: Option<String>,
+    /// Solution folders for organization
+    pub folders: Vec<SolutionFolderEntry>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SolutionFolderEntry {
+    pub name: String,
+    pub guid: String,
+    /// Project names in this folder
+    pub project_names: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -1604,6 +1636,14 @@ fn convert_solution(solution: VsSolution) -> VisualStudioSolutionEntry {
     let mut warnings = Vec::new();
     let mut projects = Vec::new();
 
+    // Build a map from GUID to project name for resolving references
+    let mut guid_to_name: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    for project in &solution.projects {
+        if let Some(guid) = &project.project_guid {
+            guid_to_name.insert(guid.to_uppercase(), project.name.clone());
+        }
+    }
+
     for project in solution.projects {
         let path = project.absolute_path.to_string_lossy().to_string();
         let load_error = project.load_error.clone();
@@ -1612,26 +1652,116 @@ fn convert_solution(solution: VsSolution) -> VisualStudioSolutionEntry {
             warnings.push(format!("{}: {}", project.name, err));
         }
 
-        let files = project
-            .project
-            .map(|vcx| build_vcx_tree(&vcx))
-            .unwrap_or_default();
+        let (files, configurations, project_type, platform_toolset, references, include_dirs, preprocessor_defs) =
+            if let Some(ref vcx) = project.project {
+                let files = build_vcx_tree(vcx);
+                let configurations: Vec<String> =
+                    vcx.configurations.iter().map(|c| c.as_str()).collect();
+
+                // Determine project type from first config
+                let project_type = vcx
+                    .configurations
+                    .first()
+                    .and_then(|c| vcx.settings_for(c))
+                    .and_then(|s| s.configuration_type)
+                    .map(|ct| match ct {
+                        ConfigurationType::Application => "Application".to_string(),
+                        ConfigurationType::DynamicLibrary => "Dynamic Library".to_string(),
+                        ConfigurationType::StaticLibrary => "Static Library".to_string(),
+                        ConfigurationType::Utility => "Utility".to_string(),
+                        ConfigurationType::Makefile => "Makefile".to_string(),
+                    });
+
+                let platform_toolset = vcx.globals.platform_toolset.clone();
+
+                // Convert project references
+                let references: Vec<ProjectReferenceEntry> = vcx
+                    .project_references
+                    .iter()
+                    .map(|r| {
+                        let name = r
+                            .name
+                            .clone()
+                            .or_else(|| {
+                                r.project_guid
+                                    .as_ref()
+                                    .and_then(|g| guid_to_name.get(&g.to_uppercase()).cloned())
+                            })
+                            .unwrap_or_else(|| {
+                                r.include
+                                    .file_stem()
+                                    .and_then(|s| s.to_str())
+                                    .unwrap_or("Unknown")
+                                    .to_string()
+                            });
+                        ProjectReferenceEntry {
+                            name,
+                            path: r.full_path.to_string_lossy().to_string(),
+                        }
+                    })
+                    .collect();
+
+                // Get include dirs and preprocessor defs (limit to first few)
+                let include_dirs: Vec<String> = vcx.all_include_dirs().into_iter().take(5).map(|s| s.to_string()).collect();
+                let preprocessor_defs: Vec<String> = vcx
+                    .all_preprocessor_definitions()
+                    .into_iter()
+                    .filter(|d| !d.starts_with("_") && !d.contains("%("))
+                    .take(5)
+                    .map(|s| s.to_string())
+                    .collect();
+
+                (files, configurations, project_type, platform_toolset, references, include_dirs, preprocessor_defs)
+            } else {
+                (Vec::new(), Vec::new(), None, None, Vec::new(), Vec::new(), Vec::new())
+            };
 
         projects.push(VisualStudioProjectEntry {
             name: project.name,
             path,
             files,
             load_error,
+            configurations,
+            project_type,
+            platform_toolset,
+            references,
+            include_dirs,
+            preprocessor_defs,
         });
     }
 
     projects.sort_by(|a, b| a.name.cmp(&b.name));
+
+    // Convert solution configurations
+    let configurations: Vec<String> = solution.configurations.iter().map(|c| c.as_str()).collect();
+
+    // Convert solution folders
+    let folders: Vec<SolutionFolderEntry> = solution
+        .folders
+        .iter()
+        .map(|f| {
+            let project_names: Vec<String> = f
+                .children
+                .iter()
+                .filter_map(|guid| guid_to_name.get(&guid.to_uppercase()).cloned())
+                .collect();
+            SolutionFolderEntry {
+                name: f.name.clone(),
+                guid: f.guid.clone(),
+                project_names,
+            }
+        })
+        .filter(|f| !f.project_names.is_empty())
+        .collect();
 
     VisualStudioSolutionEntry {
         name: solution.name,
         path: solution.path.to_string_lossy().to_string(),
         projects,
         warnings,
+        configurations,
+        vs_version: solution.vs_version,
+        folders,
     }
 }
 
