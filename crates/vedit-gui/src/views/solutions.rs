@@ -1,339 +1,617 @@
+//! Visual Studio-style Solution Explorer view.
+//!
+//! This module renders solutions and projects exactly like Visual Studio's
+//! Solution Explorer, with collapsible tree nodes, virtual folders for
+//! source/header/resource files, and proper icons.
+
 use crate::message::Message;
 use crate::state::{
-    EditorState, MakefileEntry, SolutionBrowserEntry, SolutionErrorEntry, SolutionTreeNode,
-    VisualStudioProjectEntry, VisualStudioSolutionEntry,
+    EditorState, MakefileEntry, ProjectReferenceEntry, SolutionBrowserEntry, SolutionErrorEntry,
+    SolutionTreeNode, VisualStudioProjectEntry, VisualStudioSolutionEntry,
 };
-use crate::style::{ERROR, MUTED, TEXT, WARNING, document_button};
-use iced::widget::{Column, Space, button, column, row, text};
+use crate::style::{self, CHEVRON_COLOR, ERROR, FILE_ICON, FOLDER_ICON, MUTED, TEXT, WARNING};
+use iced::widget::{button, column, row, scrollable, text, Column, Row, Space};
 use iced::{Alignment, Element, Length, Padding};
+use iced_font_awesome::fa_icon_solid;
 
-// Accent color for metadata
-const ACCENT: iced::Color = iced::Color {
+// VS-style colors
+const PROJECT_APP_COLOR: iced::Color = iced::Color {
     r: 0.4,
-    g: 0.6,
-    b: 0.9,
+    g: 0.7,
+    b: 0.4,
     a: 1.0,
-};
+}; // Green for executables
+const PROJECT_LIB_COLOR: iced::Color = iced::Color {
+    r: 0.6,
+    g: 0.5,
+    b: 0.8,
+    a: 1.0,
+}; // Purple for libraries
+const REFERENCE_COLOR: iced::Color = iced::Color {
+    r: 0.5,
+    g: 0.6,
+    b: 0.8,
+    a: 1.0,
+}; // Blue for references
+
+// Indentation per tree level (in pixels)
+const INDENT_PX: f32 = 16.0;
+// Row height
+const ROW_HEIGHT: f32 = 22.0;
 
 pub fn render_solutions_tab(state: &EditorState, scale: f32) -> Column<'_, Message> {
-    let mut content = column![text("Solutions").size((16.0 * scale).max(12.0)).color(TEXT)]
-        .spacing((6.0 * scale).max(3.0))
-        .padding(Padding::from([8.0, 16.0]));
-
     let entries = state.workspace_solutions();
+
     if entries.is_empty() {
-        content = content.push(
-            text("No solutions or Makefiles found")
+        return column![
+            text("Solution Explorer")
+                .size((14.0 * scale).max(11.0))
+                .color(TEXT),
+            Space::new().height(8.0),
+            text("No solutions found")
                 .color(MUTED)
-                .size((13.0 * scale).max(9.0)),
-        );
-        return content;
+                .size((12.0 * scale).max(9.0)),
+            text("Open a .sln file or workspace")
+                .color(MUTED)
+                .size((11.0 * scale).max(8.0)),
+        ]
+        .spacing(4.0)
+        .padding(Padding::from([8.0, 12.0]));
     }
+
+    let mut content = Column::new()
+        .spacing(0.0)
+        .padding(Padding::from([4.0, 0.0]));
 
     for entry in entries {
-        content = content.push(render_solution_entry(entry, scale));
+        content = content.push(render_entry(state, entry, scale));
     }
 
-    content
+    column![scrollable(content).height(Length::Fill)]
 }
 
-fn render_solution_entry(entry: &SolutionBrowserEntry, scale: f32) -> Element<'_, Message> {
+fn render_entry<'a>(
+    state: &'a EditorState,
+    entry: &'a SolutionBrowserEntry,
+    scale: f32,
+) -> Element<'a, Message> {
     match entry {
         SolutionBrowserEntry::VisualStudio(solution) => {
-            render_visual_studio_solution(solution, scale)
+            render_vs_solution(state, solution, scale)
         }
-        SolutionBrowserEntry::Makefile(makefile) => render_makefile_entry(makefile, scale),
-        SolutionBrowserEntry::Error(error) => render_solution_error(error, scale),
+        SolutionBrowserEntry::Makefile(makefile) => render_makefile(state, makefile, scale),
+        SolutionBrowserEntry::Error(error) => render_error(error, scale),
     }
 }
 
-fn render_visual_studio_solution(
-    solution: &VisualStudioSolutionEntry,
+// ============================================================================
+// Visual Studio Solution Rendering
+// ============================================================================
+
+fn render_vs_solution<'a>(
+    state: &'a EditorState,
+    solution: &'a VisualStudioSolutionEntry,
     scale: f32,
-) -> Element<'_, Message> {
-    let spacing = (4.0 * scale).max(2.0);
+) -> Element<'a, Message> {
+    let node_id = format!("sln:{}", solution.path);
+    let is_expanded = state.is_solution_node_expanded(&node_id);
 
-    // Build solution header with version info
-    let header_text = if let Some(ref vs_version) = solution.vs_version {
-        // Extract major version number
-        let version_short = vs_version.split('.').next().unwrap_or(vs_version);
-        format!("🟦 {} (VS {})", solution.name, version_short)
-    } else {
-        format!("🟦 {}", solution.name)
-    };
+    let mut rows: Vec<Element<'a, Message>> = Vec::new();
 
-    let mut content = column![
-        button(
-            text(header_text)
-                .color(TEXT)
-                .size((14.0 * scale).max(10.0)),
-        )
-        .style(document_button())
-        .on_press(Message::SolutionSelected(solution.path.clone()))
-    ]
-    .spacing(spacing);
-
-    // Show configurations if available
-    if !solution.configurations.is_empty() {
-        let configs_str = solution.configurations.join(", ");
-        content = content.push(
-            row![
-                Space::new().width(Length::Fixed(16.0)),
-                text(format!("Configs: {}", configs_str))
-                    .color(MUTED)
-                    .size((11.0 * scale).max(8.0)),
-            ]
-            .spacing(spacing)
-            .align_y(Alignment::Center),
-        );
-    }
-
-    // Show solution folders if any
-    for folder in &solution.folders {
-        if !folder.project_names.is_empty() {
-            content = content.push(
-                row![
-                    Space::new().width(Length::Fixed(16.0)),
-                    text(format!("📁 {} ({})", folder.name, folder.project_names.len()))
-                        .color(ACCENT)
-                        .size((12.0 * scale).max(9.0)),
-                ]
-                .spacing(spacing)
-                .align_y(Alignment::Center),
-            );
-        }
-    }
-
-    for warning in &solution.warnings {
-        content = content.push(
-            row![
-                Space::new().width(Length::Fixed(16.0)),
-                text(warning).color(WARNING).size((12.0 * scale).max(9.0)),
-            ]
-            .spacing(spacing)
-            .align_y(Alignment::Center),
-        );
-    }
-
-    for project in &solution.projects {
-        content = content.push(render_visual_studio_project(project, scale));
-    }
-
-    content.into()
-}
-
-fn render_visual_studio_project(
-    project: &VisualStudioProjectEntry,
-    scale: f32,
-) -> Element<'_, Message> {
-    let spacing = (3.0 * scale).max(2.0);
-    let mut col = Column::new().spacing(spacing);
-
-    // Build project header with type icon
-    let type_icon = match project.project_type.as_deref() {
-        Some("Application") => "🎯",
-        Some("Dynamic Library") => "📦",
-        Some("Static Library") => "📚",
-        _ => "🛠",
-    };
-
-    // Build metadata suffix
-    let mut meta_parts = Vec::new();
-    if let Some(ref toolset) = project.platform_toolset {
-        meta_parts.push(toolset.clone());
-    }
-    if let Some(ref proj_type) = project.project_type {
-        if proj_type != "Application" {
-            meta_parts.push(proj_type.clone());
-        }
-    }
-    let meta_suffix = if meta_parts.is_empty() {
-        String::new()
-    } else {
-        format!(" [{}]", meta_parts.join(", "))
-    };
-
-    let header = row![
-        Space::new().width(Length::Fixed(16.0)),
-        text(type_icon).size((13.0 * scale).max(9.0)),
-        text(format!("{}{}", project.name, meta_suffix))
-            .color(TEXT)
-            .size((13.0 * scale).max(9.0)),
-    ]
-    .spacing(spacing)
-    .align_y(Alignment::Center);
-
-    col = col.push(
-        button(header)
-            .style(document_button())
-            .on_press(Message::WorkspaceFileActivated(project.path.clone())),
+    // Solution header row
+    let project_count = solution.projects.len();
+    let label = format!("Solution '{}' ({} project{})",
+        solution.name,
+        project_count,
+        if project_count == 1 { "" } else { "s" }
     );
 
-    if let Some(error) = &project.load_error {
-        col = col.push(
-            row![
-                Space::new().width(Length::Fixed(32.0)),
-                text(error).color(ERROR).size((12.0 * scale).max(9.0)),
-            ]
-            .spacing(spacing)
-            .align_y(Alignment::Center),
-        );
-    } else {
-        // Show project references (dependencies)
-        if !project.references.is_empty() {
-            let refs_str = project
-                .references
-                .iter()
-                .map(|r| r.name.as_str())
-                .collect::<Vec<_>>()
-                .join(", ");
-            col = col.push(
+    rows.push(tree_row(
+        0,
+        is_expanded,
+        true, // has children
+        fa_icon_solid("briefcase").size((12.0 * scale).max(9.0)).color(FOLDER_ICON),
+        text(label).size((13.0 * scale).max(10.0)).color(TEXT),
+        Some(Message::SolutionTreeToggle(node_id.clone())),
+        Some(Message::SolutionSelected(solution.path.clone())),
+        scale,
+    ));
+
+    // Solution children (only if expanded)
+    if is_expanded {
+        // Show warnings first
+        for warning in &solution.warnings {
+            rows.push(
                 row![
-                    Space::new().width(Length::Fixed(32.0)),
-                    text(format!("→ {}", refs_str))
-                        .color(ACCENT)
-                        .size((11.0 * scale).max(8.0)),
+                    Space::new().width(INDENT_PX * 2.0),
+                    fa_icon_solid("triangle-exclamation")
+                        .size((10.0 * scale).max(8.0))
+                        .color(WARNING),
+                    text(warning).size((11.0 * scale).max(8.0)).color(WARNING),
                 ]
-                .spacing(spacing)
-                .align_y(Alignment::Center),
+                .spacing(4.0)
+                .align_y(Alignment::Center)
+                .height(ROW_HEIGHT * scale)
+                .into(),
             );
         }
 
-        // Show include directories (abbreviated)
-        if !project.include_dirs.is_empty() {
-            let includes_preview = if project.include_dirs.len() <= 3 {
-                project.include_dirs.join(", ")
-            } else {
-                format!(
-                    "{}, ... (+{})",
-                    project.include_dirs[..2].join(", "),
-                    project.include_dirs.len() - 2
-                )
-            };
-            col = col.push(
-                row![
-                    Space::new().width(Length::Fixed(32.0)),
-                    text(format!("Inc: {}", includes_preview))
-                        .color(MUTED)
-                        .size((10.0 * scale).max(8.0)),
-                ]
-                .spacing(spacing)
-                .align_y(Alignment::Center),
-            );
-        }
-
-        // Show preprocessor definitions (abbreviated)
-        if !project.preprocessor_defs.is_empty() {
-            let defs_preview = if project.preprocessor_defs.len() <= 3 {
-                project.preprocessor_defs.join(", ")
-            } else {
-                format!(
-                    "{}, ...",
-                    project.preprocessor_defs[..3].join(", ")
-                )
-            };
-            col = col.push(
-                row![
-                    Space::new().width(Length::Fixed(32.0)),
-                    text(format!("Defs: {}", defs_preview))
-                        .color(MUTED)
-                        .size((10.0 * scale).max(8.0)),
-                ]
-                .spacing(spacing)
-                .align_y(Alignment::Center),
-            );
-        }
-
-        // Show files
-        if !project.files.is_empty() {
-            col = col.push(render_solution_node_column(&project.files, 32.0, scale));
+        // Render each project
+        for project in &solution.projects {
+            rows.extend(render_vs_project(state, project, 1, scale));
         }
     }
 
-    col.into()
+    Column::with_children(rows).spacing(0.0).into()
 }
 
-fn render_makefile_entry(makefile: &MakefileEntry, scale: f32) -> Element<'_, Message> {
-    let spacing = (4.0 * scale).max(2.0);
-    let mut column = column![
-        button(
-            text(format!("⚙ {}", makefile.name))
-                .color(TEXT)
-                .size((14.0 * scale).max(10.0)),
-        )
-        .style(document_button())
-        .on_press(Message::WorkspaceFileActivated(makefile.path.clone()))
-    ]
-    .spacing(spacing);
-
-    if makefile.files.is_empty() {
-        column = column.push(
-            row![
-                Space::new().width(Length::Fill).width(Length::Fixed(16.0)),
-                text("No referenced files detected")
-                    .color(MUTED)
-                    .size((12.0 * scale).max(9.0)),
-            ]
-            .spacing(spacing)
-            .align_y(Alignment::Center),
-        );
-    } else {
-        column = column.push(render_solution_node_column(&makefile.files, 16.0, scale));
-    }
-
-    column.into()
-}
-
-fn render_solution_error(error: &SolutionErrorEntry, scale: f32) -> Element<'_, Message> {
-    column![
-        text(format!("{}: {}", error.path, error.message))
-            .color(ERROR)
-            .size((12.0 * scale).max(9.0)),
-    ]
-    .spacing((2.0 * scale).max(1.0))
-    .padding(Padding::from([4.0, 16.0]))
-    .into()
-}
-
-fn render_solution_node_column<'a>(
-    nodes: &'a [SolutionTreeNode],
-    indent: f32,
+fn render_vs_project<'a>(
+    state: &'a EditorState,
+    project: &'a VisualStudioProjectEntry,
+    depth: usize,
     scale: f32,
-) -> Column<'a, Message> {
-    let spacing = (3.0 * scale).max(1.0);
-    let mut column = Column::new().spacing(spacing);
+) -> Vec<Element<'a, Message>> {
+    let node_id = format!("proj:{}", project.path);
+    let is_expanded = state.is_solution_node_expanded(&node_id);
 
-    for node in nodes {
-        let icon = if node.is_directory { "📁" } else { "📄" };
-        let row_content = row![
-            Space::new()
-                .width(Length::Fill)
-                .width(Length::Fixed(indent)),
-            text(icon).size((12.0 * scale).max(9.0)),
-            text(&node.name).color(TEXT).size((13.0 * scale).max(9.0)),
-        ]
-        .spacing(spacing)
-        .align_y(Alignment::Center);
+    let mut rows: Vec<Element<'a, Message>> = Vec::new();
 
-        let element: Element<'_, Message> = if let Some(path) = &node.path {
-            button(row_content)
-                .style(document_button())
-                .on_press(Message::WorkspaceFileActivated(path.clone()))
-                .into()
+    // Determine project icon and color based on type
+    let (icon_name, icon_color) = match project.project_type.as_deref() {
+        Some("Application") => ("crosshairs", PROJECT_APP_COLOR),
+        Some("Dynamic Library") => ("cube", PROJECT_LIB_COLOR),
+        Some("Static Library") => ("cubes", PROJECT_LIB_COLOR),
+        Some("Utility") => ("wrench", MUTED),
+        _ => ("file-code", FILE_ICON),
+    };
+
+    // Build project label with optional toolset
+    let label = if let Some(ref toolset) = project.platform_toolset {
+        format!("{} [{}]", project.name, toolset)
+    } else {
+        project.name.clone()
+    };
+
+    let has_content = !project.files.is_empty()
+        || !project.references.is_empty()
+        || project.load_error.is_some();
+
+    rows.push(tree_row(
+        depth,
+        is_expanded,
+        has_content,
+        fa_icon_solid(icon_name).size((12.0 * scale).max(9.0)).color(icon_color),
+        text(label).size((13.0 * scale).max(10.0)).color(TEXT),
+        Some(Message::SolutionTreeToggle(node_id.clone())),
+        Some(Message::WorkspaceFileActivated(project.path.clone())),
+        scale,
+    ));
+
+    if is_expanded {
+        // Show error if any
+        if let Some(error) = &project.load_error {
+            rows.push(
+                row![
+                    Space::new().width(INDENT_PX * (depth + 1) as f32),
+                    fa_icon_solid("circle-exclamation")
+                        .size((10.0 * scale).max(8.0))
+                        .color(ERROR),
+                    text(error).size((11.0 * scale).max(8.0)).color(ERROR),
+                ]
+                .spacing(4.0)
+                .align_y(Alignment::Center)
+                .height(ROW_HEIGHT * scale)
+                .into(),
+            );
         } else {
-            row_content.into()
-        };
+            // Render virtual folders for categorized files
+            rows.extend(render_categorized_files(
+                state,
+                &node_id,
+                &project.files,
+                depth + 1,
+                scale,
+            ));
 
-        column = column.push(element);
+            // References folder
+            if !project.references.is_empty() {
+                rows.extend(render_references_folder(
+                    state,
+                    &format!("{}:refs", node_id),
+                    &project.references,
+                    depth + 1,
+                    scale,
+                ));
+            }
+        }
+    }
 
-        if !node.children.is_empty() {
-            column = column.push(render_solution_node_column(
-                &node.children,
-                indent + 16.0,
+    rows
+}
+
+/// Render files organized into VS-style virtual folders (Source Files, Header Files, etc.)
+fn render_categorized_files<'a>(
+    state: &'a EditorState,
+    project_node_id: &str,
+    files: &'a [SolutionTreeNode],
+    depth: usize,
+    scale: f32,
+) -> Vec<Element<'a, Message>> {
+    let mut rows: Vec<Element<'a, Message>> = Vec::new();
+
+    // Collect files into categories
+    let mut sources: Vec<&SolutionTreeNode> = Vec::new();
+    let mut headers: Vec<&SolutionTreeNode> = Vec::new();
+    let mut resources: Vec<&SolutionTreeNode> = Vec::new();
+    let mut others: Vec<&SolutionTreeNode> = Vec::new();
+
+    collect_files_recursive(files, &mut sources, &mut headers, &mut resources, &mut others);
+
+    // Source Files folder
+    if !sources.is_empty() {
+        let folder_id = format!("{}:src", project_node_id);
+        let is_expanded = state.is_solution_node_expanded(&folder_id);
+
+        rows.push(tree_row(
+            depth,
+            is_expanded,
+            true,
+            fa_icon_solid("folder").size((12.0 * scale).max(9.0)).color(FOLDER_ICON),
+            text("Source Files").size((12.0 * scale).max(9.0)).color(TEXT),
+            Some(Message::SolutionTreeToggle(folder_id)),
+            None,
+            scale,
+        ));
+
+        if is_expanded {
+            for file in sources {
+                rows.extend(render_file_node(state, file, depth + 1, scale));
+            }
+        }
+    }
+
+    // Header Files folder
+    if !headers.is_empty() {
+        let folder_id = format!("{}:hdr", project_node_id);
+        let is_expanded = state.is_solution_node_expanded(&folder_id);
+
+        rows.push(tree_row(
+            depth,
+            is_expanded,
+            true,
+            fa_icon_solid("folder").size((12.0 * scale).max(9.0)).color(FOLDER_ICON),
+            text("Header Files").size((12.0 * scale).max(9.0)).color(TEXT),
+            Some(Message::SolutionTreeToggle(folder_id)),
+            None,
+            scale,
+        ));
+
+        if is_expanded {
+            for file in headers {
+                rows.extend(render_file_node(state, file, depth + 1, scale));
+            }
+        }
+    }
+
+    // Resource Files folder
+    if !resources.is_empty() {
+        let folder_id = format!("{}:res", project_node_id);
+        let is_expanded = state.is_solution_node_expanded(&folder_id);
+
+        rows.push(tree_row(
+            depth,
+            is_expanded,
+            true,
+            fa_icon_solid("folder").size((12.0 * scale).max(9.0)).color(FOLDER_ICON),
+            text("Resource Files").size((12.0 * scale).max(9.0)).color(TEXT),
+            Some(Message::SolutionTreeToggle(folder_id)),
+            None,
+            scale,
+        ));
+
+        if is_expanded {
+            for file in resources {
+                rows.extend(render_file_node(state, file, depth + 1, scale));
+            }
+        }
+    }
+
+    // Other files (at project root, not in a folder)
+    for file in others {
+        rows.extend(render_file_node(state, file, depth, scale));
+    }
+
+    rows
+}
+
+/// Recursively collect files into categories
+fn collect_files_recursive<'a>(
+    nodes: &'a [SolutionTreeNode],
+    sources: &mut Vec<&'a SolutionTreeNode>,
+    headers: &mut Vec<&'a SolutionTreeNode>,
+    resources: &mut Vec<&'a SolutionTreeNode>,
+    others: &mut Vec<&'a SolutionTreeNode>,
+) {
+    for node in nodes {
+        if node.is_directory {
+            // Recurse into directories
+            collect_files_recursive(&node.children, sources, headers, resources, others);
+        } else {
+            let ext = node
+                .name
+                .rsplit('.')
+                .next()
+                .map(|e| e.to_lowercase())
+                .unwrap_or_default();
+
+            match ext.as_str() {
+                // Source files
+                "c" | "cpp" | "cxx" | "cc" | "c++" | "m" | "mm" | "asm" | "s" => {
+                    sources.push(node);
+                }
+                // Header files
+                "h" | "hpp" | "hxx" | "hh" | "h++" | "inc" | "inl" => {
+                    headers.push(node);
+                }
+                // Resource files
+                "rc" | "rc2" | "ico" | "cur" | "bmp" | "png" | "jpg" | "jpeg" | "gif"
+                | "manifest" | "resx" => {
+                    resources.push(node);
+                }
+                // Everything else
+                _ => {
+                    others.push(node);
+                }
+            }
+        }
+    }
+}
+
+fn render_references_folder<'a>(
+    state: &'a EditorState,
+    node_id: &str,
+    references: &'a [ProjectReferenceEntry],
+    depth: usize,
+    scale: f32,
+) -> Vec<Element<'a, Message>> {
+    let is_expanded = state.is_solution_node_expanded(node_id);
+    let mut rows: Vec<Element<'a, Message>> = Vec::new();
+
+    rows.push(tree_row(
+        depth,
+        is_expanded,
+        !references.is_empty(),
+        fa_icon_solid("folder").size((12.0 * scale).max(9.0)).color(FOLDER_ICON),
+        text("References").size((12.0 * scale).max(9.0)).color(TEXT),
+        Some(Message::SolutionTreeToggle(node_id.to_string())),
+        None,
+        scale,
+    ));
+
+    if is_expanded {
+        for reference in references {
+            rows.push(tree_row(
+                depth + 1,
+                false,
+                false,
+                fa_icon_solid("cube").size((11.0 * scale).max(8.0)).color(REFERENCE_COLOR),
+                text(&reference.name).size((12.0 * scale).max(9.0)).color(TEXT),
+                None,
+                Some(Message::WorkspaceFileActivated(reference.path.clone())),
                 scale,
             ));
         }
     }
 
-    column
+    rows
+}
+
+fn render_file_node<'a>(
+    state: &'a EditorState,
+    node: &'a SolutionTreeNode,
+    depth: usize,
+    scale: f32,
+) -> Vec<Element<'a, Message>> {
+    let mut rows: Vec<Element<'a, Message>> = Vec::new();
+
+    if node.is_directory {
+        let node_id = format!("dir:{}", node.path.as_deref().unwrap_or(&node.name));
+        let is_expanded = state.is_solution_node_expanded(&node_id);
+
+        rows.push(tree_row(
+            depth,
+            is_expanded,
+            !node.children.is_empty(),
+            fa_icon_solid("folder").size((12.0 * scale).max(9.0)).color(FOLDER_ICON),
+            text(&node.name).size((12.0 * scale).max(9.0)).color(TEXT),
+            Some(Message::SolutionTreeToggle(node_id)),
+            None,
+            scale,
+        ));
+
+        if is_expanded {
+            for child in &node.children {
+                rows.extend(render_file_node(state, child, depth + 1, scale));
+            }
+        }
+    } else {
+        // File node
+        let (icon_name, icon_color) = file_icon(&node.name);
+
+        let click_msg = node
+            .path
+            .as_ref()
+            .map(|p| Message::WorkspaceFileActivated(p.clone()));
+
+        rows.push(tree_row(
+            depth,
+            false,
+            false,
+            fa_icon_solid(icon_name).size((11.0 * scale).max(8.0)).color(icon_color),
+            text(&node.name).size((12.0 * scale).max(9.0)).color(TEXT),
+            None,
+            click_msg,
+            scale,
+        ));
+    }
+
+    rows
+}
+
+// ============================================================================
+// Makefile Rendering
+// ============================================================================
+
+fn render_makefile<'a>(
+    state: &'a EditorState,
+    makefile: &'a MakefileEntry,
+    scale: f32,
+) -> Element<'a, Message> {
+    let node_id = format!("make:{}", makefile.path);
+    let is_expanded = state.is_solution_node_expanded(&node_id);
+
+    let mut rows: Vec<Element<'a, Message>> = Vec::new();
+
+    rows.push(tree_row(
+        0,
+        is_expanded,
+        !makefile.files.is_empty(),
+        fa_icon_solid("cog").size((12.0 * scale).max(9.0)).color(FOLDER_ICON),
+        text(&makefile.name).size((13.0 * scale).max(10.0)).color(TEXT),
+        Some(Message::SolutionTreeToggle(node_id)),
+        Some(Message::WorkspaceFileActivated(makefile.path.clone())),
+        scale,
+    ));
+
+    if is_expanded {
+        for file in &makefile.files {
+            rows.extend(render_file_node(state, file, 1, scale));
+        }
+    }
+
+    Column::with_children(rows).spacing(0.0).into()
+}
+
+// ============================================================================
+// Error Rendering
+// ============================================================================
+
+fn render_error<'a>(error: &'a SolutionErrorEntry, scale: f32) -> Element<'a, Message> {
+    row![
+        fa_icon_solid("circle-exclamation")
+            .size((12.0 * scale).max(9.0))
+            .color(ERROR),
+        text(format!("{}: {}", error.path, error.message))
+            .size((12.0 * scale).max(9.0))
+            .color(ERROR),
+    ]
+    .spacing(6.0)
+    .padding(Padding::from([4.0, 12.0]))
+    .align_y(Alignment::Center)
+    .into()
+}
+
+// ============================================================================
+// Tree Row Helper
+// ============================================================================
+
+fn tree_row<'a>(
+    depth: usize,
+    is_expanded: bool,
+    has_children: bool,
+    icon: impl Into<Element<'a, Message>>,
+    label: iced::widget::Text<'a>,
+    toggle_msg: Option<Message>,
+    click_msg: Option<Message>,
+    scale: f32,
+) -> Element<'a, Message> {
+    let indent = Space::new().width(INDENT_PX * depth as f32);
+
+    // Chevron for expand/collapse
+    let chevron: Element<'a, Message> = if has_children {
+        let chevron_icon = if is_expanded {
+            fa_icon_solid("chevron-down")
+        } else {
+            fa_icon_solid("chevron-right")
+        };
+
+        let chevron_btn = button(
+            chevron_icon
+                .size((10.0 * scale).max(7.0))
+                .color(CHEVRON_COLOR),
+        )
+        .style(style::chevron_button())
+        .padding(Padding::from([2, 4]));
+
+        if let Some(msg) = toggle_msg {
+            chevron_btn.on_press(msg).into()
+        } else {
+            chevron_btn.into()
+        }
+    } else {
+        // Placeholder for alignment
+        Space::new().width(18.0).into()
+    };
+
+    // Build the row content
+    let content: Row<'a, Message> = row![
+        indent,
+        chevron,
+        icon.into(),
+        Space::new().width(4.0),
+        label,
+    ]
+    .spacing(2.0)
+    .align_y(Alignment::Center);
+
+    // Wrap in button if clickable
+    if let Some(msg) = click_msg {
+        button(content)
+            .style(style::tree_row_button(false))
+            .padding(Padding::from([2, 8]))
+            .width(Length::Fill)
+            .on_press(msg)
+            .into()
+    } else {
+        content
+            .padding(Padding::from([2, 8]))
+            .height(ROW_HEIGHT * scale)
+            .into()
+    }
+}
+
+// ============================================================================
+// File Icon Helper
+// ============================================================================
+
+/// Get icon name and color for a file based on its extension
+fn file_icon(name: &str) -> (&'static str, iced::Color) {
+    let ext = name
+        .rsplit('.')
+        .next()
+        .map(|e| e.to_lowercase())
+        .unwrap_or_default();
+
+    match ext.as_str() {
+        // C/C++ source
+        "c" | "cpp" | "cxx" | "cc" | "c++" => ("file-code", iced::Color::from_rgb(0.3, 0.6, 0.9)),
+        // Headers
+        "h" | "hpp" | "hxx" | "hh" | "h++" => ("file-lines", iced::Color::from_rgb(0.6, 0.4, 0.8)),
+        // Build files
+        "vcxproj" | "sln" | "cmake" | "makefile" => {
+            ("file-invoice", iced::Color::from_rgb(0.9, 0.7, 0.3))
+        }
+        // Config/data
+        "json" | "xml" | "yaml" | "yml" | "toml" => {
+            ("file-code", iced::Color::from_rgb(0.5, 0.7, 0.5))
+        }
+        // Resources
+        "rc" | "ico" | "bmp" | "png" | "jpg" | "jpeg" => {
+            ("file-image", iced::Color::from_rgb(0.8, 0.5, 0.6))
+        }
+        // Text/docs
+        "txt" | "md" | "readme" => ("file-lines", FILE_ICON),
+        // Default
+        _ => ("file", FILE_ICON),
+    }
 }

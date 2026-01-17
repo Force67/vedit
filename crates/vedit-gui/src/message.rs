@@ -147,6 +147,9 @@ pub enum Message {
     WindowMoved(i32, i32),   // x, y
     WindowEvent(iced::window::Event),
 
+    // Solution explorer tree messages
+    SolutionTreeToggle(String), // Node ID to expand/collapse
+
     // Wine integration messages
     // Simple Wine integration messages
     WineCreateEnvironmentDialog,

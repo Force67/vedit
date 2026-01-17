@@ -17,6 +17,7 @@ use crate::widgets::text_editor::{DebugDot, ScrollMetrics, buffer_scroll_metrics
 use iced::keyboard;
 use iced::widget::text_editor::{Action as TextEditorAction, Content};
 use std::cmp::Ordering;
+use std::collections::HashSet;
 use std::env;
 use std::ffi::OsStr;
 use std::fs;
@@ -219,6 +220,8 @@ pub struct EditorState {
     // Context menu state
     context_menu_visible: bool,
     context_menu_position: (f32, f32),
+    // Solution explorer tree state
+    solution_expanded_nodes: HashSet<String>,
     // wine: WineState, // Temporarily disabled
 }
 
@@ -266,6 +269,7 @@ impl Default for EditorState {
             tabs_at_top: true, // Default to top tabs (VS-style)
             context_menu_visible: false,
             context_menu_position: (0.0, 0.0),
+            solution_expanded_nodes: HashSet::new(),
             // wine: WineState::new(), // Temporarily disabled
         };
 
@@ -410,6 +414,22 @@ impl EditorState {
 
     pub fn workspace_solutions(&self) -> &[SolutionBrowserEntry] {
         &self.solution_browser
+    }
+
+    pub fn is_solution_node_expanded(&self, node_id: &str) -> bool {
+        self.solution_expanded_nodes.contains(node_id)
+    }
+
+    pub fn toggle_solution_node(&mut self, node_id: String) {
+        if self.solution_expanded_nodes.contains(&node_id) {
+            self.solution_expanded_nodes.remove(&node_id);
+        } else {
+            self.solution_expanded_nodes.insert(node_id);
+        }
+    }
+
+    pub fn expand_solution_node(&mut self, node_id: String) {
+        self.solution_expanded_nodes.insert(node_id);
     }
 
     pub fn refresh_solution_browser(&mut self) -> Result<(), String> {

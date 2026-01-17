@@ -329,6 +329,9 @@ impl EditorApp {
                     Message::SolutionLoaded,
                 ));
             }
+            Message::SolutionTreeToggle(node_id) => {
+                self.state.toggle_solution_node(node_id);
+            }
             Message::WorkspaceLoaded(result) => match result {
                 Ok(Some(WorkspaceData {
                     root,
