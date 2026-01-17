@@ -5,8 +5,9 @@ use crate::syntax::{SyntaxHighlighter, format_highlight};
 use crate::views::console_panel;
 use crate::views::document_tabs::render_document_tabs;
 use crate::views::scrollbar_style::editor_scrollbar_style;
+use crate::widgets::hover_tooltip::render_hover_tooltip;
 use crate::widgets::text_editor::TextEditor as EditorWidget;
-use iced::widget::{column, container, row, vertical_slider};
+use iced::widget::{column, container, row, stack, vertical_slider};
 use iced::{Element, Font, Length, Pixels};
 
 pub fn render_editor_content(
@@ -43,6 +44,7 @@ pub fn render_editor_content(
         .sticky_notes(state.active_sticky_notes())
         .on_gutter_click(|line_number| Message::GutterClicked(line_number))
         .on_right_click(|x, y| Message::EditorContextMenuShow(x, y))
+        .on_hover(|pos, x, y| Message::EditorHover(pos, x, y))
         .padding(editor_padding)
         .on_action(Message::BufferAction)
         .height(Length::Fill);
@@ -117,6 +119,20 @@ pub fn render_editor_content(
             .width(Length::Fill)
             .height(Length::Fixed(300.0)),
         );
+    }
+
+    // Stack hover tooltip overlay on top if visible
+    if let Some(hover_info) = state.hover_info() {
+        let tooltip = render_hover_tooltip(
+            &hover_info.definition,
+            &hover_info.symbol_name,
+            hover_info.tooltip_x,
+            hover_info.tooltip_y,
+            scale,
+            state.current_window_size,
+        );
+
+        return stack![layout, tooltip].into();
     }
 
     layout.into()

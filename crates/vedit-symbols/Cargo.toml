@@ -1,0 +1,25 @@
+[package]
+name = "vedit-symbols"
+version = "0.1.0"
+edition = "2024"
+description = "Symbol indexing and go-to-definition for C/C++ codebases"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+tree-sitter = "0.26"
+tree-sitter-cpp = "0.23"
+thiserror = "2.0"
+
+# Optional dependencies for different project types
+vedit-vs = { path = "../vedit-vs", optional = true }
+vedit-make = { path = "../vedit-make", optional = true }
+
+[dev-dependencies]
+tempfile = "3"
+
+[features]
+default = ["vs", "make"]
+vs = ["dep:vedit-vs"]
+make = ["dep:vedit-make"]

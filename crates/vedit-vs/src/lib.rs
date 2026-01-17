@@ -455,7 +455,8 @@ impl Solution {
                         }
                     }
                     // Parse ProjectConfigurationPlatforms
-                    else if global_line.starts_with("GlobalSection(ProjectConfigurationPlatforms)")
+                    else if global_line
+                        .starts_with("GlobalSection(ProjectConfigurationPlatforms)")
                     {
                         i += 1;
                         while i < lines.len() {
@@ -589,10 +590,13 @@ impl VcxProject {
                     if let Some(config) = ConfigurationPlatform::parse(include) {
                         if !configurations.contains(&config) {
                             configurations.push(config.clone());
-                            config_settings.insert(config.as_str(), ConfigurationSettings {
-                                config: Some(config),
-                                ..Default::default()
-                            });
+                            config_settings.insert(
+                                config.as_str(),
+                                ConfigurationSettings {
+                                    config: Some(config),
+                                    ..Default::default()
+                                },
+                            );
                         }
                     }
                 }
@@ -607,8 +611,7 @@ impl VcxProject {
                         let text = child.text().map(|t| t.trim().to_string());
                         match child_tag {
                             "ProjectGuid" => {
-                                globals.project_guid =
-                                    text.as_ref().and_then(|t| extract_guid(t))
+                                globals.project_guid = text.as_ref().and_then(|t| extract_guid(t))
                             }
                             "RootNamespace" => globals.root_namespace = text,
                             "WindowsTargetPlatformVersion" => {
@@ -731,8 +734,7 @@ impl VcxProject {
                         for child in node.children().filter(|c| c.is_element()) {
                             match child.tag_name().name() {
                                 "Project" => {
-                                    project_guid =
-                                        child.text().and_then(|t| extract_guid(t.trim()))
+                                    project_guid = child.text().and_then(|t| extract_guid(t.trim()))
                                 }
                                 "Name" => name = child.text().map(|t| t.trim().to_string()),
                                 _ => {}
@@ -910,9 +912,8 @@ fn parse_linker_settings(node: roxmltree::Node, settings: &mut LinkerSettings) {
                 }
             }
             "GenerateDebugInformation" => {
-                settings.generate_debug_information = text.map(|t| {
-                    t.eq_ignore_ascii_case("true") || t.eq_ignore_ascii_case("DebugFull")
-                })
+                settings.generate_debug_information = text
+                    .map(|t| t.eq_ignore_ascii_case("true") || t.eq_ignore_ascii_case("DebugFull"))
             }
             "SubSystem" => settings.subsystem = text.map(|t| t.to_string()),
             "EnableCOMDATFolding" => {
@@ -1194,9 +1195,11 @@ mod tests {
         assert!(project.project.is_some());
         let files = &project.project.as_ref().unwrap().files;
         assert_eq!(files.len(), 2);
-        assert!(files
-            .iter()
-            .any(|item| item.include.to_string_lossy() == "src/main.cpp"));
+        assert!(
+            files
+                .iter()
+                .any(|item| item.include.to_string_lossy() == "src/main.cpp")
+        );
     }
 
     #[test]
@@ -1234,7 +1237,10 @@ EndGlobal
         let solution = Solution::from_path(&solution_path).unwrap();
         assert_eq!(solution.configurations.len(), 4);
         assert_eq!(solution.vs_version, Some("17.5.33516.290".to_string()));
-        assert_eq!(solution.minimum_vs_version, Some("10.0.40219.1".to_string()));
+        assert_eq!(
+            solution.minimum_vs_version,
+            Some("10.0.40219.1".to_string())
+        );
     }
 
     #[test]
@@ -1305,14 +1311,18 @@ EndGlobal
 
         // Check configurations
         assert_eq!(project.configurations.len(), 2);
-        assert!(project
-            .configurations
-            .iter()
-            .any(|c| c.as_str() == "Debug|x64"));
-        assert!(project
-            .configurations
-            .iter()
-            .any(|c| c.as_str() == "Release|x64"));
+        assert!(
+            project
+                .configurations
+                .iter()
+                .any(|c| c.as_str() == "Debug|x64")
+        );
+        assert!(
+            project
+                .configurations
+                .iter()
+                .any(|c| c.as_str() == "Release|x64")
+        );
 
         // Check globals
         assert_eq!(
@@ -1331,14 +1341,16 @@ EndGlobal
             debug_settings.configuration_type,
             Some(ConfigurationType::Application)
         );
-        assert_eq!(
-            debug_settings.target_name,
-            Some("test_app".to_string())
-        );
+        assert_eq!(debug_settings.target_name, Some("test_app".to_string()));
 
         // Check compiler settings
         assert_eq!(debug_settings.compiler.include_dirs.len(), 3);
-        assert!(debug_settings.compiler.include_dirs.contains(&"src".to_string()));
+        assert!(
+            debug_settings
+                .compiler
+                .include_dirs
+                .contains(&"src".to_string())
+        );
         assert_eq!(
             debug_settings.compiler.warning_level,
             Some("Level4".to_string())
@@ -1349,17 +1361,16 @@ EndGlobal
         );
 
         // Check preprocessor definitions
-        assert!(debug_settings
-            .compiler
-            .preprocessor_definitions
-            .contains(&"DEBUG".to_string()));
+        assert!(
+            debug_settings
+                .compiler
+                .preprocessor_definitions
+                .contains(&"DEBUG".to_string())
+        );
 
         // Check linker settings
         assert_eq!(debug_settings.linker.library_dirs.len(), 2);
-        assert_eq!(
-            debug_settings.linker.subsystem,
-            Some("Console".to_string())
-        );
+        assert_eq!(debug_settings.linker.subsystem, Some("Console".to_string()));
         assert_eq!(debug_settings.linker.generate_debug_information, Some(true));
 
         // Check project references
@@ -1411,10 +1422,12 @@ EndGlobal
         assert_eq!(solution.folders[0].name, "Libraries");
 
         // Folder should contain the project
-        assert!(solution.folders[0]
-            .children
-            .iter()
-            .any(|c| c.contains("PROJECT-GUID-5678")));
+        assert!(
+            solution.folders[0]
+                .children
+                .iter()
+                .any(|c| c.contains("PROJECT-GUID-5678"))
+        );
 
         // Should have one actual project (not counting folder)
         assert_eq!(solution.projects.len(), 1);
@@ -1477,15 +1490,9 @@ EndGlobal
 
     #[test]
     fn extract_guid_variations() {
-        assert_eq!(
-            extract_guid("{ABC-123}"),
-            Some("ABC-123".to_string())
-        );
+        assert_eq!(extract_guid("{ABC-123}"), Some("ABC-123".to_string()));
         assert_eq!(extract_guid("ABC-123"), Some("ABC-123".to_string()));
-        assert_eq!(
-            extract_guid("  {abc-123}  "),
-            Some("ABC-123".to_string())
-        );
+        assert_eq!(extract_guid("  {abc-123}  "), Some("ABC-123".to_string()));
         assert_eq!(extract_guid(""), None);
         assert_eq!(extract_guid("{}"), None);
     }

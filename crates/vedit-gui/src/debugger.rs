@@ -22,7 +22,9 @@ pub enum DebugTargetSource {
         configuration: Option<String>,
         platform: Option<String>,
     },
-    Makefile { path: PathBuf },
+    Makefile {
+        path: PathBuf,
+    },
     Manual,
 }
 
@@ -1339,7 +1341,11 @@ where
         let notes = if notes_parts.is_empty() {
             format!("From {}", display_path(project_path))
         } else {
-            format!("{}. From {}", notes_parts.join(", "), display_path(project_path))
+            format!(
+                "{}. From {}",
+                notes_parts.join(", "),
+                display_path(project_path)
+            )
         };
 
         targets.push(DebugTarget {
@@ -1381,10 +1387,7 @@ fn compute_vcx_output_path(
     // Get settings for this configuration
     if let Some(settings) = project.settings_for(config) {
         // Try to build path from OutDir + TargetName + TargetExt
-        let target_name = settings
-            .target_name
-            .as_deref()
-            .unwrap_or(project_name);
+        let target_name = settings.target_name.as_deref().unwrap_or(project_name);
 
         #[cfg(windows)]
         let default_ext = ".exe";

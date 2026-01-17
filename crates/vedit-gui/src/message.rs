@@ -96,7 +96,6 @@ pub enum Message {
     WindowClose,
     WindowDragStart,
     WindowResizeStart(iced::Point),
-    WindowResizeMove(iced::Point),
     WindowResizeEnd,
     RefreshRateDetected(f32, f32), // (highest_refresh, current_refresh)
     FileExplorer(crate::widgets::file_explorer::Message),
@@ -159,4 +158,23 @@ pub enum Message {
     WineEnvironmentToggled(String),
     WineCreateEnvironment,
     WineSpawnProcess,
+
+    // Hover-to-definition messages
+    EditorHover(crate::widgets::text_editor::HoverPosition, f32, f32), // (position, x, y)
+    HoverTooltipShow(HoverInfo),
+    HoverTooltipHide,
+    HoverGotoDefinition(std::path::PathBuf, usize, usize), // (file, line, column)
+    HoverDelayTick,                                        // Timer tick to check hover delay
+    HoverCursorMoved(f32, f32),                            // Cursor position for tooltip stickiness
+    SymbolIndexRefresh,
+    SymbolIndexUpdated(Result<usize, String>), // number of files indexed
+}
+
+/// Information about a hover target for the tooltip
+#[derive(Debug, Clone)]
+pub struct HoverInfo {
+    pub symbol_name: String,
+    pub definition: vedit_symbols::DefinitionLocation,
+    pub tooltip_x: f32,
+    pub tooltip_y: f32,
 }

@@ -10,7 +10,7 @@ use crate::state::{
     SolutionTreeNode, VisualStudioProjectEntry, VisualStudioSolutionEntry,
 };
 use crate::style::{self, CHEVRON_COLOR, ERROR, FILE_ICON, FOLDER_ICON, MUTED, TEXT, WARNING};
-use iced::widget::{button, column, row, scrollable, text, Column, Row, Space};
+use iced::widget::{Column, Row, Space, button, column, row, scrollable, text};
 use iced::{Alignment, Element, Length, Padding};
 use iced_font_awesome::fa_icon_solid;
 
@@ -76,9 +76,7 @@ fn render_entry<'a>(
     scale: f32,
 ) -> Element<'a, Message> {
     match entry {
-        SolutionBrowserEntry::VisualStudio(solution) => {
-            render_vs_solution(state, solution, scale)
-        }
+        SolutionBrowserEntry::VisualStudio(solution) => render_vs_solution(state, solution, scale),
         SolutionBrowserEntry::Makefile(makefile) => render_makefile(state, makefile, scale),
         SolutionBrowserEntry::Error(error) => render_error(error, scale),
     }
@@ -100,7 +98,8 @@ fn render_vs_solution<'a>(
 
     // Solution header row
     let project_count = solution.projects.len();
-    let label = format!("Solution '{}' ({} project{})",
+    let label = format!(
+        "Solution '{}' ({} project{})",
         solution.name,
         project_count,
         if project_count == 1 { "" } else { "s" }
@@ -110,7 +109,9 @@ fn render_vs_solution<'a>(
         0,
         is_expanded,
         true, // has children
-        fa_icon_solid("briefcase").size((12.0 * scale).max(9.0)).color(FOLDER_ICON),
+        fa_icon_solid("briefcase")
+            .size((12.0 * scale).max(9.0))
+            .color(FOLDER_ICON),
         text(label).size((13.0 * scale).max(10.0)).color(TEXT),
         Some(Message::SolutionTreeToggle(node_id.clone())),
         Some(Message::SolutionSelected(solution.path.clone())),
@@ -172,15 +173,16 @@ fn render_vs_project<'a>(
         project.name.clone()
     };
 
-    let has_content = !project.files.is_empty()
-        || !project.references.is_empty()
-        || project.load_error.is_some();
+    let has_content =
+        !project.files.is_empty() || !project.references.is_empty() || project.load_error.is_some();
 
     rows.push(tree_row(
         depth,
         is_expanded,
         has_content,
-        fa_icon_solid(icon_name).size((12.0 * scale).max(9.0)).color(icon_color),
+        fa_icon_solid(icon_name)
+            .size((12.0 * scale).max(9.0))
+            .color(icon_color),
         text(label).size((13.0 * scale).max(10.0)).color(TEXT),
         Some(Message::SolutionTreeToggle(node_id.clone())),
         Some(Message::WorkspaceFileActivated(project.path.clone())),
@@ -245,7 +247,13 @@ fn render_categorized_files<'a>(
     let mut resources: Vec<&SolutionTreeNode> = Vec::new();
     let mut others: Vec<&SolutionTreeNode> = Vec::new();
 
-    collect_files_recursive(files, &mut sources, &mut headers, &mut resources, &mut others);
+    collect_files_recursive(
+        files,
+        &mut sources,
+        &mut headers,
+        &mut resources,
+        &mut others,
+    );
 
     // Source Files folder
     if !sources.is_empty() {
@@ -256,8 +264,12 @@ fn render_categorized_files<'a>(
             depth,
             is_expanded,
             true,
-            fa_icon_solid("folder").size((12.0 * scale).max(9.0)).color(FOLDER_ICON),
-            text("Source Files").size((12.0 * scale).max(9.0)).color(TEXT),
+            fa_icon_solid("folder")
+                .size((12.0 * scale).max(9.0))
+                .color(FOLDER_ICON),
+            text("Source Files")
+                .size((12.0 * scale).max(9.0))
+                .color(TEXT),
             Some(Message::SolutionTreeToggle(folder_id)),
             None,
             scale,
@@ -279,8 +291,12 @@ fn render_categorized_files<'a>(
             depth,
             is_expanded,
             true,
-            fa_icon_solid("folder").size((12.0 * scale).max(9.0)).color(FOLDER_ICON),
-            text("Header Files").size((12.0 * scale).max(9.0)).color(TEXT),
+            fa_icon_solid("folder")
+                .size((12.0 * scale).max(9.0))
+                .color(FOLDER_ICON),
+            text("Header Files")
+                .size((12.0 * scale).max(9.0))
+                .color(TEXT),
             Some(Message::SolutionTreeToggle(folder_id)),
             None,
             scale,
@@ -302,8 +318,12 @@ fn render_categorized_files<'a>(
             depth,
             is_expanded,
             true,
-            fa_icon_solid("folder").size((12.0 * scale).max(9.0)).color(FOLDER_ICON),
-            text("Resource Files").size((12.0 * scale).max(9.0)).color(TEXT),
+            fa_icon_solid("folder")
+                .size((12.0 * scale).max(9.0))
+                .color(FOLDER_ICON),
+            text("Resource Files")
+                .size((12.0 * scale).max(9.0))
+                .color(TEXT),
             Some(Message::SolutionTreeToggle(folder_id)),
             None,
             scale,
@@ -381,7 +401,9 @@ fn render_references_folder<'a>(
         depth,
         is_expanded,
         !references.is_empty(),
-        fa_icon_solid("folder").size((12.0 * scale).max(9.0)).color(FOLDER_ICON),
+        fa_icon_solid("folder")
+            .size((12.0 * scale).max(9.0))
+            .color(FOLDER_ICON),
         text("References").size((12.0 * scale).max(9.0)).color(TEXT),
         Some(Message::SolutionTreeToggle(node_id.to_string())),
         None,
@@ -394,8 +416,12 @@ fn render_references_folder<'a>(
                 depth + 1,
                 false,
                 false,
-                fa_icon_solid("cube").size((11.0 * scale).max(8.0)).color(REFERENCE_COLOR),
-                text(&reference.name).size((12.0 * scale).max(9.0)).color(TEXT),
+                fa_icon_solid("cube")
+                    .size((11.0 * scale).max(8.0))
+                    .color(REFERENCE_COLOR),
+                text(&reference.name)
+                    .size((12.0 * scale).max(9.0))
+                    .color(TEXT),
                 None,
                 Some(Message::WorkspaceFileActivated(reference.path.clone())),
                 scale,
@@ -422,7 +448,9 @@ fn render_file_node<'a>(
             depth,
             is_expanded,
             !node.children.is_empty(),
-            fa_icon_solid("folder").size((12.0 * scale).max(9.0)).color(FOLDER_ICON),
+            fa_icon_solid("folder")
+                .size((12.0 * scale).max(9.0))
+                .color(FOLDER_ICON),
             text(&node.name).size((12.0 * scale).max(9.0)).color(TEXT),
             Some(Message::SolutionTreeToggle(node_id)),
             None,
@@ -447,7 +475,9 @@ fn render_file_node<'a>(
             depth,
             false,
             false,
-            fa_icon_solid(icon_name).size((11.0 * scale).max(8.0)).color(icon_color),
+            fa_icon_solid(icon_name)
+                .size((11.0 * scale).max(8.0))
+                .color(icon_color),
             text(&node.name).size((12.0 * scale).max(9.0)).color(TEXT),
             None,
             click_msg,
@@ -476,8 +506,12 @@ fn render_makefile<'a>(
         0,
         is_expanded,
         !makefile.files.is_empty(),
-        fa_icon_solid("cog").size((12.0 * scale).max(9.0)).color(FOLDER_ICON),
-        text(&makefile.name).size((13.0 * scale).max(10.0)).color(TEXT),
+        fa_icon_solid("cog")
+            .size((12.0 * scale).max(9.0))
+            .color(FOLDER_ICON),
+        text(&makefile.name)
+            .size((13.0 * scale).max(10.0))
+            .color(TEXT),
         Some(Message::SolutionTreeToggle(node_id)),
         Some(Message::WorkspaceFileActivated(makefile.path.clone())),
         scale,
@@ -554,15 +588,10 @@ fn tree_row<'a>(
     };
 
     // Build the row content
-    let content: Row<'a, Message> = row![
-        indent,
-        chevron,
-        icon.into(),
-        Space::new().width(4.0),
-        label,
-    ]
-    .spacing(2.0)
-    .align_y(Alignment::Center);
+    let content: Row<'a, Message> =
+        row![indent, chevron, icon.into(), Space::new().width(4.0), label,]
+            .spacing(2.0)
+            .align_y(Alignment::Center);
 
     // Wrap in button if clickable
     if let Some(msg) = click_msg {

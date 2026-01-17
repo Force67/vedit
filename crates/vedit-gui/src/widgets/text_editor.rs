@@ -538,6 +538,15 @@ pub struct DebugDot {
     pub enabled: bool,
 }
 
+/// Information about a hover position in the editor
+#[derive(Debug, Clone, Copy)]
+pub struct HoverPosition {
+    pub line: usize,        // 1-indexed line number
+    pub column: usize,      // 0-indexed column (character offset in line)
+    pub byte_offset: usize, // Byte offset from start of line
+    pub line_y: f32,        // Y coordinate of the line's top edge (for tooltip positioning)
+}
+
 pub struct TextEditor<'a, Message, H = highlighter::PlainText>
 where
     H: IcedHighlighter,
@@ -558,6 +567,7 @@ where
     sticky_notes: Vec<StickyNote>,
     on_gutter_click: Option<Rc<dyn Fn(usize) -> Message>>,
     on_right_click: Option<Rc<dyn Fn(f32, f32) -> Message>>,
+    on_hover: Option<Rc<dyn Fn(HoverPosition, f32, f32) -> Message>>, // (position, x, y)
     hover_line: Option<usize>,
     cached_line_numbers: Rc<RefCell<CachedLineNumbers>>,
     cached_line_metrics: Rc<RefCell<CachedLineMetrics>>,
@@ -596,6 +606,7 @@ impl<'a, Message> TextEditor<'a, Message, highlighter::PlainText> {
             sticky_notes: Vec::new(),
             on_gutter_click: None,
             on_right_click: None,
+            on_hover: None,
             hover_line: None,
             cached_line_numbers: Rc::new(RefCell::new(CachedLineNumbers::new())),
             cached_line_metrics: Rc::new(RefCell::new(CachedLineMetrics::new())),
@@ -633,6 +644,7 @@ impl<'a, Message> TextEditor<'a, Message, highlighter::PlainText> {
             sticky_notes: self.sticky_notes.clone(),
             on_gutter_click: self.on_gutter_click.clone(),
             on_right_click: self.on_right_click.clone(),
+            on_hover: self.on_hover.clone(),
             hover_line: self.hover_line,
             cached_line_numbers: Rc::clone(&self.cached_line_numbers),
             cached_line_metrics: Rc::clone(&self.cached_line_metrics),
@@ -763,6 +775,16 @@ where
         self
     }
 
+    /// Set a callback for hover events in the content area.
+    /// The callback receives (HoverPosition, x, y) where x and y are screen coordinates.
+    pub fn on_hover<F>(mut self, f: F) -> Self
+    where
+        F: Fn(HoverPosition, f32, f32) -> Message + 'a + 'static,
+    {
+        self.on_hover = Some(Rc::new(f));
+        self
+    }
+
     /// Get cached scroll metrics, updating cache if needed
     pub fn cached_scroll_metrics(&self) -> ScrollMetrics {
         let editor_ref = borrow_editor(self.content);
@@ -833,6 +855,68 @@ where
             // Fallback calculation
             Some(line_number + 1)
         }
+    }
+
+    /// Get full hover position (line, column, byte_offset) from cursor position in content area
+    fn get_hover_position(&self, position: Point, bounds: Rectangle) -> Option<HoverPosition> {
+        let editor_ref = borrow_editor(self.content);
+        let buffer = editor_ref.buffer();
+        let metrics = buffer.metrics();
+        let line_height = metrics.line_height.max(1.0);
+        let scroll = get_scroll_line(buffer);
+        let content_x = bounds.x + self.base_padding.left + self.gutter_width;
+        let start_y = bounds.y + self.base_padding.top;
+
+        // Must be in content area (not gutter)
+        if position.x < content_x {
+            return None;
+        }
+
+        // Calculate line number
+        let relative_y = position.y - start_y;
+        if relative_y < 0.0 {
+            return None;
+        }
+
+        // Calculate visual line index
+        let visual_line_index = (relative_y / line_height) as usize;
+
+        // Get the actual buffer line number using incremental state
+        let incremental_state = self.incremental_line_state.borrow();
+        let visible_lines = calculate_visible_lines(buffer, None);
+        let total_lines = incremental_state.optimized.wrap_index.total_visual();
+        let visible_line_numbers =
+            incremental_state.get_visible_lines(scroll, visible_lines, total_lines);
+
+        let line = if visual_line_index < visible_line_numbers.len() {
+            visible_line_numbers[visual_line_index]
+        } else {
+            return None;
+        };
+
+        // Calculate column from X position
+        // Use approximate character width based on font metrics
+        let relative_x = position.x - content_x;
+        let font_size = self.font_size.map(|p| p.0).unwrap_or(metrics.font_size);
+        // Approximate monospace character width (typically ~0.6 of font size)
+        let char_width = font_size * 0.6;
+        let column = (relative_x / char_width).floor() as usize;
+
+        // For byte offset, we need to account for the actual line content
+        // For now, assume 1 byte per character (ASCII). For full UTF-8 support,
+        // we'd need to query the actual line content.
+        let byte_offset = column;
+
+        // Calculate the Y coordinate of the line's BOTTOM edge (for tooltip positioning)
+        // Adding line_height so tooltip appears right below the hovered text
+        let line_y = start_y + ((visual_line_index + 1) as f32 * line_height);
+
+        Some(HoverPosition {
+            line,
+            column,
+            byte_offset,
+            line_y,
+        })
     }
 }
 
@@ -921,6 +1005,27 @@ where
                     {
                         shell.publish(gutter_click_handler(line_number));
                         return;
+                    }
+                }
+            }
+        }
+
+        // Handle mouse move for hover detection in content area
+        if let Some(hover_handler) = &self.on_hover {
+            if let Event::Mouse(mouse::Event::CursorMoved { .. }) = event {
+                if let Some(cursor_pos) = cursor.position_over(layout.bounds()) {
+                    let gutter_right =
+                        layout.bounds().x + self.base_padding.left + self.gutter_width;
+
+                    // Only trigger hover in content area (not gutter)
+                    if cursor_pos.x >= gutter_right {
+                        if let Some(hover_pos) =
+                            self.get_hover_position(cursor_pos, layout.bounds())
+                        {
+                            // Use line_y for tooltip positioning (not cursor_pos.y)
+                            // This places the tooltip right at the line being hovered
+                            shell.publish(hover_handler(hover_pos, cursor_pos.x, hover_pos.line_y));
+                        }
                     }
                 }
             }

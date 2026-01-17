@@ -168,12 +168,14 @@ impl LanguageRegistry {
                 .cpp
                 .get_or_init(|| {
                     // C++ grammar extends C, so we need both C and C++ highlight queries
+                    // plus extensions for keywords missing from tree-sitter-cpp
                     // Leak the combined string since this is one-time initialization
                     let combined_query: &'static str = Box::leak(
                         format!(
-                            "{}\n{}",
+                            "{}\n{}\n{}",
                             tree_sitter_c::HIGHLIGHT_QUERY,
-                            tree_sitter_cpp::HIGHLIGHT_QUERY
+                            tree_sitter_cpp::HIGHLIGHT_QUERY,
+                            CPP_HIGHLIGHT_EXTENSION
                         )
                         .into_boxed_str(),
                     );
@@ -405,6 +407,14 @@ fn build_config(
         palette_map,
     })
 }
+
+/// Additional C++ highlight queries for keywords missing from tree-sitter-cpp
+const CPP_HIGHLIGHT_EXTENSION: &str = r#"
+(decltype "decltype" @keyword)
+(static_assert_declaration "static_assert" @keyword)
+(alignas_qualifier "alignas" @keyword)
+(alignof_expression "alignof" @keyword)
+"#;
 
 const HIGHLIGHT_NAMES: &[&str] = &[
     "attribute",

@@ -222,7 +222,17 @@ pub struct EditorState {
     context_menu_position: (f32, f32),
     // Solution explorer tree state
     solution_expanded_nodes: HashSet<String>,
-    // wine: WineState, // Temporarily disabled
+    // Hover-to-definition state
+    symbol_index: vedit_symbols::SymbolIndex,
+    hover_info: Option<crate::message::HoverInfo>,
+    hover_debounce_time: Option<Instant>,
+    last_hover_position: Option<(usize, usize)>, // (line, column) for debouncing
+    // Hover delay and sticky tooltip state
+    hover_delay_start: Option<Instant>, // When hover started for 3s delay
+    pending_hover_info: Option<crate::message::HoverInfo>, // Info to show after delay
+    hover_tooltip_rect: Option<(f32, f32, f32, f32)>, // (x, y, width, height) for stickiness
+    hover_cursor_in_tooltip: bool,      // Is cursor inside the tooltip?
+                                        // wine: WineState, // Temporarily disabled
 }
 
 impl Default for EditorState {
@@ -270,6 +280,14 @@ impl Default for EditorState {
             context_menu_visible: false,
             context_menu_position: (0.0, 0.0),
             solution_expanded_nodes: HashSet::new(),
+            symbol_index: vedit_symbols::SymbolIndex::new(),
+            hover_info: None,
+            hover_debounce_time: None,
+            last_hover_position: None,
+            hover_delay_start: None,
+            pending_hover_info: None,
+            hover_tooltip_rect: None,
+            hover_cursor_in_tooltip: false,
             // wine: WineState::new(), // Temporarily disabled
         };
 
@@ -650,6 +668,19 @@ impl EditorState {
         if let Err(err) = self.refresh_solution_browser() {
             self.set_error(Some(err));
         }
+        // Index symbols from discovered solutions/makefiles
+        match self.refresh_symbol_index() {
+            Ok(count) => {
+                // Note: skipping editor_log_info here due to crash in console logging
+                // when called during workspace install
+                if count > 0 {
+                    eprintln!("INFO: Indexed {} header files for symbol lookup", count);
+                }
+            }
+            Err(err) => {
+                eprintln!("WARNING: Failed to index symbols: {}", err);
+            }
+        }
         self.sync_buffer_from_editor();
     }
 
@@ -719,6 +750,283 @@ impl EditorState {
 
     pub fn context_menu_position(&self) -> (f32, f32) {
         self.context_menu_position
+    }
+
+    // Hover-to-definition methods
+    pub fn hover_info(&self) -> Option<&crate::message::HoverInfo> {
+        self.hover_info.as_ref()
+    }
+
+    pub fn set_hover_info(&mut self, info: Option<crate::message::HoverInfo>) {
+        if let Some(ref info) = info {
+            // Calculate tooltip bounds for stickiness
+            // These values should match hover_tooltip.rs
+            let scale = self.scale_factor as f32;
+            let tooltip_width = 450.0 * scale;
+            let tooltip_height = 250.0 * scale; // max height
+            let cursor_offset_y = 2.0; // Must match hover_tooltip.rs
+
+            // Calculate position with edge clamping (must match hover_tooltip.rs)
+            let window_size = self.current_window_size;
+            let mut tooltip_x = info.tooltip_x;
+            let mut tooltip_y = info.tooltip_y + cursor_offset_y;
+
+            // Clamp to window bounds
+            if tooltip_x + tooltip_width > window_size.width - 10.0 {
+                tooltip_x = (window_size.width - tooltip_width - 10.0).max(10.0);
+            }
+            if tooltip_y + tooltip_height > window_size.height - 10.0 {
+                // Show above cursor instead
+                tooltip_y = (info.tooltip_y - tooltip_height - 10.0).max(10.0);
+            }
+            tooltip_x = tooltip_x.max(10.0);
+            tooltip_y = tooltip_y.max(10.0);
+
+            // Create a bounding box that includes:
+            // 1. The original cursor position (where the user was hovering)
+            // 2. The tooltip itself
+            // 3. Generous padding for easy mouse movement
+            let padding = 40.0 * scale;
+
+            // Find the bounding box that includes cursor and tooltip
+            let cursor_x = info.tooltip_x;
+            let cursor_y = info.tooltip_y;
+            let tooltip_right = tooltip_x + tooltip_width;
+            let tooltip_bottom = tooltip_y + tooltip_height;
+
+            let bounds_x = cursor_x.min(tooltip_x) - padding;
+            let bounds_y = cursor_y.min(tooltip_y) - padding;
+            let bounds_right = cursor_x.max(tooltip_right) + padding;
+            let bounds_bottom = cursor_y.max(tooltip_bottom) + padding;
+
+            self.hover_tooltip_rect = Some((
+                bounds_x.max(0.0),
+                bounds_y.max(0.0),
+                bounds_right - bounds_x.max(0.0),
+                bounds_bottom - bounds_y.max(0.0),
+            ));
+        } else {
+            self.hover_tooltip_rect = None;
+        }
+        self.hover_info = info;
+    }
+
+    pub fn hide_hover_tooltip(&mut self) {
+        // Don't hide if cursor is inside the tooltip
+        if self.hover_cursor_in_tooltip {
+            return;
+        }
+        self.hover_info = None;
+        self.pending_hover_info = None;
+        self.hover_delay_start = None;
+        self.hover_tooltip_rect = None;
+    }
+
+    /// Force hide tooltip (ignores cursor-in-tooltip state)
+    pub fn force_hide_hover_tooltip(&mut self) {
+        self.hover_info = None;
+        self.pending_hover_info = None;
+        self.hover_delay_start = None;
+        self.hover_tooltip_rect = None;
+        self.hover_cursor_in_tooltip = false;
+    }
+
+    pub fn hover_tooltip_visible(&self) -> bool {
+        self.hover_info.is_some()
+    }
+
+    pub fn symbol_index(&self) -> &vedit_symbols::SymbolIndex {
+        &self.symbol_index
+    }
+
+    pub fn symbol_index_mut(&mut self) -> &mut vedit_symbols::SymbolIndex {
+        &mut self.symbol_index
+    }
+
+    /// Set the tooltip rectangle bounds for sticky behavior
+    pub fn set_hover_tooltip_rect(&mut self, rect: Option<(f32, f32, f32, f32)>) {
+        self.hover_tooltip_rect = rect;
+    }
+
+    /// Get the tooltip rectangle bounds
+    pub fn hover_tooltip_rect(&self) -> Option<(f32, f32, f32, f32)> {
+        self.hover_tooltip_rect
+    }
+
+    /// Check if a point is inside the tooltip bounds
+    pub fn is_point_in_tooltip(&self, x: f32, y: f32) -> bool {
+        if let Some((tx, ty, tw, th)) = self.hover_tooltip_rect {
+            x >= tx && x <= tx + tw && y >= ty && y <= ty + th
+        } else {
+            false
+        }
+    }
+
+    /// Set whether cursor is inside the tooltip
+    pub fn set_cursor_in_tooltip(&mut self, inside: bool) {
+        self.hover_cursor_in_tooltip = inside;
+    }
+
+    /// Check if cursor is inside the tooltip
+    pub fn is_cursor_in_tooltip(&self) -> bool {
+        self.hover_cursor_in_tooltip
+    }
+
+    /// Start the hover delay timer for a symbol
+    /// Returns true if this is a new hover position
+    pub fn start_hover_delay(&mut self, info: crate::message::HoverInfo) -> bool {
+        let now = Instant::now();
+
+        // If we're already showing tooltip and cursor is in it, don't restart
+        if self.hover_info.is_some() && self.hover_cursor_in_tooltip {
+            return false;
+        }
+
+        // Check if this is a different position than last time
+        let is_new_position = self.pending_hover_info.as_ref().map_or(true, |pending| {
+            pending.symbol_name != info.symbol_name
+                || (pending.tooltip_x - info.tooltip_x).abs() > 50.0
+                || (pending.tooltip_y - info.tooltip_y).abs() > 20.0
+        });
+
+        if is_new_position {
+            self.pending_hover_info = Some(info);
+            self.hover_delay_start = Some(now);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Check if the hover delay has elapsed (3 seconds)
+    /// Returns Some(info) if delay elapsed and tooltip should be shown
+    pub fn check_hover_delay(&mut self) -> Option<crate::message::HoverInfo> {
+        const HOVER_DELAY_MS: u128 = 3000; // 3 seconds
+
+        if let (Some(start), Some(info)) = (self.hover_delay_start, &self.pending_hover_info) {
+            let elapsed = Instant::now().duration_since(start).as_millis();
+            if elapsed >= HOVER_DELAY_MS {
+                let info = info.clone();
+                self.pending_hover_info = None;
+                self.hover_delay_start = None;
+                return Some(info);
+            }
+        }
+        None
+    }
+
+    /// Cancel any pending hover
+    pub fn cancel_pending_hover(&mut self) {
+        self.pending_hover_info = None;
+        self.hover_delay_start = None;
+    }
+
+    /// Check if there's a pending hover
+    pub fn has_pending_hover(&self) -> bool {
+        self.pending_hover_info.is_some()
+    }
+
+    /// Check if hover debounce has passed (150ms)
+    pub fn should_process_hover(&mut self, line: usize, column: usize) -> bool {
+        let now = Instant::now();
+
+        // Check if position changed significantly
+        if let Some((last_line, last_col)) = self.last_hover_position {
+            if last_line == line && (last_col as i32 - column as i32).abs() <= 2 {
+                // Same position, check debounce time
+                if let Some(debounce_time) = self.hover_debounce_time {
+                    if now.duration_since(debounce_time).as_millis() < 150 {
+                        return false;
+                    }
+                }
+            }
+        }
+
+        self.last_hover_position = Some((line, column));
+        self.hover_debounce_time = Some(now);
+        true
+    }
+
+    /// Index symbols from loaded VS solutions and Makefiles
+    pub fn refresh_symbol_index(&mut self) -> Result<usize, String> {
+        use vedit_symbols::{MakefileIndexer, ProjectIndexer, VsSolutionIndexer};
+
+        let mut total_indexed = 0;
+
+        for entry in &self.solution_browser {
+            match entry {
+                SolutionBrowserEntry::VisualStudio(solution) => {
+                    let solution_path = PathBuf::from(&solution.path);
+                    if solution_path.exists() {
+                        match VsSolutionIndexer::from_path(&solution_path) {
+                            Ok(indexer) => match indexer.index(&mut self.symbol_index) {
+                                Ok(count) => total_indexed += count,
+                                Err(e) => {
+                                    editor_log_warning!(
+                                        "SYMBOLS",
+                                        "Failed to index solution: {}",
+                                        e
+                                    );
+                                }
+                            },
+                            Err(e) => {
+                                editor_log_warning!("SYMBOLS", "Failed to parse solution: {}", e);
+                            }
+                        }
+                    }
+                }
+                SolutionBrowserEntry::Makefile(makefile) => {
+                    let makefile_path = PathBuf::from(&makefile.path);
+                    if makefile_path.exists() {
+                        match MakefileIndexer::from_path(&makefile_path) {
+                            Ok(indexer) => match indexer.index(&mut self.symbol_index) {
+                                Ok(count) => total_indexed += count,
+                                Err(e) => {
+                                    editor_log_warning!(
+                                        "SYMBOLS",
+                                        "Failed to index Makefile: {}",
+                                        e
+                                    );
+                                }
+                            },
+                            Err(e) => {
+                                editor_log_warning!("SYMBOLS", "Failed to parse Makefile: {}", e);
+                            }
+                        }
+                    }
+                }
+                SolutionBrowserEntry::Error(_) => {
+                    // Skip error entries
+                }
+            }
+        }
+
+        Ok(total_indexed)
+    }
+
+    /// Look up a symbol definition at the given position in the active document
+    pub fn lookup_symbol_at_position(
+        &self,
+        line: usize,
+        column: usize,
+    ) -> Option<crate::message::HoverInfo> {
+        use vedit_symbols::{line_column_to_byte_offset, symbol_at_offset};
+
+        let doc = self.editor().active_document()?;
+        let content = doc.buffer.to_string();
+        let byte_offset = line_column_to_byte_offset(&content, line, column)?;
+
+        let hover_symbol = symbol_at_offset(&content, byte_offset)?;
+
+        // Look up the definition in the symbol index
+        let definitions = self.symbol_index.find_definition(&hover_symbol.name);
+
+        definitions.first().map(|def| crate::message::HoverInfo {
+            symbol_name: hover_symbol.name.clone(),
+            definition: (*def).clone(),
+            tooltip_x: 0.0, // Will be set by caller
+            tooltip_y: 0.0,
+        })
     }
 
     pub fn settings(&self) -> &SettingsState {
@@ -1657,7 +1965,8 @@ fn convert_solution(solution: VsSolution) -> VisualStudioSolutionEntry {
     let mut projects = Vec::new();
 
     // Build a map from GUID to project name for resolving references
-    let mut guid_to_name: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let mut guid_to_name: std::collections::HashMap<String, String> =
+        std::collections::HashMap::new();
     for project in &solution.projects {
         if let Some(guid) = &project.project_guid {
             guid_to_name.insert(guid.to_uppercase(), project.name.clone());
@@ -1672,69 +1981,97 @@ fn convert_solution(solution: VsSolution) -> VisualStudioSolutionEntry {
             warnings.push(format!("{}: {}", project.name, err));
         }
 
-        let (files, configurations, project_type, platform_toolset, references, include_dirs, preprocessor_defs) =
-            if let Some(ref vcx) = project.project {
-                let files = build_vcx_tree(vcx);
-                let configurations: Vec<String> =
-                    vcx.configurations.iter().map(|c| c.as_str()).collect();
+        let (
+            files,
+            configurations,
+            project_type,
+            platform_toolset,
+            references,
+            include_dirs,
+            preprocessor_defs,
+        ) = if let Some(ref vcx) = project.project {
+            let files = build_vcx_tree(vcx);
+            let configurations: Vec<String> =
+                vcx.configurations.iter().map(|c| c.as_str()).collect();
 
-                // Determine project type from first config
-                let project_type = vcx
-                    .configurations
-                    .first()
-                    .and_then(|c| vcx.settings_for(c))
-                    .and_then(|s| s.configuration_type)
-                    .map(|ct| match ct {
-                        ConfigurationType::Application => "Application".to_string(),
-                        ConfigurationType::DynamicLibrary => "Dynamic Library".to_string(),
-                        ConfigurationType::StaticLibrary => "Static Library".to_string(),
-                        ConfigurationType::Utility => "Utility".to_string(),
-                        ConfigurationType::Makefile => "Makefile".to_string(),
-                    });
+            // Determine project type from first config
+            let project_type = vcx
+                .configurations
+                .first()
+                .and_then(|c| vcx.settings_for(c))
+                .and_then(|s| s.configuration_type)
+                .map(|ct| match ct {
+                    ConfigurationType::Application => "Application".to_string(),
+                    ConfigurationType::DynamicLibrary => "Dynamic Library".to_string(),
+                    ConfigurationType::StaticLibrary => "Static Library".to_string(),
+                    ConfigurationType::Utility => "Utility".to_string(),
+                    ConfigurationType::Makefile => "Makefile".to_string(),
+                });
 
-                let platform_toolset = vcx.globals.platform_toolset.clone();
+            let platform_toolset = vcx.globals.platform_toolset.clone();
 
-                // Convert project references
-                let references: Vec<ProjectReferenceEntry> = vcx
-                    .project_references
-                    .iter()
-                    .map(|r| {
-                        let name = r
-                            .name
-                            .clone()
-                            .or_else(|| {
-                                r.project_guid
-                                    .as_ref()
-                                    .and_then(|g| guid_to_name.get(&g.to_uppercase()).cloned())
-                            })
-                            .unwrap_or_else(|| {
-                                r.include
-                                    .file_stem()
-                                    .and_then(|s| s.to_str())
-                                    .unwrap_or("Unknown")
-                                    .to_string()
-                            });
-                        ProjectReferenceEntry {
-                            name,
-                            path: r.full_path.to_string_lossy().to_string(),
-                        }
-                    })
-                    .collect();
+            // Convert project references
+            let references: Vec<ProjectReferenceEntry> = vcx
+                .project_references
+                .iter()
+                .map(|r| {
+                    let name = r
+                        .name
+                        .clone()
+                        .or_else(|| {
+                            r.project_guid
+                                .as_ref()
+                                .and_then(|g| guid_to_name.get(&g.to_uppercase()).cloned())
+                        })
+                        .unwrap_or_else(|| {
+                            r.include
+                                .file_stem()
+                                .and_then(|s| s.to_str())
+                                .unwrap_or("Unknown")
+                                .to_string()
+                        });
+                    ProjectReferenceEntry {
+                        name,
+                        path: r.full_path.to_string_lossy().to_string(),
+                    }
+                })
+                .collect();
 
-                // Get include dirs and preprocessor defs (limit to first few)
-                let include_dirs: Vec<String> = vcx.all_include_dirs().into_iter().take(5).map(|s| s.to_string()).collect();
-                let preprocessor_defs: Vec<String> = vcx
-                    .all_preprocessor_definitions()
-                    .into_iter()
-                    .filter(|d| !d.starts_with("_") && !d.contains("%("))
-                    .take(5)
-                    .map(|s| s.to_string())
-                    .collect();
+            // Get include dirs and preprocessor defs (limit to first few)
+            let include_dirs: Vec<String> = vcx
+                .all_include_dirs()
+                .into_iter()
+                .take(5)
+                .map(|s| s.to_string())
+                .collect();
+            let preprocessor_defs: Vec<String> = vcx
+                .all_preprocessor_definitions()
+                .into_iter()
+                .filter(|d| !d.starts_with("_") && !d.contains("%("))
+                .take(5)
+                .map(|s| s.to_string())
+                .collect();
 
-                (files, configurations, project_type, platform_toolset, references, include_dirs, preprocessor_defs)
-            } else {
-                (Vec::new(), Vec::new(), None, None, Vec::new(), Vec::new(), Vec::new())
-            };
+            (
+                files,
+                configurations,
+                project_type,
+                platform_toolset,
+                references,
+                include_dirs,
+                preprocessor_defs,
+            )
+        } else {
+            (
+                Vec::new(),
+                Vec::new(),
+                None,
+                None,
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+            )
+        };
 
         projects.push(VisualStudioProjectEntry {
             name: project.name,

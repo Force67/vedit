@@ -3922,6 +3922,7 @@ dependencies = [
  "vedit-debugger-gdb",
  "vedit-document",
  "vedit-make",
+ "vedit-symbols",
  "vedit-vs",
  "vedit-wine",
 ]
@@ -3940,6 +3941,18 @@ version = "0.1.0"
 dependencies = [
  "tempfile",
  "thiserror 2.0.17",
+]
+
+[[package]]
+name = "vedit-symbols"
+version = "0.1.0"
+dependencies = [
+ "tempfile",
+ "thiserror 2.0.17",
+ "tree-sitter",
+ "tree-sitter-cpp",
+ "vedit-make",
+ "vedit-vs",
 ]
 
 [[package]]

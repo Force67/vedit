@@ -605,6 +605,117 @@ impl EditorApp {
                 self.state
                     .apply_buffer_action(iced::widget::text_editor::Action::SelectAll);
             }
+
+            // Hover-to-definition messages
+            Message::EditorHover(pos, x, y) => {
+                // Debounce hover events
+                if !self.state.should_process_hover(pos.line, pos.column) {
+                    return Task::none();
+                }
+
+                // Look up symbol at position and start delay timer
+                if let Some(mut info) = self.state.lookup_symbol_at_position(pos.line, pos.column) {
+                    info.tooltip_x = x;
+                    info.tooltip_y = y;
+                    self.state.start_hover_delay(info);
+                } else {
+                    // No symbol at this position - hide tooltip if not sticky
+                    if !self.state.is_cursor_in_tooltip() {
+                        self.state.cancel_pending_hover();
+                    }
+                }
+            }
+            Message::HoverDelayTick => {
+                // Check if hover delay has elapsed
+                if let Some(info) = self.state.check_hover_delay() {
+                    self.state.set_hover_info(Some(info));
+                }
+            }
+            Message::HoverCursorMoved(x, y) => {
+                // Check if cursor is inside the tooltip bounds
+                let in_tooltip = self.state.is_point_in_tooltip(x, y);
+                self.state.set_cursor_in_tooltip(in_tooltip);
+
+                // If cursor moved outside tooltip and no pending hover, hide it
+                if !in_tooltip
+                    && self.state.hover_tooltip_visible()
+                    && !self.state.has_pending_hover()
+                {
+                    self.state.force_hide_hover_tooltip();
+                }
+
+                // Also handle window resize dragging (was WindowResizeMove)
+                let pos = iced::Point::new(x, y);
+                if let Some(id) = self.main_window_id {
+                    if let (Some(start_pos), Some(start_size), Some(dir)) = (
+                        self.state.resize_start_pos,
+                        self.state.resize_start_size,
+                        self.state.resize_direction,
+                    ) {
+                        let delta = pos - start_pos;
+                        const MIN_WIDTH: f32 = 400.0;
+                        const MIN_HEIGHT: f32 = 300.0;
+                        let new_width = if matches!(
+                            dir,
+                            crate::state::ResizeDirection::Right
+                                | crate::state::ResizeDirection::Both
+                        ) {
+                            (start_size.width + delta.x).max(MIN_WIDTH)
+                        } else {
+                            start_size.width
+                        };
+                        let new_height = if matches!(
+                            dir,
+                            crate::state::ResizeDirection::Bottom
+                                | crate::state::ResizeDirection::Both
+                        ) {
+                            (start_size.height + delta.y).max(MIN_HEIGHT)
+                        } else {
+                            start_size.height
+                        };
+                        let new_size = iced::Size::new(new_width, new_height);
+                        self.state.current_window_size = new_size;
+                        return window::resize(id, new_size);
+                    }
+                }
+            }
+            Message::HoverTooltipShow(info) => {
+                self.state.set_hover_info(Some(info));
+            }
+            Message::HoverTooltipHide => {
+                self.state.hide_hover_tooltip();
+            }
+            Message::HoverGotoDefinition(file_path, _line, _column) => {
+                self.state.force_hide_hover_tooltip();
+
+                // Open the file and navigate to line
+                let path_str = file_path.to_string_lossy().to_string();
+                return self.wrap_command(Task::perform(
+                    commands::load_document_from_path(path_str.clone()),
+                    move |result| {
+                        // After loading, we need to scroll to the line
+                        // For now, just load the file - scrolling will be handled separately
+                        Message::FileLoaded(result.map(Some))
+                    },
+                ));
+            }
+            Message::SymbolIndexRefresh => match self.state.refresh_symbol_index() {
+                Ok(count) => {
+                    editor_log_info!("SYMBOLS", "Indexed {} files", count);
+                }
+                Err(e) => {
+                    editor_log_error!("SYMBOLS", "Failed to refresh symbol index: {}", e);
+                }
+            },
+            Message::SymbolIndexUpdated(result) => match result {
+                Ok(count) => {
+                    editor_log_info!("SYMBOLS", "Symbol index updated: {} files", count);
+                }
+                Err(e) => {
+                    editor_log_error!("SYMBOLS", "Symbol index update failed: {}", e);
+                }
+            },
+
             Message::SettingsOpened => {
                 self.state.close_debugger_menu();
                 self.state.open_settings();
@@ -1058,40 +1169,6 @@ impl EditorApp {
                     });
                 }
             }
-            Message::WindowResizeMove(pos) => {
-                if let Some(id) = self.main_window_id {
-                    if let (Some(start_pos), Some(start_size), Some(dir)) = (
-                        self.state.resize_start_pos,
-                        self.state.resize_start_size,
-                        self.state.resize_direction,
-                    ) {
-                        let delta = pos - start_pos;
-                        const MIN_WIDTH: f32 = 400.0;
-                        const MIN_HEIGHT: f32 = 300.0;
-                        let new_width = if matches!(
-                            dir,
-                            crate::state::ResizeDirection::Right
-                                | crate::state::ResizeDirection::Both
-                        ) {
-                            (start_size.width + delta.x).max(MIN_WIDTH)
-                        } else {
-                            start_size.width
-                        };
-                        let new_height = if matches!(
-                            dir,
-                            crate::state::ResizeDirection::Bottom
-                                | crate::state::ResizeDirection::Both
-                        ) {
-                            (start_size.height + delta.y).max(MIN_HEIGHT)
-                        } else {
-                            start_size.height
-                        };
-                        let new_size = iced::Size::new(new_width, new_height);
-                        self.state.current_window_size = new_size;
-                        return window::resize(id, new_size);
-                    }
-                }
-            }
             Message::WindowResizeEnd => {
                 self.state.resize_start_pos = None;
                 self.state.resize_start_size = None;
@@ -1499,7 +1576,9 @@ impl EditorApp {
                 event::Event::Keyboard(key_event) => Some(Message::Keyboard(key_event)),
                 event::Event::Mouse(mouse::Event::CursorMoved { position }) => {
                     CURSOR_POS = position;
-                    Some(Message::WindowResizeMove(position))
+                    // Note: We send HoverCursorMoved for tooltip stickiness tracking
+                    // WindowResizeMove is handled separately in update()
+                    Some(Message::HoverCursorMoved(position.x, position.y))
                 }
                 event::Event::Mouse(mouse::Event::ButtonPressed(button)) => {
                     if button == mouse::Button::Left {
@@ -1536,8 +1615,16 @@ impl EditorApp {
             time::every(Duration::from_millis(50)).map(|_| Message::SearchDebounceTick); // Check debounce every 50ms
         let highlight_tick =
             time::every(Duration::from_millis(100)).map(|_| Message::SearchHighlightTick); // Check highlight expiry every 100ms
+        let hover_tick = time::every(Duration::from_millis(100)).map(|_| Message::HoverDelayTick); // Check hover delay every 100ms
 
-        Subscription::batch(vec![input, tick, fps_tick, debounce_tick, highlight_tick])
+        Subscription::batch(vec![
+            input,
+            tick,
+            fps_tick,
+            debounce_tick,
+            highlight_tick,
+            hover_tick,
+        ])
     }
 
     fn scale_factor(&self) -> f32 {
