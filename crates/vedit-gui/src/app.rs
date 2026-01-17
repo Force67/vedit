@@ -589,16 +589,41 @@ impl EditorApp {
                 }
             }
             Message::EditorContextMenuCut => {
+                // Copy selection to clipboard, then delete it
+                if let Some(selection) = self.state.get_selection() {
+                    if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                        let _ = clipboard.set_text(&selection);
+                    }
+                    // Delete the selection by inserting empty text
+                    self.state
+                        .apply_buffer_action(iced::widget::text_editor::Action::Edit(
+                            iced::widget::text_editor::Edit::Paste(std::sync::Arc::new(
+                                String::new(),
+                            )),
+                        ));
+                }
                 self.state.hide_context_menu();
-                // Cut not yet implemented via context menu
             }
             Message::EditorContextMenuCopy => {
+                // Copy selection to clipboard
+                if let Some(selection) = self.state.get_selection() {
+                    if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                        let _ = clipboard.set_text(&selection);
+                    }
+                }
                 self.state.hide_context_menu();
-                // Copy not yet implemented via context menu
             }
             Message::EditorContextMenuPaste => {
+                // Paste from clipboard
+                if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                    if let Ok(text) = clipboard.get_text() {
+                        self.state
+                            .apply_buffer_action(iced::widget::text_editor::Action::Edit(
+                                iced::widget::text_editor::Edit::Paste(std::sync::Arc::new(text)),
+                            ));
+                    }
+                }
                 self.state.hide_context_menu();
-                // Paste not yet implemented via context menu
             }
             Message::EditorContextMenuSelectAll => {
                 self.state.hide_context_menu();
@@ -925,6 +950,77 @@ impl EditorApp {
                 }
 
                 if let Some(core_event) = keyboard::key_event_from_iced(&key_event) {
+                    // Handle Ctrl+C for copy (using arboard for Wayland compatibility)
+                    if core_event.key == Key::Character('C')
+                        && (core_event.ctrl || core_event.command)
+                        && !core_event.shift
+                    {
+                        if let Some(selection) = self.state.get_selection() {
+                            if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                                let _ = clipboard.set_text(&selection);
+                            }
+                        }
+                        return self.wrap_command(Task::none());
+                    }
+
+                    // Handle Ctrl+X for cut (using arboard for Wayland compatibility)
+                    if core_event.key == Key::Character('X')
+                        && (core_event.ctrl || core_event.command)
+                    {
+                        if let Some(selection) = self.state.get_selection() {
+                            if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                                let _ = clipboard.set_text(&selection);
+                            }
+                            // Delete the selection
+                            self.state.apply_buffer_action(
+                                iced::widget::text_editor::Action::Edit(
+                                    iced::widget::text_editor::Edit::Paste(std::sync::Arc::new(
+                                        String::new(),
+                                    )),
+                                ),
+                            );
+                        }
+                        return self.wrap_command(Task::none());
+                    }
+
+                    // Handle Ctrl+V for paste (using arboard for Wayland compatibility)
+                    if core_event.key == Key::Character('V')
+                        && (core_event.ctrl || core_event.command)
+                    {
+                        if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                            if let Ok(text) = clipboard.get_text() {
+                                self.state.apply_buffer_action(
+                                    iced::widget::text_editor::Action::Edit(
+                                        iced::widget::text_editor::Edit::Paste(
+                                            std::sync::Arc::new(text),
+                                        ),
+                                    ),
+                                );
+                            }
+                        }
+                        return self.wrap_command(Task::none());
+                    }
+
+                    // Handle Ctrl+Z for undo
+                    if core_event.key == Key::Character('Z')
+                        && (core_event.ctrl || core_event.command)
+                        && !core_event.shift
+                    {
+                        self.state.undo();
+                        return self.wrap_command(Task::none());
+                    }
+
+                    // Handle Ctrl+Y or Ctrl+Shift+Z for redo
+                    if ((core_event.key == Key::Character('Y')
+                        && (core_event.ctrl || core_event.command))
+                        || (core_event.key == Key::Character('Z')
+                            && (core_event.ctrl || core_event.command)
+                            && core_event.shift))
+                    {
+                        self.state.redo();
+                        return self.wrap_command(Task::none());
+                    }
+
                     // Handle Ctrl+F for search (high priority)
                     if core_event.key == Key::Character('F')
                         && (core_event.ctrl || core_event.command)

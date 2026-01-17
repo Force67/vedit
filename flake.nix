@@ -25,6 +25,7 @@
             xorg.libXcursor
             xorg.libXi
             xorg.libXrandr
+            wl-clipboard # For clipboard support on Wayland
           ];
       in {
         packages.default = pkgs.rustPlatform.buildRustPackage {

@@ -10,6 +10,7 @@ pub fn render_context_menu(
     _y: f32,
     scale: f32,
     has_definition: bool,
+    has_selection: bool,
 ) -> Element<'static, Message> {
     let item_padding = (6.0 * scale) as u16;
     let icon_size = 12.0 * scale;
@@ -50,6 +51,91 @@ pub fn render_context_menu(
             .padding([4, 0]);
         menu_items.push(separator.into());
     }
+
+    // Cut item (only shown when there's a selection)
+    if has_selection {
+        let cut_item = {
+            let icon_el = fa_icon_solid("scissors")
+                .size(icon_size)
+                .color(style::TEXT_SECONDARY);
+            let label_el = text("Cut").size(text_size);
+            let shortcut_el = text("Ctrl+X").size(text_size * 0.85).color(style::MUTED);
+
+            let content = row![
+                icon_el,
+                label_el,
+                Space::new().width(Length::Fill),
+                shortcut_el
+            ]
+            .spacing(8)
+            .align_y(iced::Alignment::Center);
+
+            button(content)
+                .padding(item_padding)
+                .width(Length::Fill)
+                .style(style::tree_row_button(false))
+                .on_press(Message::EditorContextMenuCut)
+        };
+        menu_items.push(cut_item.into());
+    }
+
+    // Copy item (only shown when there's a selection)
+    if has_selection {
+        let copy_item = {
+            let icon_el = fa_icon_solid("copy")
+                .size(icon_size)
+                .color(style::TEXT_SECONDARY);
+            let label_el = text("Copy").size(text_size);
+            let shortcut_el = text("Ctrl+C").size(text_size * 0.85).color(style::MUTED);
+
+            let content = row![
+                icon_el,
+                label_el,
+                Space::new().width(Length::Fill),
+                shortcut_el
+            ]
+            .spacing(8)
+            .align_y(iced::Alignment::Center);
+
+            button(content)
+                .padding(item_padding)
+                .width(Length::Fill)
+                .style(style::tree_row_button(false))
+                .on_press(Message::EditorContextMenuCopy)
+        };
+        menu_items.push(copy_item.into());
+    }
+
+    // Paste item (always available)
+    let paste_item = {
+        let icon_el = fa_icon_solid("paste")
+            .size(icon_size)
+            .color(style::TEXT_SECONDARY);
+        let label_el = text("Paste").size(text_size);
+        let shortcut_el = text("Ctrl+V").size(text_size * 0.85).color(style::MUTED);
+
+        let content = row![
+            icon_el,
+            label_el,
+            Space::new().width(Length::Fill),
+            shortcut_el
+        ]
+        .spacing(8)
+        .align_y(iced::Alignment::Center);
+
+        button(content)
+            .padding(item_padding)
+            .width(Length::Fill)
+            .style(style::tree_row_button(false))
+            .on_press(Message::EditorContextMenuPaste)
+    };
+    menu_items.push(paste_item.into());
+
+    // Separator before other items
+    let separator = container(Space::new().width(Length::Fill).height(Length::Fixed(1.0)))
+        .style(style::separator_container())
+        .padding([4, 0]);
+    menu_items.push(separator.into());
 
     // Add Sticky Note item
     let sticky_note_item = {
@@ -123,6 +209,7 @@ pub fn render_context_menu_overlay(
     scale: f32,
     window_size: iced::Size,
     has_definition: bool,
+    has_selection: bool,
 ) -> Element<'static, Message> {
     use iced::widget::stack;
 
@@ -135,12 +222,20 @@ pub fn render_context_menu_overlay(
     .on_press(Message::EditorContextMenuHide);
 
     // The actual menu
-    let menu = render_context_menu(x, y, scale, has_definition);
+    let menu = render_context_menu(x, y, scale, has_definition, has_selection);
 
     // Position the menu using padding from top-left
     // Clamp position so menu stays on screen
     let menu_width = 200.0 * scale;
-    let menu_height = if has_definition { 140.0 } else { 100.0 } * scale;
+    // Calculate dynamic height based on visible items
+    let mut item_count = 3; // Paste, Sticky Note, Select All (always shown)
+    if has_definition {
+        item_count += 1;
+    }
+    if has_selection {
+        item_count += 2; // Cut and Copy
+    }
+    let menu_height = (30.0 * item_count as f32 + 20.0) * scale;
 
     let clamped_x = x.min(window_size.width - menu_width - 10.0).max(0.0);
     let clamped_y = y.min(window_size.height - menu_height - 10.0).max(0.0);

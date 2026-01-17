@@ -37,6 +37,100 @@ use vedit_config::WorkspaceMetadata;
 
 const IGNORED_DIRECTORIES: [&str; 4] = ["target", ".git", ".hg", ".svn"];
 
+/// Maximum number of undo states to keep per document
+const MAX_UNDO_STACK_SIZE: usize = 100;
+
+/// A snapshot of the editor state for undo/redo
+#[derive(Debug, Clone)]
+struct UndoState {
+    /// The full text content
+    text: String,
+    /// Cursor line (0-indexed)
+    cursor_line: usize,
+    /// Cursor column (0-indexed)
+    cursor_column: usize,
+}
+
+/// Manages undo/redo history for a document
+#[derive(Debug)]
+struct UndoStack {
+    /// States that can be undone (most recent at the end)
+    undo_states: Vec<UndoState>,
+    /// States that can be redone (most recent at the end)
+    redo_states: Vec<UndoState>,
+    /// The last saved state text (to detect if document is dirty)
+    last_saved_text: Option<String>,
+}
+
+impl UndoStack {
+    fn new() -> Self {
+        Self {
+            undo_states: Vec::new(),
+            redo_states: Vec::new(),
+            last_saved_text: None,
+        }
+    }
+
+    /// Push a new state onto the undo stack (clears redo stack)
+    fn push(&mut self, state: UndoState) {
+        // Don't push if the text is identical to the last state
+        if let Some(last) = self.undo_states.last() {
+            if last.text == state.text {
+                return;
+            }
+        }
+
+        self.undo_states.push(state);
+        self.redo_states.clear();
+
+        // Limit stack size
+        if self.undo_states.len() > MAX_UNDO_STACK_SIZE {
+            self.undo_states.remove(0);
+        }
+    }
+
+    /// Pop and return the most recent undo state, pushing current state to redo
+    fn undo(&mut self, current: UndoState) -> Option<UndoState> {
+        if let Some(state) = self.undo_states.pop() {
+            self.redo_states.push(current);
+            Some(state)
+        } else {
+            None
+        }
+    }
+
+    /// Pop and return the most recent redo state, pushing current state to undo
+    fn redo(&mut self, current: UndoState) -> Option<UndoState> {
+        if let Some(state) = self.redo_states.pop() {
+            self.undo_states.push(current);
+            Some(state)
+        } else {
+            None
+        }
+    }
+
+    /// Check if undo is available
+    fn can_undo(&self) -> bool {
+        !self.undo_states.is_empty()
+    }
+
+    /// Check if redo is available
+    fn can_redo(&self) -> bool {
+        !self.redo_states.is_empty()
+    }
+
+    /// Clear all undo/redo history
+    fn clear(&mut self) {
+        self.undo_states.clear();
+        self.redo_states.clear();
+    }
+
+    /// Mark the current text as saved
+    fn mark_saved(&mut self, text: String) {
+        self.last_saved_text = Some(text);
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct SolutionTreeNode {
     pub name: String,
@@ -233,7 +327,9 @@ pub struct EditorState {
     pending_hover_info: Option<crate::message::HoverInfo>, // Info to show after delay
     hover_tooltip_rect: Option<(f32, f32, f32, f32)>, // (x, y, width, height) for stickiness
     hover_cursor_in_tooltip: bool,      // Is cursor inside the tooltip?
-                                        // wine: WineState, // Temporarily disabled
+    // Undo/redo state
+    undo_stack: UndoStack,
+    // wine: WineState, // Temporarily disabled
 }
 
 impl Default for EditorState {
@@ -290,6 +386,7 @@ impl Default for EditorState {
             pending_hover_info: None,
             hover_tooltip_rect: None,
             hover_cursor_in_tooltip: false,
+            undo_stack: UndoStack::new(),
             // wine: WineState::new(), // Temporarily disabled
         };
 
@@ -320,6 +417,16 @@ impl EditorState {
 
     pub fn buffer_content(&self) -> &Content {
         &self.buffer_content
+    }
+
+    /// Check if there is selected text in the editor
+    pub fn has_selection(&self) -> bool {
+        self.buffer_content.selection().is_some()
+    }
+
+    /// Get the selected text if any
+    pub fn get_selection(&self) -> Option<String> {
+        self.buffer_content.selection()
     }
 
     pub fn tabs_at_top(&self) -> bool {
@@ -576,20 +683,119 @@ impl EditorState {
 
         self.buffer_content = Content::with_text(&contents);
         self.refresh_active_highlighting(&contents);
+
+        // Clear undo history when switching documents
+        self.undo_stack.clear();
     }
 
     pub fn apply_buffer_action(&mut self, action: TextEditorAction) {
         let is_edit = action.is_edit();
+
+        // Save current state to undo stack before applying edit actions
+        if is_edit {
+            let cursor = self.buffer_content.cursor();
+            let current_text = self.editor_contents_to_string();
+            self.undo_stack.push(UndoState {
+                text: current_text,
+                cursor_line: cursor.position.line,
+                cursor_column: cursor.position.column,
+            });
+        }
+
         self.buffer_content.perform(action);
 
         if is_edit {
             let updated = self.editor_contents_to_string();
             self.app.editor_mut().update_active_buffer(updated.clone());
             self.refresh_active_highlighting(&updated);
-
-            // Log significant edits but not every keystroke (avoid logging every keystroke to reduce noise)
-            // Skip logging for now to avoid spam
         }
+    }
+
+    /// Undo the last edit action
+    pub fn undo(&mut self) -> bool {
+        let cursor = self.buffer_content.cursor();
+        let current_text = self.editor_contents_to_string();
+        let current_state = UndoState {
+            text: current_text,
+            cursor_line: cursor.position.line,
+            cursor_column: cursor.position.column,
+        };
+
+        if let Some(state) = self.undo_stack.undo(current_state) {
+            // Restore the text
+            self.buffer_content = Content::with_text(&state.text);
+
+            // Try to restore cursor position
+            self.buffer_content
+                .move_to(iced::widget::text_editor::Cursor {
+                    position: iced::widget::text_editor::Position {
+                        line: state.cursor_line,
+                        column: state.cursor_column,
+                    },
+                    selection: None,
+                });
+
+            // Sync with editor
+            self.app
+                .editor_mut()
+                .update_active_buffer(state.text.clone());
+            self.refresh_active_highlighting(&state.text);
+
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Redo the last undone action
+    pub fn redo(&mut self) -> bool {
+        let cursor = self.buffer_content.cursor();
+        let current_text = self.editor_contents_to_string();
+        let current_state = UndoState {
+            text: current_text,
+            cursor_line: cursor.position.line,
+            cursor_column: cursor.position.column,
+        };
+
+        if let Some(state) = self.undo_stack.redo(current_state) {
+            // Restore the text
+            self.buffer_content = Content::with_text(&state.text);
+
+            // Try to restore cursor position
+            self.buffer_content
+                .move_to(iced::widget::text_editor::Cursor {
+                    position: iced::widget::text_editor::Position {
+                        line: state.cursor_line,
+                        column: state.cursor_column,
+                    },
+                    selection: None,
+                });
+
+            // Sync with editor
+            self.app
+                .editor_mut()
+                .update_active_buffer(state.text.clone());
+            self.refresh_active_highlighting(&state.text);
+
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Check if undo is available
+    pub fn can_undo(&self) -> bool {
+        self.undo_stack.can_undo()
+    }
+
+    /// Check if redo is available
+    pub fn can_redo(&self) -> bool {
+        self.undo_stack.can_redo()
+    }
+
+    /// Clear undo/redo history (e.g., when switching documents)
+    pub fn clear_undo_history(&mut self) {
+        self.undo_stack.clear();
     }
 
     pub fn quick_commands(&self) -> &'static [QuickCommand] {

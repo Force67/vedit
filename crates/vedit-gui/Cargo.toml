@@ -50,6 +50,7 @@ tree-sitter-md = "0.3"
 tree-sitter-toml-ng = "0.7"
 itoa = "1.0"
 chrono = "0.4"
+arboard = { version = "3", features = ["wayland-data-control"] }
 
 [dev-dependencies]
 tempfile = "3"
