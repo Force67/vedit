@@ -184,7 +184,10 @@ pub struct EditorState {
     session_state: Option<SessionState>,
     pending_files_to_restore: Vec<PathBuf>,
     tabs_at_top: bool, // Tab bar location: true = top, false = sidebar
-                       // wine: WineState, // Temporarily disabled
+    // Context menu state
+    context_menu_visible: bool,
+    context_menu_position: (f32, f32),
+    // wine: WineState, // Temporarily disabled
 }
 
 impl Default for EditorState {
@@ -229,7 +232,9 @@ impl Default for EditorState {
             session_state: None,
             pending_files_to_restore: Vec::new(),
             tabs_at_top: true, // Default to top tabs (VS-style)
-                               // wine: WineState::new(), // Temporarily disabled
+            context_menu_visible: false,
+            context_menu_position: (0.0, 0.0),
+            // wine: WineState::new(), // Temporarily disabled
         };
 
         // Set up console state for logging
@@ -644,6 +649,24 @@ impl EditorState {
 
     pub fn remove_sticky_note(&mut self, id: u64) {
         self.app.remove_sticky_note(id);
+    }
+
+    // Context menu methods
+    pub fn show_context_menu(&mut self, x: f32, y: f32) {
+        self.context_menu_visible = true;
+        self.context_menu_position = (x, y);
+    }
+
+    pub fn hide_context_menu(&mut self) {
+        self.context_menu_visible = false;
+    }
+
+    pub fn context_menu_visible(&self) -> bool {
+        self.context_menu_visible
+    }
+
+    pub fn context_menu_position(&self) -> (f32, f32) {
+        self.context_menu_position
     }
 
     pub fn settings(&self) -> &SettingsState {

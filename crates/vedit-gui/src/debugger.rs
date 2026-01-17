@@ -1051,7 +1051,11 @@ impl DebuggerRuntime {
                     DebuggerUiEvent::SessionError {
                         message: format!(
                             "breakpoint {}: 0x{:x}",
-                            if success { "removed" } else { "failed to remove" },
+                            if success {
+                                "removed"
+                            } else {
+                                "failed to remove"
+                            },
                             address
                         ),
                     }

@@ -35,6 +35,7 @@ use std::collections::VecDeque;
 use std::rc::Rc; // For zero-allocation integer to string conversion
 
 use crate::style;
+use vedit_config::StickyNote;
 
 const DEFAULT_GUTTER_WIDTH: f32 = 56.0; // Slightly tighter
 const DEFAULT_LINE_COLOR: Color = Color::from_rgba(0.7, 0.7, 0.7, 1.0);
@@ -43,6 +44,12 @@ const GUTTER_BORDER_WIDTH: f32 = 1.0;
 const DEBUG_DOT_RADIUS: f32 = 5.0;
 const DEBUG_DOT_PADDING: f32 = 4.0;
 const DEBUG_DOT_GLOW_RADIUS: f32 = 8.0; // Outer glow for breakpoints
+
+// Sticky note rendering constants
+const STICKY_NOTE_ICON_SIZE: f32 = 14.0;
+const STICKY_NOTE_PADDING: f32 = 6.0;
+const STICKY_NOTE_MAX_WIDTH: f32 = 300.0;
+const STICKY_NOTE_CORNER_RADIUS: f32 = 4.0;
 
 /// Prefix-sum wrap index for O(log N) scroll-to-line mapping
 #[derive(Debug, Clone)]
@@ -548,7 +555,9 @@ where
     show_minimap: bool,
     font_size: Option<Pixels>,
     debug_dots: Vec<DebugDot>,
+    sticky_notes: Vec<StickyNote>,
     on_gutter_click: Option<Rc<dyn Fn(usize) -> Message>>,
+    on_right_click: Option<Rc<dyn Fn(f32, f32) -> Message>>,
     hover_line: Option<usize>,
     cached_line_numbers: Rc<RefCell<CachedLineNumbers>>,
     cached_line_metrics: Rc<RefCell<CachedLineMetrics>>,
@@ -584,7 +593,9 @@ impl<'a, Message> TextEditor<'a, Message, highlighter::PlainText> {
             show_minimap: false,
             font_size: None,
             debug_dots: Vec::new(),
+            sticky_notes: Vec::new(),
             on_gutter_click: None,
+            on_right_click: None,
             hover_line: None,
             cached_line_numbers: Rc::new(RefCell::new(CachedLineNumbers::new())),
             cached_line_metrics: Rc::new(RefCell::new(CachedLineMetrics::new())),
@@ -619,7 +630,9 @@ impl<'a, Message> TextEditor<'a, Message, highlighter::PlainText> {
             show_minimap: self.show_minimap,
             font_size: self.font_size,
             debug_dots: self.debug_dots.clone(),
+            sticky_notes: self.sticky_notes.clone(),
             on_gutter_click: self.on_gutter_click.clone(),
+            on_right_click: self.on_right_click.clone(),
             hover_line: self.hover_line,
             cached_line_numbers: Rc::clone(&self.cached_line_numbers),
             cached_line_metrics: Rc::clone(&self.cached_line_metrics),
@@ -729,11 +742,24 @@ where
         self
     }
 
+    pub fn sticky_notes(mut self, notes: Vec<StickyNote>) -> Self {
+        self.sticky_notes = notes;
+        self
+    }
+
     pub fn on_gutter_click<F>(mut self, f: F) -> Self
     where
         F: Fn(usize) -> Message + 'a + 'static,
     {
         self.on_gutter_click = Some(Rc::new(f));
+        self
+    }
+
+    pub fn on_right_click<F>(mut self, f: F) -> Self
+    where
+        F: Fn(f32, f32) -> Message + 'a + 'static,
+    {
+        self.on_right_click = Some(Rc::new(f));
         self
     }
 
@@ -871,6 +897,16 @@ where
         shell: &mut Shell<'_, Message>,
         viewport: &Rectangle,
     ) {
+        // Handle right-click for context menu
+        if let (Some(right_click_handler), Some(cursor_pos)) =
+            (&self.on_right_click, cursor.position_over(layout.bounds()))
+        {
+            if let Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Right)) = event {
+                shell.publish(right_click_handler(cursor_pos.x, cursor_pos.y));
+                return;
+            }
+        }
+
         // Handle gutter click events
         if let (Some(gutter_click_handler), Some(cursor_pos)) =
             (&self.on_gutter_click, cursor.position_over(layout.bounds()))
@@ -952,8 +988,17 @@ where
             self.font_size.map(|p| p.0),
         );
 
-        // Minimap would be more complex, perhaps draw a small version on the right
-        // For now, skip or add a placeholder
+        // Draw sticky notes inline in the editor
+        draw_sticky_notes(
+            renderer,
+            bounds,
+            viewport,
+            &self.base_padding,
+            self.gutter_width,
+            &self.sticky_notes,
+            self.content,
+            self.font_size.map(|p| p.0),
+        );
     }
 
     fn mouse_interaction(
@@ -1066,10 +1111,8 @@ fn adjust_action(action: Action, pointer_correction: f32) -> Action {
 }
 
 fn adjust_point(position: Point, pointer_correction: f32) -> Point {
-    Point::new(
-        position.x - pointer_correction,
-        position.y + pointer_correction,
-    )
+    // Only adjust X for the gutter offset, Y needs no correction
+    Point::new(position.x - pointer_correction, position.y)
 }
 
 // Streaming buffer for truly large files - only loads visible lines
@@ -1922,6 +1965,215 @@ fn draw_debug_dots(
                     snap: true,
                 },
                 style::BREAKPOINT_COLOR,
+            );
+        }
+    }
+}
+
+fn draw_sticky_notes(
+    renderer: &mut IcedRenderer,
+    bounds: Rectangle,
+    _viewport: &Rectangle,
+    base_padding: &Padding,
+    gutter_width: f32,
+    sticky_notes: &[StickyNote],
+    content: &Content,
+    font_size_override: Option<f32>,
+) {
+    if sticky_notes.is_empty() {
+        return;
+    }
+
+    let _editor_ref = borrow_editor(content);
+    let buffer = _editor_ref.buffer();
+    let font_size = font_size_override.unwrap_or(buffer.metrics().font_size);
+    let line_height = buffer.metrics().line_height.max(1.0);
+    let scroll = get_scroll_line(buffer);
+
+    // Calculate positions
+    let start_y = bounds.y + base_padding.top;
+    let content_x = bounds.x + base_padding.left + gutter_width + 8.0; // Start after gutter with padding
+
+    // Define sticky note colors
+    let note_bg = Color::from_rgba(0.92, 0.85, 0.55, 0.95); // Warm yellow, like a real sticky note
+    let note_border = Color::from_rgba(0.85, 0.75, 0.40, 1.0); // Slightly darker border
+    let note_text = Color::from_rgba(0.15, 0.15, 0.12, 1.0); // Dark brown text
+    let note_line_indicator = Color::from_rgba(0.92, 0.75, 0.35, 0.8); // Line indicator
+
+    // Render viewport bounds
+    let buffer_top = bounds.y + base_padding.top;
+    let buffer_bottom = bounds.y + bounds.height - base_padding.bottom;
+
+    for note in sticky_notes.iter() {
+        let line_number = note.line;
+
+        // Calculate the y position for this line
+        let line_y = (line_number as f32 - scroll as f32) * line_height;
+        let note_y = start_y + line_y - line_height;
+
+        // Skip if note is outside visible area
+        if note_y + line_height < buffer_top || note_y > buffer_bottom {
+            continue;
+        }
+
+        // Draw small indicator in the gutter margin
+        let indicator_x = bounds.x + base_padding.left + gutter_width - 3.0;
+        let indicator_width = 3.0;
+
+        renderer.fill_quad(
+            renderer::Quad {
+                bounds: Rectangle {
+                    x: indicator_x,
+                    y: note_y,
+                    width: indicator_width,
+                    height: line_height,
+                },
+                border: iced::Border {
+                    color: Color::TRANSPARENT,
+                    width: 0.0,
+                    radius: 1.0.into(),
+                },
+                shadow: iced::Shadow::default(),
+                snap: true,
+            },
+            note_line_indicator,
+        );
+
+        // Only render the full note if it has content
+        if note.content.is_empty() {
+            // Draw a small placeholder icon for empty notes
+            let icon_size = STICKY_NOTE_ICON_SIZE;
+            let icon_x = content_x;
+            let icon_y = note_y + (line_height - icon_size) / 2.0;
+
+            // Draw icon background
+            renderer.fill_quad(
+                renderer::Quad {
+                    bounds: Rectangle {
+                        x: icon_x,
+                        y: icon_y,
+                        width: icon_size,
+                        height: icon_size,
+                    },
+                    border: iced::Border {
+                        color: note_border,
+                        width: 1.0,
+                        radius: 2.0.into(),
+                    },
+                    shadow: iced::Shadow::default(),
+                    snap: true,
+                },
+                note_bg,
+            );
+
+            // Draw a tiny "+" inside the icon to indicate it's clickable/empty
+            let plus_text = PrimitiveText {
+                content: "+".to_string(),
+                bounds: Size::new(icon_size, icon_size),
+                size: Pixels(icon_size * 0.7),
+                line_height: LineHeight::Absolute(Pixels(icon_size)),
+                font: renderer.default_font(),
+                align_x: alignment::Horizontal::Center.into(),
+                align_y: alignment::Vertical::Center,
+                shaping: Shaping::Basic,
+                wrapping: iced::advanced::text::Wrapping::None,
+            };
+
+            renderer.fill_text(plus_text, Point::new(icon_x, icon_y), note_text, *_viewport);
+        } else {
+            // Calculate note dimensions based on content
+            let text_padding = STICKY_NOTE_PADDING;
+            let char_width = font_size * 0.6; // Approximate character width
+            let content_width = (note.content.len() as f32 * char_width).min(STICKY_NOTE_MAX_WIDTH);
+            let note_width = content_width + text_padding * 2.0;
+            let note_height = line_height;
+
+            // Draw shadow first
+            renderer.fill_quad(
+                renderer::Quad {
+                    bounds: Rectangle {
+                        x: content_x + 2.0,
+                        y: note_y + 2.0,
+                        width: note_width,
+                        height: note_height,
+                    },
+                    border: iced::Border {
+                        color: Color::TRANSPARENT,
+                        width: 0.0,
+                        radius: STICKY_NOTE_CORNER_RADIUS.into(),
+                    },
+                    shadow: iced::Shadow::default(),
+                    snap: true,
+                },
+                Color::from_rgba(0.0, 0.0, 0.0, 0.15),
+            );
+
+            // Draw sticky note background
+            renderer.fill_quad(
+                renderer::Quad {
+                    bounds: Rectangle {
+                        x: content_x,
+                        y: note_y,
+                        width: note_width,
+                        height: note_height,
+                    },
+                    border: iced::Border {
+                        color: note_border,
+                        width: 1.0,
+                        radius: STICKY_NOTE_CORNER_RADIUS.into(),
+                    },
+                    shadow: iced::Shadow::default(),
+                    snap: true,
+                },
+                note_bg,
+            );
+
+            // Draw the fold effect (small triangle in top-right corner)
+            let fold_size = 6.0;
+            renderer.fill_quad(
+                renderer::Quad {
+                    bounds: Rectangle {
+                        x: content_x + note_width - fold_size - 1.0,
+                        y: note_y + 1.0,
+                        width: fold_size,
+                        height: fold_size,
+                    },
+                    border: iced::Border {
+                        color: Color::TRANSPARENT,
+                        width: 0.0,
+                        radius: 0.0.into(),
+                    },
+                    shadow: iced::Shadow::default(),
+                    snap: true,
+                },
+                Color::from_rgba(0.85, 0.75, 0.40, 0.5),
+            );
+
+            // Truncate content if too long
+            let display_content = if note.content.len() > 40 {
+                format!("{}...", &note.content[..37])
+            } else {
+                note.content.clone()
+            };
+
+            // Draw note content text
+            let text = PrimitiveText {
+                content: display_content,
+                bounds: Size::new(content_width, note_height),
+                size: Pixels(font_size * 0.85),
+                line_height: LineHeight::Absolute(Pixels(note_height)),
+                font: renderer.default_font(),
+                align_x: alignment::Horizontal::Left.into(),
+                align_y: alignment::Vertical::Center,
+                shaping: Shaping::Basic,
+                wrapping: iced::advanced::text::Wrapping::None,
+            };
+
+            renderer.fill_text(
+                text,
+                Point::new(content_x + text_padding, note_y),
+                note_text,
+                *_viewport,
             );
         }
     }

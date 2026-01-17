@@ -335,8 +335,7 @@ impl EditorApp {
                     config,
                     metadata,
                 })) => {
-                    self.state
-                        .install_workspace(root.clone(), config, metadata);
+                    self.state.install_workspace(root.clone(), config, metadata);
                     self.state.refresh_file_explorer();
                     self.state.clear_error();
 
@@ -411,8 +410,7 @@ impl EditorApp {
                     config,
                     metadata,
                 })) => {
-                    self.state
-                        .install_workspace(root.clone(), config, metadata);
+                    self.state.install_workspace(root.clone(), config, metadata);
                     self.state.refresh_file_explorer();
                     self.state.clear_error();
 
@@ -565,6 +563,44 @@ impl EditorApp {
                         Message::WorkspaceMetadataSaved,
                     ));
                 }
+            }
+            // Context menu messages
+            Message::EditorContextMenuShow(x, y) => {
+                self.state.show_context_menu(x, y);
+            }
+            Message::EditorContextMenuHide => {
+                self.state.hide_context_menu();
+            }
+            Message::EditorContextMenuAddStickyNote => {
+                self.state.hide_context_menu();
+                if let Err(err) = self.state.add_sticky_note_at_cursor() {
+                    self.state.set_error(Some(err));
+                } else {
+                    self.state.clear_error();
+                }
+                if let Some((root, metadata)) = self.state.take_workspace_metadata_payload() {
+                    return self.wrap_command(Task::perform(
+                        commands::save_workspace_metadata(root, metadata),
+                        Message::WorkspaceMetadataSaved,
+                    ));
+                }
+            }
+            Message::EditorContextMenuCut => {
+                self.state.hide_context_menu();
+                // Cut not yet implemented via context menu
+            }
+            Message::EditorContextMenuCopy => {
+                self.state.hide_context_menu();
+                // Copy not yet implemented via context menu
+            }
+            Message::EditorContextMenuPaste => {
+                self.state.hide_context_menu();
+                // Paste not yet implemented via context menu
+            }
+            Message::EditorContextMenuSelectAll => {
+                self.state.hide_context_menu();
+                self.state
+                    .apply_buffer_action(iced::widget::text_editor::Action::SelectAll);
             }
             Message::SettingsOpened => {
                 self.state.close_debugger_menu();

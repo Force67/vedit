@@ -18,6 +18,7 @@ use crate::views::{
     notifications::render_notifications, settings::render_settings, status_bar::render_status_bar,
     title_bar::render_title_bar,
 };
+use crate::widgets::context_menu::render_context_menu_overlay;
 use crate::widgets::debugger;
 use iced::widget::{column, container, stack};
 use iced::{Alignment, Element, Length};
@@ -116,6 +117,13 @@ pub fn view(state: &EditorState) -> Element<'_, Message> {
             .center_y(Length::Fill)
             .into();
         layers.push(palette_overlay);
+    }
+
+    // Overlay the editor context menu
+    if state.context_menu_visible() {
+        let (x, y) = state.context_menu_position();
+        let context_menu = render_context_menu_overlay(x, y, scale, state.current_window_size);
+        layers.push(context_menu);
     }
 
     stack(layers).into()

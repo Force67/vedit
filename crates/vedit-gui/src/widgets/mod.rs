@@ -1,3 +1,4 @@
+pub mod context_menu;
 pub mod debugger;
 pub mod file_explorer;
 pub mod fps_counter;

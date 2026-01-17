@@ -124,6 +124,15 @@ pub enum Message {
     DebugDotsClear,
     GutterClicked(usize), // Line number clicked in gutter
 
+    // Editor context menu messages
+    EditorContextMenuShow(f32, f32), // (x, y) position
+    EditorContextMenuHide,
+    EditorContextMenuAddStickyNote,
+    EditorContextMenuCut,
+    EditorContextMenuCopy,
+    EditorContextMenuPaste,
+    EditorContextMenuSelectAll,
+
     // Session management messages
     SessionLoad(Result<crate::session::SessionState, String>),
     SessionSave(Result<(), String>),
@@ -148,4 +157,3 @@ pub enum Message {
     WineCreateEnvironment,
     WineSpawnProcess,
 }
-

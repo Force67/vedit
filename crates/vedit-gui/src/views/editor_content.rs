@@ -40,7 +40,9 @@ pub fn render_editor_content(
         .line_number_color(style::GUTTER_LINE_NUMBER)
         .search_highlight_line(state.get_search_highlight_line())
         .debug_dots(state.get_debug_dots().to_vec())
+        .sticky_notes(state.active_sticky_notes())
         .on_gutter_click(|line_number| Message::GutterClicked(line_number))
+        .on_right_click(|x, y| Message::EditorContextMenuShow(x, y))
         .padding(editor_padding)
         .on_action(Message::BufferAction)
         .height(Length::Fill);
