@@ -31,6 +31,10 @@ pub struct WineEnvironmentConfig {
 
     /// Whether to create a 32-bit or 64-bit prefix
     pub architecture: WineArchitecture,
+
+    /// Type of Wine environment (system Wine or Proton)
+    #[serde(default)]
+    pub environment_type: WineEnvironmentType,
 }
 
 impl Default for WineEnvironmentConfig {
@@ -47,6 +51,7 @@ impl Default for WineEnvironmentConfig {
             display: DisplayConfig::default(),
             audio: AudioConfig::default(),
             architecture: WineArchitecture::Win64,
+            environment_type: WineEnvironmentType::Wine,
         }
     }
 }
@@ -165,6 +170,20 @@ pub enum AudioDriver {
 pub enum WineArchitecture {
     Win32,
     Win64,
+}
+
+/// Type of Wine environment (system Wine or Proton)
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub enum WineEnvironmentType {
+    /// System Wine installation
+    #[default]
+    Wine,
+
+    /// Proton installation (from Steam or custom)
+    Proton {
+        /// Path to the Proton installation directory
+        installation_path: std::path::PathBuf,
+    },
 }
 
 /// A managed Wine environment

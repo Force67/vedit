@@ -31,6 +31,14 @@ pub struct WineConfig {
 
     /// Paths and directories
     pub paths: PathConfig,
+
+    /// Proton-specific configuration
+    #[serde(default)]
+    pub proton: ProtonConfig,
+
+    /// MSBuild-specific configuration
+    #[serde(default)]
+    pub msbuild: MSBuildConfig,
 }
 
 impl Default for WineConfig {
@@ -48,6 +56,8 @@ impl Default for WineConfig {
             remote_desktop: RemoteDesktopGlobalConfig::default(),
             build_system: BuildSystemConfig::default(),
             paths: PathConfig::default(),
+            proton: ProtonConfig::default(),
+            msbuild: MSBuildConfig::default(),
         }
     }
 }
@@ -375,6 +385,68 @@ impl RuntimeConfig {
                 install_command: None,
                 verify_command: None,
             },
+        }
+    }
+}
+
+/// Proton-specific configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProtonConfig {
+    /// Custom paths to search for Proton installations
+    pub custom_paths: Vec<PathBuf>,
+
+    /// Preferred Proton source (if multiple available)
+    pub preferred_source: Option<String>,
+
+    /// Whether to auto-detect Proton installations
+    pub auto_detect: bool,
+
+    /// Preferred Proton installation name (e.g., "Proton 8.0-5")
+    pub preferred_installation: Option<String>,
+}
+
+impl Default for ProtonConfig {
+    fn default() -> Self {
+        Self {
+            custom_paths: Vec::new(),
+            preferred_source: None,
+            auto_detect: true,
+            preferred_installation: None,
+        }
+    }
+}
+
+/// MSBuild-specific configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MSBuildConfig {
+    /// Path to MSBuild.exe within Wine prefix (if not auto-detected)
+    pub build_tools_path: Option<PathBuf>,
+
+    /// Default build configuration (e.g., "Debug", "Release")
+    pub default_configuration: String,
+
+    /// Default platform (e.g., "x64", "Win32")
+    pub default_platform: String,
+
+    /// Additional MSBuild arguments
+    pub additional_args: Vec<String>,
+
+    /// Maximum parallel builds
+    pub max_cpu_count: Option<u32>,
+
+    /// Verbosity level (quiet, minimal, normal, detailed, diagnostic)
+    pub verbosity: String,
+}
+
+impl Default for MSBuildConfig {
+    fn default() -> Self {
+        Self {
+            build_tools_path: None,
+            default_configuration: "Debug".to_string(),
+            default_platform: "x64".to_string(),
+            additional_args: Vec::new(),
+            max_cpu_count: None,
+            verbosity: "minimal".to_string(),
         }
     }
 }

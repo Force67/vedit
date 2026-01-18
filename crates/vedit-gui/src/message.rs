@@ -173,6 +173,74 @@ pub enum Message {
     // Navigation history (back/forward like VS)
     NavigateBack,
     NavigateForward,
+
+    // Solution context menu messages
+    SolutionContextMenuShow {
+        target: SolutionContextTarget,
+        x: f32,
+        y: f32,
+    },
+    SolutionContextMenuHide,
+    SolutionContextMenuBuild(std::path::PathBuf),
+    SolutionContextMenuRebuild(std::path::PathBuf),
+    SolutionContextMenuClean(std::path::PathBuf),
+    SolutionContextMenuDebug(std::path::PathBuf),
+    SolutionContextMenuOpenFolder(std::path::PathBuf),
+
+    // Build messages
+    BuildStarted {
+        target: String,
+        configuration: String,
+        platform: String,
+    },
+    BuildOutput(String),
+    BuildWarning {
+        file: Option<String>,
+        line: Option<u32>,
+        message: String,
+    },
+    BuildError {
+        file: Option<String>,
+        line: Option<u32>,
+        message: String,
+    },
+    BuildCompleted {
+        success: bool,
+        duration: std::time::Duration,
+    },
+    BuildCancelled,
+    BuildCancelRequested,
+
+    // Wine/Proton environment messages
+    WineEnvironmentDiscoveryRequested,
+    WineEnvironmentDiscovered(vedit_wine::EnvironmentDiscovery),
+    WineEnvironmentSelected(String),
+    WineEnvironmentSettingsOpened,
+    // Wine prefix management
+    WinePrefixCreateStart,
+    WinePrefixNameChanged(String),
+    WinePrefixWineBinarySelected(usize),
+    WinePrefixCreateConfirm,
+    WinePrefixCreated(Result<vedit_wine::WinePrefix, String>),
+    WinePrefixSelected(usize),
+    WinePrefixDelete(usize),
+    WinePrefixCancelCreate,
+    // VS Build Tools installation
+    VsBuildToolsInstallStart(usize), // prefix index
+    VsBuildToolsDownloadProgress(u8),
+    VsBuildToolsInstallProgress(String),
+    VsBuildToolsInstallComplete(usize), // prefix index
+    VsBuildToolsInstallFailed(String),
+}
+
+/// Target for solution context menu actions
+#[derive(Debug, Clone)]
+pub enum SolutionContextTarget {
+    /// A Visual Studio solution (.sln)
+    Solution(std::path::PathBuf),
+
+    /// A Visual Studio project (.vcxproj, .csproj, etc.)
+    Project(std::path::PathBuf),
 }
 
 /// Information about a hover target for the tooltip

@@ -46,6 +46,24 @@ pub enum WineError {
 
     #[error("Permission denied: {0}")]
     PermissionDenied(String),
+
+    #[error("Proton installation not found: {0}")]
+    ProtonNotFound(String),
+
+    #[error("MSBuild not found in Wine prefix. Install Visual Studio Build Tools.")]
+    MSBuildNotFound,
+
+    #[error("MSBuild execution failed: {0}")]
+    MSBuildFailed(String),
+
+    #[error("Wine debug session failed: {0}")]
+    DebugSessionFailed(String),
+
+    #[error("Path translation failed: {0}")]
+    PathTranslationFailed(String),
+
+    #[error("Build cancelled")]
+    BuildCancelled,
 }
 
 impl From<std::io::Error> for WineError {

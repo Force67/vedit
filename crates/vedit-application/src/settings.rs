@@ -6,14 +6,17 @@ use vedit_core::Keymap;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SettingsCategory {
     Keybindings,
+    Wine,
 }
 
-pub const SETTINGS_CATEGORIES: &[SettingsCategory] = &[SettingsCategory::Keybindings];
+pub const SETTINGS_CATEGORIES: &[SettingsCategory] =
+    &[SettingsCategory::Keybindings, SettingsCategory::Wine];
 
 impl SettingsCategory {
     pub fn label(self) -> &'static str {
         match self {
             SettingsCategory::Keybindings => "Keybindings",
+            SettingsCategory::Wine => "Wine / Proton",
         }
     }
 }

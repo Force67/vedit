@@ -771,7 +771,10 @@ impl EditorApp {
             Message::NavigateBack => {
                 println!("DEBUG: NavigateBack pressed");
                 if let Some(entry) = self.state.navigate_back() {
-                    println!("DEBUG: Navigating back to: {:?}, line {}", entry.file_path, entry.line);
+                    println!(
+                        "DEBUG: Navigating back to: {:?}, line {}",
+                        entry.file_path, entry.line
+                    );
                     return self.navigate_to_entry(entry);
                 } else {
                     println!("DEBUG: No navigation history to go back to");
@@ -780,7 +783,10 @@ impl EditorApp {
             Message::NavigateForward => {
                 println!("DEBUG: NavigateForward pressed");
                 if let Some(entry) = self.state.navigate_forward() {
-                    println!("DEBUG: Navigating forward to: {:?}, line {}", entry.file_path, entry.line);
+                    println!(
+                        "DEBUG: Navigating forward to: {:?}, line {}",
+                        entry.file_path, entry.line
+                    );
                     return self.navigate_to_entry(entry);
                 } else {
                     println!("DEBUG: No navigation history to go forward to");
@@ -1359,6 +1365,577 @@ impl EditorApp {
                 // Handle process spawning
                 println!("Wine: Spawn process requested");
             }
+            // Solution context menu messages
+            Message::SolutionContextMenuShow { target, x, y } => {
+                self.state.show_solution_context_menu(target, x, y);
+            }
+            Message::SolutionContextMenuHide => {
+                self.state.hide_solution_context_menu();
+            }
+            Message::SolutionContextMenuBuild(path) => {
+                self.state.hide_solution_context_menu();
+                let filename = path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("solution");
+
+                // Check if Wine environment is configured
+                if !self.state.has_wine_environment() {
+                    self.state.push_notification(
+                        NotificationRequest::title("Wine Not Configured")
+                            .body("Configure a Wine/Proton environment in settings to build VS solutions.")
+                            .kind(NotificationKind::Error)
+                    );
+                    return Task::none();
+                }
+
+                self.state.push_notification(
+                    NotificationRequest::title(format!("Building {}", filename))
+                        .body("Starting MSBuild via Wine...")
+                        .kind(NotificationKind::Info),
+                );
+
+                // TODO: Actually start MSBuild via Wine with configured environment
+                println!("Build requested for: {}", path.display());
+            }
+            Message::SolutionContextMenuRebuild(path) => {
+                self.state.hide_solution_context_menu();
+                let filename = path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("solution");
+
+                if !self.state.has_wine_environment() {
+                    self.state.push_notification(
+                        NotificationRequest::title("Wine Not Configured")
+                            .body("Configure a Wine/Proton environment in settings to build VS solutions.")
+                            .kind(NotificationKind::Error)
+                    );
+                    return Task::none();
+                }
+
+                self.state.push_notification(
+                    NotificationRequest::title(format!("Rebuilding {}", filename))
+                        .body("Starting MSBuild rebuild via Wine...")
+                        .kind(NotificationKind::Info),
+                );
+
+                println!("Rebuild requested for: {}", path.display());
+            }
+            Message::SolutionContextMenuClean(path) => {
+                self.state.hide_solution_context_menu();
+                let filename = path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("solution");
+
+                if !self.state.has_wine_environment() {
+                    self.state.push_notification(
+                        NotificationRequest::title("Wine Not Configured")
+                            .body("Configure a Wine/Proton environment in settings to build VS solutions.")
+                            .kind(NotificationKind::Error)
+                    );
+                    return Task::none();
+                }
+
+                self.state.push_notification(
+                    NotificationRequest::title(format!("Cleaning {}", filename))
+                        .body("Starting MSBuild clean via Wine...")
+                        .kind(NotificationKind::Info),
+                );
+
+                println!("Clean requested for: {}", path.display());
+            }
+            Message::SolutionContextMenuDebug(path) => {
+                self.state.hide_solution_context_menu();
+                let filename = path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("solution");
+
+                if !self.state.has_wine_environment() {
+                    self.state.push_notification(
+                        NotificationRequest::title("Wine Not Configured")
+                            .body(
+                                "Configure a Wine/Proton environment to debug Windows executables.",
+                            )
+                            .kind(NotificationKind::Error),
+                    );
+                    return Task::none();
+                }
+
+                self.state.push_notification(
+                    NotificationRequest::title(format!("Starting Debug: {}", filename))
+                        .body("Launching debugger via Wine...")
+                        .kind(NotificationKind::Info),
+                );
+
+                println!("Debug requested for: {}", path.display());
+            }
+            Message::SolutionContextMenuOpenFolder(path) => {
+                self.state.hide_solution_context_menu();
+                // Open the folder in the system file manager
+                #[cfg(target_os = "linux")]
+                {
+                    let _ = std::process::Command::new("xdg-open").arg(&path).spawn();
+                }
+            }
+            // Build messages
+            Message::BuildStarted {
+                target,
+                configuration,
+                platform,
+            } => {
+                println!(
+                    "Build started: {} ({} | {})",
+                    target, configuration, platform
+                );
+                // TODO: Show build output in console
+            }
+            Message::BuildOutput(line) => {
+                println!("Build: {}", line);
+                // TODO: Append to build console
+            }
+            Message::BuildWarning {
+                file,
+                line,
+                message,
+            } => {
+                println!(
+                    "Warning: {}:{:?}: {}",
+                    file.as_deref().unwrap_or(""),
+                    line,
+                    message
+                );
+                // TODO: Add to problems panel
+            }
+            Message::BuildError {
+                file,
+                line,
+                message,
+            } => {
+                println!(
+                    "Error: {}:{:?}: {}",
+                    file.as_deref().unwrap_or(""),
+                    line,
+                    message
+                );
+                // TODO: Add to problems panel
+            }
+            Message::BuildCompleted { success, duration } => {
+                if success {
+                    println!("Build succeeded in {:.1}s", duration.as_secs_f32());
+                } else {
+                    println!("Build FAILED in {:.1}s", duration.as_secs_f32());
+                }
+            }
+            Message::BuildCancelled => {
+                println!("Build cancelled");
+            }
+            Message::BuildCancelRequested => {
+                println!("Build cancel requested");
+                // TODO: Cancel active build
+            }
+            // Wine/Proton environment messages
+            Message::WineEnvironmentDiscoveryRequested => {
+                // Perform synchronous discovery (it's fast enough)
+                let discovery = vedit_wine::EnvironmentDiscovery::detect();
+                let count = discovery.count();
+                let has_wine = discovery.system_wine.is_some();
+                let proton_count = discovery.proton_installations.len();
+
+                self.state.set_wine_discovery(discovery);
+
+                let message = if count == 0 {
+                    "No Wine or Proton installations found.".to_string()
+                } else {
+                    let mut parts = Vec::new();
+                    if has_wine {
+                        parts.push("System Wine".to_string());
+                    }
+                    if proton_count > 0 {
+                        parts.push(format!("{} Proton installation(s)", proton_count));
+                    }
+                    format!("Found: {}", parts.join(", "))
+                };
+
+                self.state.push_notification(
+                    NotificationRequest::title("Wine Detection Complete")
+                        .body(message)
+                        .kind(if count > 0 {
+                            NotificationKind::Success
+                        } else {
+                            NotificationKind::Error
+                        }),
+                );
+            }
+            Message::WineEnvironmentDiscovered(discovery) => {
+                println!(
+                    "Discovered {} Proton installations",
+                    discovery.proton_installations.len()
+                );
+                // TODO: Update state with discovered environments
+            }
+            Message::WineEnvironmentSelected(env_id) => {
+                println!("Wine environment selected: {}", env_id);
+                // TODO: Update state with selected environment
+            }
+            Message::WineEnvironmentSettingsOpened => {
+                self.state.hide_solution_context_menu();
+                self.state.open_settings();
+                // Navigate directly to Wine settings category
+                self.state
+                    .settings_mut()
+                    .select_category(vedit_application::SettingsCategory::Wine);
+            }
+            // Wine prefix management
+            Message::WinePrefixCreateStart => {
+                self.state.open_wine_create_prefix();
+            }
+            Message::WinePrefixNameChanged(name) => {
+                self.state.set_wine_create_prefix_name(name);
+            }
+            Message::WinePrefixWineBinarySelected(index) => {
+                self.state.set_wine_create_prefix_wine_index(Some(index));
+            }
+            Message::WinePrefixCancelCreate => {
+                self.state.close_wine_create_prefix();
+            }
+            Message::WinePrefixCreateConfirm => {
+                let name = self.state.wine_create_prefix_name().to_string();
+                let wine_index = self.state.wine_create_prefix_wine_index();
+
+                if let (Some(discovery), Some(idx)) = (self.state.wine_discovery(), wine_index) {
+                    // Get the wine binary path based on index
+                    let (wine_binary, proton_name) = {
+                        let mut current_idx = 0usize;
+
+                        // Check system wine first
+                        if let Some(wine_path) = &discovery.system_wine {
+                            if current_idx == idx {
+                                (wine_path.clone(), None)
+                            } else {
+                                current_idx += 1;
+                                // Check proton installations
+                                let mut result = None;
+                                for proton in &discovery.proton_installations {
+                                    if current_idx == idx {
+                                        result = Some((
+                                            proton.wine_executable.clone(),
+                                            Some(proton.name.clone()),
+                                        ));
+                                        break;
+                                    }
+                                    current_idx += 1;
+                                }
+                                result.unwrap_or_else(|| (std::path::PathBuf::from("wine"), None))
+                            }
+                        } else {
+                            // No system wine, check proton
+                            let mut result = None;
+                            for proton in &discovery.proton_installations {
+                                if current_idx == idx {
+                                    result = Some((
+                                        proton.wine_executable.clone(),
+                                        Some(proton.name.clone()),
+                                    ));
+                                    break;
+                                }
+                                current_idx += 1;
+                            }
+                            result.unwrap_or_else(|| (std::path::PathBuf::from("wine"), None))
+                        }
+                    };
+
+                    // Create prefix path
+                    let prefix_path = dirs::data_local_dir()
+                        .unwrap_or_else(|| std::path::PathBuf::from("~/.local/share"))
+                        .join("vedit")
+                        .join("wine-prefixes")
+                        .join(&name);
+
+                    self.state.close_wine_create_prefix();
+
+                    // Show creating notification
+                    self.state.push_notification(
+                        NotificationRequest::title(format!("Creating prefix '{}'...", name))
+                            .body("Initializing Wine prefix. This may take a moment.")
+                            .kind(NotificationKind::Info),
+                    );
+
+                    // Create prefix (this is synchronous but relatively quick)
+                    let result = vedit_wine::WinePrefix::create(
+                        name.clone(),
+                        prefix_path,
+                        wine_binary,
+                        proton_name,
+                        vedit_wine::WinePrefixArch::Win64,
+                    );
+
+                    match result {
+                        Ok(mut prefix) => {
+                            // Check for MSBuild
+                            if let Some(msbuild) = prefix.find_msbuild() {
+                                prefix.has_build_tools = true;
+                                prefix.msbuild_path = Some(msbuild);
+                            }
+
+                            self.state.wine_prefix_manager_mut().add_prefix(prefix);
+                            let _ = self.state.wine_prefix_manager().save();
+
+                            self.state.push_notification(
+                                NotificationRequest::title(format!("Prefix '{}' created!", name))
+                                    .body("Wine prefix initialized successfully.")
+                                    .kind(NotificationKind::Success),
+                            );
+                        }
+                        Err(e) => {
+                            self.state.push_notification(
+                                NotificationRequest::title("Failed to create prefix")
+                                    .body(format!("{}", e))
+                                    .kind(NotificationKind::Error),
+                            );
+                        }
+                    }
+                }
+            }
+            Message::WinePrefixCreated(result) => match result {
+                Ok(prefix) => {
+                    let name = prefix.name.clone();
+                    self.state.wine_prefix_manager_mut().add_prefix(prefix);
+                    let _ = self.state.wine_prefix_manager().save();
+                    self.state.push_notification(
+                        NotificationRequest::title(format!("Prefix '{}' created!", name))
+                            .kind(NotificationKind::Success),
+                    );
+                }
+                Err(e) => {
+                    self.state.push_notification(
+                        NotificationRequest::title("Failed to create prefix")
+                            .body(e)
+                            .kind(NotificationKind::Error),
+                    );
+                }
+            },
+            Message::WinePrefixSelected(index) => {
+                self.state.wine_prefix_manager_mut().select(index);
+                let _ = self.state.wine_prefix_manager().save();
+            }
+            Message::WinePrefixDelete(index) => {
+                if let Some(prefix) = self.state.wine_prefix_manager_mut().remove_prefix(index) {
+                    let _ = self.state.wine_prefix_manager().save();
+                    self.state.push_notification(
+                        NotificationRequest::title(format!("Prefix '{}' removed", prefix.name))
+                            .body("The prefix configuration was removed. Files were not deleted.")
+                            .kind(NotificationKind::Info),
+                    );
+                }
+            }
+            // VS Build Tools installation
+            Message::VsBuildToolsInstallStart(prefix_index) => {
+                if let Some(prefix) = self.state.wine_prefix_manager().prefixes.get(prefix_index) {
+                    let prefix_name = prefix.name.clone();
+                    let wine_binary = prefix.wine_binary.clone();
+                    let prefix_path = prefix.path.clone();
+
+                    self.state.push_notification(
+                        NotificationRequest::title(format!(
+                            "Installing Build Tools for '{}'",
+                            prefix_name
+                        ))
+                        .body("Installing .NET Framework and VS Build Tools... This may take a while.")
+                        .kind(NotificationKind::Info)
+                        .timeout(None), // Don't auto-dismiss
+                    );
+
+                    // Spawn async task to download and install
+                    return Task::perform(
+                        async move {
+                            // Check if on NixOS and need steam-run
+                            let is_nixos = vedit_wine::is_nixos();
+                            let has_steam_run = vedit_wine::has_steam_run();
+
+                            // Install wine-mono for .NET compatibility
+                            eprintln!(
+                                "DEBUG: Step 1 - Installing Wine Mono (.NET compatibility)..."
+                            );
+
+                            let mono_status = if is_nixos && has_steam_run {
+                                std::process::Command::new("steam-run")
+                                    .arg("winetricks")
+                                    .arg("-q")
+                                    .arg("mono") // Wine Mono - Wine's .NET implementation
+                                    .env("WINEPREFIX", &prefix_path)
+                                    .env("WINEDEBUG", "-all")
+                                    .env("TMPDIR", "/tmp")
+                                    .env("HOME", std::env::var("HOME").unwrap_or_default())
+                                    .status()
+                            } else {
+                                std::process::Command::new("winetricks")
+                                    .arg("-q")
+                                    .arg("mono")
+                                    .env("WINEPREFIX", &prefix_path)
+                                    .env("WINEDEBUG", "-all")
+                                    .status()
+                            };
+
+                            match mono_status {
+                                Ok(s) if s.success() => {
+                                    eprintln!("DEBUG: Wine Mono installed successfully");
+                                }
+                                Ok(s) => {
+                                    eprintln!(
+                                        "DEBUG: Wine Mono exited with code {:?}, continuing...",
+                                        s.code()
+                                    );
+                                }
+                                Err(e) => {
+                                    eprintln!(
+                                        "DEBUG: Wine Mono installation error: {}, continuing...",
+                                        e
+                                    );
+                                }
+                            }
+
+                            eprintln!("DEBUG: Step 2 - Downloading VS Build Tools...");
+
+                            // Download VS Build Tools
+                            let installer_path =
+                                match vedit_wine::WinePrefix::download_vs_build_tools().await {
+                                    Ok(path) => path,
+                                    Err(e) => return Err(format!("Download failed: {}", e)),
+                                };
+
+                            eprintln!("DEBUG: Step 3 - Running VS Build Tools installer...");
+
+                            eprintln!(
+                                "DEBUG: NixOS={}, steam-run available={}",
+                                is_nixos, has_steam_run
+                            );
+
+                            // On NixOS, ALWAYS use "wine" from steam-run's FHS environment
+                            // Both NixOS system wine AND Proton wine have library path issues
+                            // outside their respective runtime environments
+                            let effective_wine = if is_nixos && has_steam_run {
+                                "wine".to_string()
+                            } else {
+                                wine_binary.display().to_string()
+                            };
+
+                            eprintln!(
+                                "DEBUG: Using wine binary: {} (original: {})",
+                                effective_wine,
+                                wine_binary.display()
+                            );
+
+                            // Build the command
+                            let status = if is_nixos {
+                                if has_steam_run {
+                                    // Use steam-run on NixOS for FHS compatibility
+                                    eprintln!("DEBUG: Using steam-run wrapper");
+                                    std::process::Command::new("steam-run")
+                                        .arg(&effective_wine)
+                                        .arg(&installer_path)
+                                        .arg("--passive")
+                                        .arg("--wait")
+                                        .arg("--norestart")
+                                        .arg("--add")
+                                        .arg("Microsoft.VisualStudio.Workload.MSBuildTools")
+                                        .arg("--add")
+                                        .arg("Microsoft.VisualStudio.Workload.VCTools")
+                                        .arg("--includeRecommended")
+                                        .env("WINEPREFIX", &prefix_path)
+                                        .env("WINEDEBUG", "-all")
+                                        .status()
+                                } else {
+                                    // Try nix-shell as fallback
+                                    eprintln!("DEBUG: Using nix-shell -p steam-run fallback");
+                                    let wine_cmd = format!(
+                                        "wine '{}' --passive --wait --norestart --add Microsoft.VisualStudio.Workload.MSBuildTools --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended",
+                                        installer_path.display()
+                                    );
+                                    std::process::Command::new("nix-shell")
+                                        .arg("-p")
+                                        .arg("steam-run")
+                                        .arg("--run")
+                                        .arg(format!("steam-run {}", wine_cmd))
+                                        .env("WINEPREFIX", &prefix_path)
+                                        .env("WINEDEBUG", "-all")
+                                        .status()
+                                }
+                            } else {
+                                std::process::Command::new(&wine_binary)
+                                    .arg(&installer_path)
+                                    .arg("--passive")
+                                    .arg("--wait")
+                                    .arg("--norestart")
+                                    .arg("--add")
+                                    .arg("Microsoft.VisualStudio.Workload.MSBuildTools")
+                                    .arg("--add")
+                                    .arg("Microsoft.VisualStudio.Workload.VCTools")
+                                    .arg("--includeRecommended")
+                                    .env("WINEPREFIX", &prefix_path)
+                                    .env("WINEDEBUG", "-all")
+                                    .status()
+                            };
+
+                            match status {
+                                Ok(s) if s.success() => Ok(prefix_index),
+                                Ok(_) => {
+                                    // Even if exit code is non-zero, check if MSBuild was installed
+                                    // The VS installer sometimes returns errors but still installs
+                                    Ok(prefix_index)
+                                }
+                                Err(e) => Err(format!("Installation failed: {}", e)),
+                            }
+                        },
+                        |result| match result {
+                            Ok(idx) => Message::VsBuildToolsInstallComplete(idx),
+                            Err(e) => Message::VsBuildToolsInstallFailed(e),
+                        },
+                    );
+                }
+            }
+            Message::VsBuildToolsDownloadProgress(_progress) => {
+                // Could update a progress bar in the future
+            }
+            Message::VsBuildToolsInstallProgress(_status) => {
+                // Could update status text in the future
+            }
+            Message::VsBuildToolsInstallComplete(prefix_index) => {
+                // Refresh the prefix to check for MSBuild
+                if let Some(prefix) = self
+                    .state
+                    .wine_prefix_manager_mut()
+                    .prefixes
+                    .get_mut(prefix_index)
+                {
+                    if let Some(msbuild) = prefix.find_msbuild() {
+                        prefix.has_build_tools = true;
+                        prefix.msbuild_path = Some(msbuild.clone());
+                        let _ = self.state.wine_prefix_manager().save();
+
+                        self.state.push_notification(
+                            NotificationRequest::title("Build Tools Installed!")
+                                .body(format!("MSBuild found at: {}", msbuild.display()))
+                                .kind(NotificationKind::Success),
+                        );
+                    } else {
+                        self.state.push_notification(
+                            NotificationRequest::title("Installation Complete")
+                                .body("VS Build Tools installed, but MSBuild not found. It may still be installing in the background.")
+                                .kind(NotificationKind::Info)
+                        );
+                    }
+                }
+            }
+            Message::VsBuildToolsInstallFailed(error) => {
+                self.state.push_notification(
+                    NotificationRequest::title("Build Tools Installation Failed")
+                        .body(error)
+                        .kind(NotificationKind::Error),
+                );
+            }
             // Search dialog messages
             Message::SearchOpen => {
                 self.state.search_dialog_mut().show();
@@ -1816,7 +2393,11 @@ impl EditorApp {
         // Check if document is already open by path
         if let Some(ref path) = entry.file_path {
             let docs = self.state.editor().open_documents();
-            println!("DEBUG: Looking for path '{}' in {} open docs", path, docs.len());
+            println!(
+                "DEBUG: Looking for path '{}' in {} open docs",
+                path,
+                docs.len()
+            );
             for (i, doc) in docs.iter().enumerate() {
                 println!("DEBUG:   Doc {}: {:?}", i, doc.path);
             }
@@ -1839,7 +2420,10 @@ impl EditorApp {
         }
 
         // No file path - try to use document index (for scratch buffers)
-        println!("DEBUG: No file path, using document index {}", entry.document_index);
+        println!(
+            "DEBUG: No file path, using document index {}",
+            entry.document_index
+        );
         let num_docs = self.state.editor().open_documents().len();
         if entry.document_index < num_docs {
             self.state.editor_mut().set_active(entry.document_index);

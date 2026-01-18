@@ -20,6 +20,7 @@ use crate::views::{
 };
 use crate::widgets::context_menu::render_context_menu_overlay;
 use crate::widgets::debugger;
+use crate::widgets::solution_context_menu::render_solution_context_menu_overlay;
 use iced::widget::{column, container, stack};
 use iced::{Alignment, Element, Length};
 
@@ -133,6 +134,23 @@ pub fn view(state: &EditorState) -> Element<'_, Message> {
             has_selection,
         );
         layers.push(context_menu);
+    }
+
+    // Overlay the solution context menu
+    if state.solution_context_menu_visible() {
+        if let Some(target) = state.solution_context_menu_target() {
+            let (x, y) = state.solution_context_menu_position();
+            let has_wine_env = state.has_wine_environment();
+            let solution_menu = render_solution_context_menu_overlay(
+                target,
+                x,
+                y,
+                scale,
+                state.current_window_size,
+                has_wine_env,
+            );
+            layers.push(solution_menu);
+        }
     }
 
     stack(layers).into()

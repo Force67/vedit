@@ -5,21 +5,37 @@
 //! capabilities for running Windows applications within vedit.
 
 pub mod config;
+pub mod debugging;
 pub mod environment;
 pub mod error;
 pub mod gui_integration;
+pub mod msbuild;
 pub mod nix_integration;
+pub mod prefix;
 pub mod process;
+pub mod proton;
 pub mod remote_desktop;
 
-pub use config::{RuntimeConfig, WineConfig};
-pub use environment::{WineEnvironment, WineEnvironmentConfig};
+pub use config::{MSBuildConfig, ProtonConfig, RuntimeConfig, WineConfig};
+pub use debugging::{
+    WineBreakpoint, WineDebugCommand, WineDebugConfig, WineDebugEvent, WineDebugSession,
+    WineDebuggerType,
+};
+pub use environment::{WineEnvironment, WineEnvironmentConfig, WineEnvironmentType};
 pub use error::{WineError, WineResult};
 pub use gui_integration::{
     DefaultConfigs, WineGuiMessage, WineGuiState, WineGuiUtils, WineSystemStatus,
 };
+pub use msbuild::{MSBuildEvent, MSBuildRequest, MSBuildSession, MSBuildTarget};
 pub use nix_integration::{NixEnvironment, NixWineManager};
+pub use prefix::{
+    VsBuildToolsInstallEvent, WinePrefix, WinePrefixArch, WinePrefixManager, has_steam_run,
+    is_nixos,
+};
 pub use process::{WineProcess, WineProcessConfig};
+pub use proton::{
+    EnvironmentDiscovery, ProtonInstallation, ProtonManager, ProtonSource, ProtonVersion,
+};
 pub use remote_desktop::{DesktopType, RemoteDesktop};
 
 /// Main Wine manager that coordinates all Wine-related functionality
@@ -113,6 +129,11 @@ impl WineManager {
     /// Detect if running on NixOS
     pub fn is_nixos() -> bool {
         std::path::Path::new("/etc/nixos").exists()
+    }
+
+    /// Detect all available Wine/Proton environments
+    pub fn detect_all_environments() -> WineResult<EnvironmentDiscovery> {
+        Ok(EnvironmentDiscovery::detect())
     }
 }
 

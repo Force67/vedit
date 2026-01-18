@@ -20,6 +20,7 @@ which = "8.0"
 
 # For directory handling
 dirs = "6.0"
+walkdir = "2.4"
 
 # For remote desktop/VNC
 rand = "0.9"
@@ -39,3 +40,7 @@ vnc-support = []
 name = "vedit-wine-test"
 path = "src/bin/test.rs"
 required-features = ["tracing-subscriber"]
+
+[[bin]]
+name = "wine-provision"
+path = "src/bin/wine-provision.rs"

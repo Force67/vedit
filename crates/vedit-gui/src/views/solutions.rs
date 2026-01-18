@@ -4,7 +4,7 @@
 //! Solution Explorer, with collapsible tree nodes, virtual folders for
 //! source/header/resource files, and proper icons.
 
-use crate::message::Message;
+use crate::message::{Message, SolutionContextTarget};
 use crate::state::{
     EditorState, MakefileEntry, ProjectReferenceEntry, SolutionBrowserEntry, SolutionErrorEntry,
     SolutionTreeNode, VisualStudioProjectEntry, VisualStudioSolutionEntry,
@@ -13,6 +13,7 @@ use crate::style::{self, CHEVRON_COLOR, ERROR, FILE_ICON, FOLDER_ICON, MUTED, TE
 use iced::widget::{Column, Row, Space, button, column, row, scrollable, text};
 use iced::{Alignment, Element, Length, Padding};
 use iced_font_awesome::fa_icon_solid;
+use std::path::PathBuf;
 
 // VS-style colors
 const PROJECT_APP_COLOR: iced::Color = iced::Color {
@@ -115,6 +116,9 @@ fn render_vs_solution<'a>(
         text(label).size((13.0 * scale).max(10.0)).color(TEXT),
         Some(Message::SolutionTreeToggle(node_id.clone())),
         Some(Message::SolutionSelected(solution.path.clone())),
+        Some(SolutionContextTarget::Solution(PathBuf::from(
+            &solution.path,
+        ))),
         scale,
     ));
 
@@ -186,6 +190,7 @@ fn render_vs_project<'a>(
         text(label).size((13.0 * scale).max(10.0)).color(TEXT),
         Some(Message::SolutionTreeToggle(node_id.clone())),
         Some(Message::WorkspaceFileActivated(project.path.clone())),
+        Some(SolutionContextTarget::Project(PathBuf::from(&project.path))),
         scale,
     ));
 
@@ -272,6 +277,7 @@ fn render_categorized_files<'a>(
                 .color(TEXT),
             Some(Message::SolutionTreeToggle(folder_id)),
             None,
+            None,
             scale,
         ));
 
@@ -299,6 +305,7 @@ fn render_categorized_files<'a>(
                 .color(TEXT),
             Some(Message::SolutionTreeToggle(folder_id)),
             None,
+            None,
             scale,
         ));
 
@@ -325,6 +332,7 @@ fn render_categorized_files<'a>(
                 .size((12.0 * scale).max(9.0))
                 .color(TEXT),
             Some(Message::SolutionTreeToggle(folder_id)),
+            None,
             None,
             scale,
         ));
@@ -407,6 +415,7 @@ fn render_references_folder<'a>(
         text("References").size((12.0 * scale).max(9.0)).color(TEXT),
         Some(Message::SolutionTreeToggle(node_id.to_string())),
         None,
+        None,
         scale,
     ));
 
@@ -424,6 +433,7 @@ fn render_references_folder<'a>(
                     .color(TEXT),
                 None,
                 Some(Message::WorkspaceFileActivated(reference.path.clone())),
+                None,
                 scale,
             ));
         }
@@ -454,6 +464,7 @@ fn render_file_node<'a>(
             text(&node.name).size((12.0 * scale).max(9.0)).color(TEXT),
             Some(Message::SolutionTreeToggle(node_id)),
             None,
+            None,
             scale,
         ));
 
@@ -481,6 +492,7 @@ fn render_file_node<'a>(
             text(&node.name).size((12.0 * scale).max(9.0)).color(TEXT),
             None,
             click_msg,
+            None,
             scale,
         ));
     }
@@ -514,6 +526,7 @@ fn render_makefile<'a>(
             .color(TEXT),
         Some(Message::SolutionTreeToggle(node_id)),
         Some(Message::WorkspaceFileActivated(makefile.path.clone())),
+        None, // Makefiles don't have Wine context menu
         scale,
     ));
 
@@ -557,6 +570,7 @@ fn tree_row<'a>(
     label: iced::widget::Text<'a>,
     toggle_msg: Option<Message>,
     click_msg: Option<Message>,
+    context_target: Option<SolutionContextTarget>,
     scale: f32,
 ) -> Element<'a, Message> {
     let indent = Space::new().width(INDENT_PX * depth as f32);
@@ -594,7 +608,7 @@ fn tree_row<'a>(
             .align_y(Alignment::Center);
 
     // Wrap in button if clickable
-    if let Some(msg) = click_msg {
+    let row_element: Element<'a, Message> = if let Some(msg) = click_msg {
         button(content)
             .style(style::tree_row_button(false))
             .padding(Padding::from([2, 8]))
@@ -606,6 +620,28 @@ fn tree_row<'a>(
             .padding(Padding::from([2, 8]))
             .height(ROW_HEIGHT * scale)
             .into()
+    };
+
+    // Add context menu button for solutions/projects
+    if let Some(target) = context_target {
+        let menu_button = button(
+            fa_icon_solid("ellipsis-vertical")
+                .size((10.0 * scale).max(7.0))
+                .color(MUTED),
+        )
+        .style(style::chevron_button())
+        .padding(Padding::from([2, 4]))
+        .on_press(Message::SolutionContextMenuShow {
+            target,
+            x: 200.0, // Will be positioned by the overlay
+            y: 100.0,
+        });
+
+        row![row_element, menu_button]
+            .align_y(Alignment::Center)
+            .into()
+    } else {
+        row_element
     }
 }
 

@@ -2,11 +2,14 @@
 
 use crate::environment::{Runtime, WindowsVersion, WineArchitecture, WineEnvironmentConfig};
 use crate::error::WineError;
+use crate::msbuild::{MSBuildAction, MSBuildEvent, MSBuildTarget};
 use crate::process::{ProcessMode, WineProcessConfig};
+use crate::proton::{EnvironmentDiscovery, ProtonInstallation};
 use crate::remote_desktop::{DesktopType, RemoteDesktopConfig};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::time::{Duration, Instant};
 use uuid::Uuid;
 
 /// GUI messages for Wine operations
@@ -84,6 +87,53 @@ pub enum WineGuiMessage {
 
     /// Get process details
     GetProcessDetails { process_id: Uuid },
+
+    // === Build-related messages ===
+    /// Start MSBuild compilation
+    StartBuild {
+        target: MSBuildTarget,
+        configuration: String,
+        platform: String,
+        env_id: String,
+        action: MSBuildAction,
+    },
+
+    /// Build started
+    BuildStarted {
+        target: String,
+        configuration: String,
+        platform: String,
+    },
+
+    /// Build output event
+    BuildOutput(MSBuildEvent),
+
+    /// Build completed
+    BuildCompleted {
+        success: bool,
+        duration: Duration,
+        warning_count: u32,
+        error_count: u32,
+    },
+
+    /// Cancel ongoing build
+    CancelBuild,
+
+    /// Build cancelled
+    BuildCancelled,
+
+    // === Environment discovery messages ===
+    /// Refresh environment discovery
+    RefreshEnvironments,
+
+    /// Environment discovery completed
+    EnvironmentsDiscovered(EnvironmentDiscovery),
+
+    /// Select a Wine/Proton environment
+    SelectEnvironment { env_id: String },
+
+    /// Selected environment changed
+    EnvironmentSelected { env_id: String },
 }
 
 /// GUI state for Wine integration
@@ -109,6 +159,18 @@ pub struct WineGuiState {
 
     /// Error states
     pub errors: Vec<WineError>,
+
+    /// Discovered Wine/Proton environments
+    pub discovered_environments: Option<EnvironmentDiscovery>,
+
+    /// Currently selected environment ID
+    pub selected_environment: Option<String>,
+
+    /// Active build state
+    pub active_build: Option<ActiveBuild>,
+
+    /// Detected Proton installations (for quick access)
+    pub proton_installations: Vec<ProtonInstallation>,
 }
 
 /// System status for Wine
@@ -176,6 +238,82 @@ pub struct LoadingStates {
     pub creating_remote_desktop: bool,
     pub listing_environments: bool,
     pub listing_processes: bool,
+    pub building: bool,
+    pub discovering_environments: bool,
+}
+
+/// State of an active build
+#[derive(Debug, Clone)]
+pub struct ActiveBuild {
+    /// Target being built
+    pub target: String,
+
+    /// Build configuration
+    pub configuration: String,
+
+    /// Build platform
+    pub platform: String,
+
+    /// When the build started
+    pub start_time: Instant,
+
+    /// Build events received so far
+    pub events: Vec<MSBuildEvent>,
+
+    /// Current build status
+    pub status: BuildStatus,
+
+    /// Warning count
+    pub warning_count: u32,
+
+    /// Error count
+    pub error_count: u32,
+}
+
+impl ActiveBuild {
+    /// Create a new active build
+    pub fn new(target: String, configuration: String, platform: String) -> Self {
+        Self {
+            target,
+            configuration,
+            platform,
+            start_time: Instant::now(),
+            events: Vec::new(),
+            status: BuildStatus::Running,
+            warning_count: 0,
+            error_count: 0,
+        }
+    }
+
+    /// Add an event to the build
+    pub fn add_event(&mut self, event: MSBuildEvent) {
+        match &event {
+            MSBuildEvent::Warning { .. } => self.warning_count += 1,
+            MSBuildEvent::Error { .. } => self.error_count += 1,
+            MSBuildEvent::Completed { success, .. } => {
+                self.status = if *success {
+                    BuildStatus::Completed { success: true }
+                } else {
+                    BuildStatus::Completed { success: false }
+                };
+            }
+            _ => {}
+        }
+        self.events.push(event);
+    }
+
+    /// Get elapsed time
+    pub fn elapsed(&self) -> Duration {
+        self.start_time.elapsed()
+    }
+}
+
+/// Build status
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BuildStatus {
+    Running,
+    Completed { success: bool },
+    Cancelled,
 }
 
 impl Default for WineGuiState {
@@ -188,6 +326,10 @@ impl Default for WineGuiState {
             wine_status: WineSystemStatus::default(),
             loading_states: LoadingStates::default(),
             errors: Vec::new(),
+            discovered_environments: None,
+            selected_environment: None,
+            active_build: None,
+            proton_installations: Vec::new(),
         }
     }
 }
@@ -301,6 +443,66 @@ impl WineGuiState {
             .filter(|(_, info)| info.environment_id == env_id)
             .collect()
     }
+
+    /// Start a new build
+    pub fn start_build(&mut self, target: String, configuration: String, platform: String) {
+        self.active_build = Some(ActiveBuild::new(target, configuration, platform));
+        self.loading_states.building = true;
+    }
+
+    /// Add build event
+    pub fn add_build_event(&mut self, event: MSBuildEvent) {
+        if let Some(build) = &mut self.active_build {
+            build.add_event(event);
+        }
+    }
+
+    /// Cancel current build
+    pub fn cancel_build(&mut self) {
+        if let Some(build) = &mut self.active_build {
+            build.status = BuildStatus::Cancelled;
+        }
+        self.loading_states.building = false;
+    }
+
+    /// Complete the current build
+    pub fn complete_build(&mut self, success: bool) {
+        if let Some(build) = &mut self.active_build {
+            build.status = BuildStatus::Completed { success };
+        }
+        self.loading_states.building = false;
+    }
+
+    /// Check if a build is currently running
+    pub fn is_building(&self) -> bool {
+        self.active_build
+            .as_ref()
+            .map(|b| b.status == BuildStatus::Running)
+            .unwrap_or(false)
+    }
+
+    /// Set discovered environments
+    pub fn set_discovered_environments(&mut self, discovery: EnvironmentDiscovery) {
+        self.proton_installations = discovery.proton_installations.clone();
+        self.discovered_environments = Some(discovery);
+        self.loading_states.discovering_environments = false;
+    }
+
+    /// Select an environment
+    pub fn select_environment(&mut self, env_id: String) {
+        self.selected_environment = Some(env_id);
+    }
+
+    /// Get the selected Proton installation
+    pub fn selected_proton(&self) -> Option<&ProtonInstallation> {
+        let env_id = self.selected_environment.as_ref()?;
+        self.proton_installations.iter().find(|p| &p.name == env_id)
+    }
+
+    /// Check if any Wine/Proton environment is available
+    pub fn has_any_environment(&self) -> bool {
+        self.wine_status.wine_available || !self.proton_installations.is_empty()
+    }
 }
 
 /// Default configurations for GUI
@@ -328,6 +530,7 @@ impl DefaultConfigs {
             display: crate::environment::DisplayConfig::default(),
             audio: crate::environment::AudioConfig::default(),
             architecture: WineArchitecture::Win64,
+            environment_type: crate::environment::WineEnvironmentType::Wine,
         }
     }
 

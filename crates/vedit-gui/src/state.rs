@@ -390,6 +390,18 @@ pub struct EditorState {
     context_menu_visible: bool,
     context_menu_position: (f32, f32),
     context_menu_definition: Option<vedit_symbols::DefinitionLocation>,
+    // Solution context menu state
+    solution_context_menu_visible: bool,
+    solution_context_menu_position: (f32, f32),
+    solution_context_menu_target: Option<crate::message::SolutionContextTarget>,
+    // Wine/Proton environment state
+    wine_discovery: Option<vedit_wine::EnvironmentDiscovery>,
+    wine_selected_environment: Option<String>,
+    wine_prefix_manager: vedit_wine::WinePrefixManager,
+    // Create prefix dialog state
+    wine_create_prefix_open: bool,
+    wine_create_prefix_name: String,
+    wine_create_prefix_wine_index: Option<usize>,
     // Solution explorer tree state
     solution_expanded_nodes: HashSet<String>,
     // Hover-to-definition state
@@ -454,6 +466,15 @@ impl Default for EditorState {
             context_menu_visible: false,
             context_menu_position: (0.0, 0.0),
             context_menu_definition: None,
+            solution_context_menu_visible: false,
+            solution_context_menu_position: (0.0, 0.0),
+            solution_context_menu_target: None,
+            wine_discovery: None,
+            wine_selected_environment: None,
+            wine_prefix_manager: vedit_wine::WinePrefixManager::load().unwrap_or_default(),
+            wine_create_prefix_open: false,
+            wine_create_prefix_name: String::new(),
+            wine_create_prefix_wine_index: None,
             solution_expanded_nodes: HashSet::new(),
             symbol_index: vedit_symbols::SymbolIndex::new(),
             hover_info: None,
@@ -1130,6 +1151,114 @@ impl EditorState {
 
     pub fn context_menu_definition(&self) -> Option<&vedit_symbols::DefinitionLocation> {
         self.context_menu_definition.as_ref()
+    }
+
+    // Solution context menu methods
+    pub fn show_solution_context_menu(
+        &mut self,
+        target: crate::message::SolutionContextTarget,
+        x: f32,
+        y: f32,
+    ) {
+        self.solution_context_menu_visible = true;
+        self.solution_context_menu_position = (x, y);
+        self.solution_context_menu_target = Some(target);
+    }
+
+    pub fn hide_solution_context_menu(&mut self) {
+        self.solution_context_menu_visible = false;
+        self.solution_context_menu_target = None;
+    }
+
+    pub fn solution_context_menu_visible(&self) -> bool {
+        self.solution_context_menu_visible
+    }
+
+    pub fn solution_context_menu_position(&self) -> (f32, f32) {
+        self.solution_context_menu_position
+    }
+
+    pub fn solution_context_menu_target(&self) -> Option<&crate::message::SolutionContextTarget> {
+        self.solution_context_menu_target.as_ref()
+    }
+
+    /// Returns true if a Wine environment is configured (has a usable prefix)
+    pub fn has_wine_environment(&self) -> bool {
+        // We have a wine environment if there's a configured prefix with build tools
+        // OR if there's at least a discovered wine/proton (for future use)
+        !self.wine_prefix_manager.prefixes.is_empty()
+            || self
+                .wine_discovery
+                .as_ref()
+                .map(|d| d.has_any())
+                .unwrap_or(false)
+    }
+
+    /// Get the wine environment discovery results
+    pub fn wine_discovery(&self) -> Option<&vedit_wine::EnvironmentDiscovery> {
+        self.wine_discovery.as_ref()
+    }
+
+    /// Set the wine environment discovery results
+    pub fn set_wine_discovery(&mut self, discovery: vedit_wine::EnvironmentDiscovery) {
+        self.wine_discovery = Some(discovery);
+    }
+
+    /// Get the selected wine environment ID
+    pub fn wine_selected_environment(&self) -> Option<&str> {
+        self.wine_selected_environment.as_deref()
+    }
+
+    /// Set the selected wine environment
+    pub fn set_wine_selected_environment(&mut self, env_id: Option<String>) {
+        self.wine_selected_environment = env_id;
+    }
+
+    /// Get the wine prefix manager
+    pub fn wine_prefix_manager(&self) -> &vedit_wine::WinePrefixManager {
+        &self.wine_prefix_manager
+    }
+
+    /// Get mutable reference to wine prefix manager
+    pub fn wine_prefix_manager_mut(&mut self) -> &mut vedit_wine::WinePrefixManager {
+        &mut self.wine_prefix_manager
+    }
+
+    /// Check if create prefix dialog is open
+    pub fn wine_create_prefix_open(&self) -> bool {
+        self.wine_create_prefix_open
+    }
+
+    /// Open the create prefix dialog
+    pub fn open_wine_create_prefix(&mut self) {
+        self.wine_create_prefix_open = true;
+        self.wine_create_prefix_name = String::new();
+        self.wine_create_prefix_wine_index = None;
+    }
+
+    /// Close the create prefix dialog
+    pub fn close_wine_create_prefix(&mut self) {
+        self.wine_create_prefix_open = false;
+    }
+
+    /// Get the new prefix name being entered
+    pub fn wine_create_prefix_name(&self) -> &str {
+        &self.wine_create_prefix_name
+    }
+
+    /// Set the new prefix name
+    pub fn set_wine_create_prefix_name(&mut self, name: String) {
+        self.wine_create_prefix_name = name;
+    }
+
+    /// Get the selected wine binary index for new prefix
+    pub fn wine_create_prefix_wine_index(&self) -> Option<usize> {
+        self.wine_create_prefix_wine_index
+    }
+
+    /// Set the selected wine binary index for new prefix
+    pub fn set_wine_create_prefix_wine_index(&mut self, index: Option<usize>) {
+        self.wine_create_prefix_wine_index = index;
     }
 
     // Hover-to-definition methods

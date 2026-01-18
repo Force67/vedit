@@ -5,6 +5,7 @@ pub mod fps_counter;
 pub mod hover_tooltip;
 pub mod right_rail;
 pub mod search_dialog;
+pub mod solution_context_menu;
 pub mod text_editor;
 pub mod wine_simple;
 // pub mod wine; // Temporarily disabled for compilation
