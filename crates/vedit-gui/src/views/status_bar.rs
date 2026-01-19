@@ -108,16 +108,40 @@ pub fn render_status_bar(
         _ => Space::new().width(0).into(),
     };
 
+    // Build indicator (shown when building)
+    let build_item: Element<'_, Message> = if state.is_building() {
+        let build_name = state.build_target_name().unwrap_or("...");
+        row![
+            fa_icon_solid("gear").size(icon_size).color(style::WARNING),
+            text(format!("Building: {}", build_name))
+                .size(text_size)
+                .color(style::WARNING),
+        ]
+        .spacing(4)
+        .align_y(Alignment::Center)
+        .into()
+    } else {
+        Space::new().width(0).into()
+    };
+
     // Build status bar with separators
-    let left_section = row![
-        file_item,
+    let mut left_items: Vec<Element<'_, Message>> = vec![
+        file_item.into(),
         separator(scale),
-        lang_item,
+        lang_item.into(),
         separator(scale),
-        chars_item,
-    ]
-    .spacing(section_spacing)
-    .align_y(Alignment::Center);
+        chars_item.into(),
+    ];
+
+    // Add build indicator if building
+    if state.is_building() {
+        left_items.push(separator(scale));
+        left_items.push(build_item);
+    }
+
+    let left_section = row(left_items)
+        .spacing(section_spacing)
+        .align_y(Alignment::Center);
 
     let right_section = row![workspace_item, separator(scale), fps_item, notice_item,]
         .spacing(section_spacing)

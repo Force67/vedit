@@ -122,6 +122,83 @@ impl ConsoleState {
         self.push_lines(tab_id, vec![(kind, message)]);
     }
 
+    /// Create a build output tab
+    pub fn create_build_tab(&mut self, title: String) -> u64 {
+        let id = self.allocate_id();
+        let tab = ConsoleTab::new_build(id, title);
+        self.tabs.push(tab);
+        self.active_tab = Some(id);
+        id
+    }
+
+    /// Find existing build tab or create a new one
+    pub fn find_or_create_build_tab(&mut self) -> u64 {
+        // Look for existing build tab
+        for tab in &self.tabs {
+            if tab.kind == ConsoleKind::Build {
+                return tab.id;
+            }
+        }
+
+        // Create new build tab
+        self.create_build_tab("Build Output".to_string())
+    }
+
+    /// Clear build tab and prepare for new build
+    pub fn start_build(&mut self, target_name: &str) -> u64 {
+        let tab_id = self.find_or_create_build_tab();
+
+        // Clear existing content and set title
+        if let Some(tab) = self.tab_mut(tab_id) {
+            tab.clear();
+            tab.set_title(format!("Build: {}", target_name));
+            tab.append_line(
+                ConsoleLineKind::Info,
+                &format!("=== Building {} ===", target_name),
+            );
+            tab.append_line(ConsoleLineKind::Info, "");
+        }
+
+        // Make console visible and select this tab
+        self.visible = true;
+        self.active_tab = Some(tab_id);
+
+        tab_id
+    }
+
+    /// Add build output to the build console
+    pub fn push_build_output(&mut self, output: &str) {
+        let tab_id = self.find_or_create_build_tab();
+
+        if let Some(tab) = self.tab_mut(tab_id) {
+            for line in output.lines() {
+                // Classify the line based on content
+                let kind = if line.contains("error") || line.contains("Error") {
+                    ConsoleLineKind::Error
+                } else if line.contains("warning") || line.contains("Warning") {
+                    ConsoleLineKind::Info
+                } else {
+                    ConsoleLineKind::Output
+                };
+                tab.append_line(kind, line);
+            }
+        }
+    }
+
+    /// Mark build as complete
+    pub fn finish_build(&mut self, success: bool) {
+        let tab_id = self.find_or_create_build_tab();
+
+        if let Some(tab) = self.tab_mut(tab_id) {
+            tab.append_line(ConsoleLineKind::Info, "");
+            if success {
+                tab.append_line(ConsoleLineKind::Info, "=== Build Succeeded ===");
+            } else {
+                tab.append_line(ConsoleLineKind::Error, "=== Build Failed ===");
+            }
+        }
+    }
+
     pub fn process_events(&mut self) {
         for tab in &mut self.tabs {
             let mut events = Vec::new();
@@ -202,6 +279,7 @@ pub enum ConsoleKind {
     Shell,
     Debug,
     EditorLog,
+    Build,
 }
 
 pub struct ConsoleTab {
@@ -265,6 +343,19 @@ impl ConsoleTab {
             pending: String::new(),
             status: ConsoleStatus::Running,
             kind: ConsoleKind::EditorLog,
+            runtime: None,
+        }
+    }
+
+    fn new_build(id: u64, title: String) -> Self {
+        Self {
+            id,
+            title,
+            input: String::new(),
+            lines: Vec::new(),
+            pending: String::new(),
+            status: ConsoleStatus::Running,
+            kind: ConsoleKind::Build,
             runtime: None,
         }
     }
@@ -367,6 +458,21 @@ impl ConsoleTab {
 
     pub fn is_editor_log(&self) -> bool {
         self.kind == ConsoleKind::EditorLog
+    }
+
+    pub fn is_build(&self) -> bool {
+        self.kind == ConsoleKind::Build
+    }
+
+    /// Clear all lines in this tab
+    pub fn clear(&mut self) {
+        self.lines.clear();
+        self.pending.clear();
+    }
+
+    /// Set the title of this tab
+    pub fn set_title(&mut self, title: String) {
+        self.title = title;
     }
 }
 

@@ -321,3 +321,136 @@ pub async fn load_solution_from_path(path: String) -> Result<Option<WorkspaceDat
         metadata,
     }))
 }
+
+/// Build action type
+#[derive(Debug, Clone, Copy)]
+pub enum BuildAction {
+    Build,
+    Rebuild,
+    Clean,
+}
+
+/// Request to build a solution/project via Wine
+#[derive(Debug, Clone)]
+pub struct WineBuildRequest {
+    /// Path to the solution or project file
+    pub target_path: PathBuf,
+    /// Wine prefix path
+    pub prefix_path: PathBuf,
+    /// Path to MSBuild.exe inside the prefix
+    pub msbuild_path: PathBuf,
+    /// Build configuration (e.g., "Release", "Debug")
+    pub configuration: String,
+    /// Platform (e.g., "x64", "Win32")
+    pub platform: String,
+    /// Build action
+    pub action: BuildAction,
+}
+
+/// Result of a build operation
+#[derive(Debug, Clone)]
+pub struct WineBuildResult {
+    pub success: bool,
+    pub output: String,
+    pub target: String,
+}
+
+/// Run MSBuild via Wine
+pub async fn run_wine_build(request: WineBuildRequest) -> Result<WineBuildResult, String> {
+    use std::process::{Command, Stdio};
+
+    let WineBuildRequest {
+        target_path,
+        prefix_path,
+        msbuild_path,
+        configuration,
+        platform,
+        action,
+    } = request;
+
+    // Convert Linux path to Wine path (Z: drive)
+    let wine_target = format!("Z:{}", target_path.to_string_lossy().replace('/', "\\"));
+
+    // Convert msbuild_path (which is relative to drive_c) to Windows path
+    let msbuild_windows = if msbuild_path.starts_with(prefix_path.join("drive_c")) {
+        let relative = msbuild_path
+            .strip_prefix(prefix_path.join("drive_c"))
+            .map_err(|_| "Invalid MSBuild path")?;
+        format!("C:{}", relative.to_string_lossy().replace('/', "\\"))
+    } else {
+        format!("Z:{}", msbuild_path.to_string_lossy().replace('/', "\\"))
+    };
+
+    // Build action target
+    let action_target = match action {
+        BuildAction::Build => "Build",
+        BuildAction::Rebuild => "Rebuild",
+        BuildAction::Clean => "Clean",
+    };
+
+    // VS root for MSBuild to find tools
+    let vs_root = r"C:\Program Files\Microsoft Visual Studio\2022\BuildTools";
+    let sdk_version = "10.0.26100.0";
+
+    // Check if we're on NixOS and need steam-run
+    let is_nixos = std::path::Path::new("/etc/nixos").exists() || std::env::var("NIX_PATH").is_ok();
+    let has_steam_run = which::which("steam-run").is_ok();
+
+    // Ensure temp directory exists for MSVC compiler - use simple C:\Temp for Wine compatibility
+    let temp_dir = prefix_path.join("drive_c/Temp");
+    let _ = std::fs::create_dir_all(&temp_dir);
+
+    // Use simple Windows temp path
+    let windows_temp_path = r"C:\Temp";
+
+    let output = if is_nixos && has_steam_run {
+        Command::new("steam-run")
+            .arg("wine")
+            .arg(&msbuild_windows)
+            .arg(&wine_target)
+            .arg(format!("/p:Configuration={}", configuration))
+            .arg(format!("/p:Platform={}", platform))
+            .arg(format!("/p:VSInstallRoot={}", vs_root))
+            .arg(format!("/p:WindowsTargetPlatformVersion={}", sdk_version))
+            .arg(format!("/t:{}", action_target))
+            .arg("/nologo")
+            .arg("/verbosity:minimal")
+            .env("WINEPREFIX", &prefix_path)
+            .env("WINEDEBUG", "-all")
+            .env("TMP", &windows_temp_path)
+            .env("TEMP", &windows_temp_path)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .map_err(|e| format!("Failed to start MSBuild: {}", e))?
+    } else {
+        Command::new("wine")
+            .arg(&msbuild_windows)
+            .arg(&wine_target)
+            .arg(format!("/p:Configuration={}", configuration))
+            .arg(format!("/p:Platform={}", platform))
+            .arg(format!("/p:VSInstallRoot={}", vs_root))
+            .arg(format!("/p:WindowsTargetPlatformVersion={}", sdk_version))
+            .arg(format!("/t:{}", action_target))
+            .arg("/nologo")
+            .arg("/verbosity:minimal")
+            .env("WINEPREFIX", &prefix_path)
+            .env("WINEDEBUG", "-all")
+            .env("TMP", &windows_temp_path)
+            .env("TEMP", &windows_temp_path)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .map_err(|e| format!("Failed to start MSBuild: {}", e))?
+    };
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let combined_output = format!("{}\n{}", stdout, stderr);
+
+    Ok(WineBuildResult {
+        success: output.status.success(),
+        output: combined_output,
+        target: target_path.display().to_string(),
+    })
+}

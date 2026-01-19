@@ -29,6 +29,7 @@ pub fn render_console_panel(
             ConsoleKind::Shell => "terminal",
             ConsoleKind::Debug => "bug",
             ConsoleKind::EditorLog => "file-lines",
+            ConsoleKind::Build => "hammer",
         };
 
         let tab_content = row![
@@ -158,6 +159,13 @@ pub fn render_console_panel(
             ConsoleKind::EditorLog => {
                 content = content.push(
                     text("Editor internal debug log (read-only)")
+                        .size((13.0 * scale).max(9.0))
+                        .color(Color::from_rgb8(180, 180, 180)),
+                );
+            }
+            ConsoleKind::Build => {
+                content = content.push(
+                    text("Build output (read-only)")
                         .size((13.0 * scale).max(9.0))
                         .color(Color::from_rgb8(180, 180, 180)),
                 );

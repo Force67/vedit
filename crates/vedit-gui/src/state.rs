@@ -418,7 +418,11 @@ pub struct EditorState {
     undo_stack: UndoStack,
     // Navigation history (back/forward like VS)
     navigation_history: NavigationHistory,
-    // wine: WineState, // Temporarily disabled
+    // Pending MSVC install prefix index (after download completes)
+    pending_msvc_install_prefix: Option<usize>,
+    // Build state
+    is_building: bool,
+    build_target_name: Option<String>,
 }
 
 impl Default for EditorState {
@@ -486,7 +490,9 @@ impl Default for EditorState {
             hover_cursor_in_tooltip: false,
             undo_stack: UndoStack::new(),
             navigation_history: NavigationHistory::new(),
-            // wine: WineState::new(), // Temporarily disabled
+            pending_msvc_install_prefix: None,
+            is_building: false,
+            build_target_name: None,
         };
 
         // Set up console state for logging
@@ -512,6 +518,10 @@ impl EditorState {
 
     pub fn console(&self) -> &ConsoleState {
         &self.console
+    }
+
+    pub fn console_mut(&mut self) -> &mut ConsoleState {
+        &mut self.console
     }
 
     pub fn buffer_content(&self) -> &Content {
@@ -1259,6 +1269,41 @@ impl EditorState {
     /// Set the selected wine binary index for new prefix
     pub fn set_wine_create_prefix_wine_index(&mut self, index: Option<usize>) {
         self.wine_create_prefix_wine_index = index;
+    }
+
+    /// Set the pending MSVC install prefix index (to continue after download)
+    pub fn set_pending_msvc_install_prefix(&mut self, index: Option<usize>) {
+        self.pending_msvc_install_prefix = index;
+    }
+
+    /// Take the pending MSVC install prefix index (returns and clears it)
+    pub fn take_pending_msvc_install_prefix(&mut self) -> Option<usize> {
+        self.pending_msvc_install_prefix.take()
+    }
+
+    /// Check if a build is in progress
+    pub fn is_building(&self) -> bool {
+        self.is_building
+    }
+
+    /// Get the name of the current build target
+    pub fn build_target_name(&self) -> Option<&str> {
+        self.build_target_name.as_deref()
+    }
+
+    /// Start a build (sets visual state and prepares console)
+    pub fn start_build(&mut self, target_name: &str) {
+        self.is_building = true;
+        self.build_target_name = Some(target_name.to_string());
+        self.console.start_build(target_name);
+    }
+
+    /// Finish a build (clears visual state and updates console)
+    pub fn finish_build(&mut self, success: bool, output: &str) {
+        self.is_building = false;
+        self.build_target_name = None;
+        self.console.push_build_output(output);
+        self.console.finish_build(success);
     }
 
     // Hover-to-definition methods

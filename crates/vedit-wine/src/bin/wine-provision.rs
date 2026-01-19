@@ -42,6 +42,13 @@ fn run_wine_command(prefix: &PathBuf, args: &[&str]) -> std::io::Result<std::pro
     println!("Running: wine {}", args.join(" "));
     println!("  WINEPREFIX={}", prefix.display());
 
+    // Ensure temp directories exist - use simple C:\Temp for better Wine compatibility
+    let temp_dir = prefix.join("drive_c/Temp");
+    let _ = std::fs::create_dir_all(&temp_dir);
+
+    // Use simple Windows temp path
+    let windows_temp_path = r"C:\Temp";
+
     if is_nixos() && has_steam_run() {
         println!("  Using steam-run wrapper");
         let mut cmd = Command::new("steam-run");
@@ -51,6 +58,8 @@ fn run_wine_command(prefix: &PathBuf, args: &[&str]) -> std::io::Result<std::pro
         }
         cmd.env("WINEPREFIX", prefix)
             .env("WINEDEBUG", "-all")
+            .env("TMP", &windows_temp_path)
+            .env("TEMP", &windows_temp_path)
             .status()
     } else {
         let mut cmd = Command::new("wine");
@@ -59,6 +68,8 @@ fn run_wine_command(prefix: &PathBuf, args: &[&str]) -> std::io::Result<std::pro
         }
         cmd.env("WINEPREFIX", prefix)
             .env("WINEDEBUG", "-all")
+            .env("TMP", &windows_temp_path)
+            .env("TEMP", &windows_temp_path)
             .status()
     }
 }
@@ -516,13 +527,21 @@ fn build_project(
     let msbuild = r"C:\Program Files\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin\amd64\MSBuild.exe";
     let vs_root = r"C:\Program Files\Microsoft Visual Studio\2022\BuildTools";
 
-    let config_arg = format!("/p:Configuration={}", config);
-    let platform_arg = format!("/p:Platform={}", platform);
-    let vsroot_arg = format!("/p:VSInstallRoot={}", vs_root);
+    // SDK version we have installed via msvc-wine
+    let sdk_version = "10.0.26100.0";
 
     let status = run_wine_command(
         prefix,
-        &[msbuild, project, &config_arg, &platform_arg, &vsroot_arg],
+        &[
+            msbuild,
+            project,
+            &format!("/p:Configuration={}", config),
+            &format!("/p:Platform={}", platform),
+            &format!("/p:VSInstallRoot={}", vs_root),
+            &format!("/p:WindowsTargetPlatformVersion={}", sdk_version),
+            "/nologo",
+            "/verbosity:minimal",
+        ],
     )
     .map_err(|e| format!("Failed to run MSBuild: {}", e))?;
 
@@ -601,22 +620,21 @@ fn setup_full(name: &str) -> Result<PathBuf, String> {
     println!("\n=== Full Wine Prefix Setup ===\n");
     println!("This will:");
     println!("  1. Create a 64-bit Wine prefix");
-    println!("  2. Set Windows version to Windows 10");
-    println!("  3. Install Windows fonts (corefonts, tahoma)");
-    println!("  4. Install .NET Framework 4.8 (for C# MSBuild)");
-    println!("  5. Install MSVC toolchain (for C++ .vcxproj)");
+    println!("  2. Install Windows fonts (corefonts, tahoma)");
+    println!("  3. Install .NET Framework 4.8 (for C# MSBuild)");
+    println!("  4. Install MSVC toolchain (for C++ .vcxproj)");
+    println!("  5. Set Windows version to Windows 10 (required for MSBuild)");
+    println!("  6. Configure TEMP/TMP environment variables");
     println!();
 
     // Create prefix
     let prefix = create_prefix(name, "64")?;
 
-    // Set Windows 10 version
-    set_win10(&prefix)?;
-
     // Install fonts
     install_fonts(&prefix)?;
 
     // Install .NET Framework 4.8
+    // Note: This may change Windows version to XP, so we set it back to Win10 later
     install_dotnet48(&prefix)?;
 
     // Install MSVC toolchain (if available)
@@ -627,6 +645,14 @@ fn setup_full(name: &str) -> Result<PathBuf, String> {
         println!("  Run: wine-provision install-msvc <prefix> after downloading msvc-wine");
     }
 
+    // IMPORTANT: Set Windows 10 version AFTER winetricks installations
+    // (winetricks dotnet40/48 changes Windows version to XP)
+    println!("\n=== Restoring Windows 10 Version ===");
+    set_win10(&prefix)?;
+
+    // Configure TEMP/TMP environment variables
+    setup_temp_env(&prefix)?;
+
     println!("\n=== Setup Complete ===\n");
     println!("Prefix: {}", prefix.display());
     println!("C# MSBuild: C:\\windows\\Microsoft.NET\\Framework64\\v4.0.30319\\MSBuild.exe");
@@ -635,6 +661,120 @@ fn setup_full(name: &str) -> Result<PathBuf, String> {
     );
 
     Ok(prefix)
+}
+
+fn setup_temp_env(prefix: &PathBuf) -> Result<(), String> {
+    println!("\n=== Configuring TEMP/TMP Environment ===\n");
+
+    // Create temp directories
+    let user = std::env::var("USER").unwrap_or_else(|_| "user".to_string());
+    let temp_dir = prefix
+        .join("drive_c/users")
+        .join(&user)
+        .join("AppData/Local/Temp");
+    std::fs::create_dir_all(&temp_dir)
+        .map_err(|e| format!("Failed to create temp directory: {}", e))?;
+
+    // Set TEMP and TMP environment variables in registry
+    let reg_temp = format!("C:\\users\\{}\\AppData\\Local\\Temp", user);
+
+    let status1 = if is_nixos() && has_steam_run() {
+        Command::new("steam-run")
+            .args([
+                "wine",
+                "reg",
+                "add",
+                "HKEY_CURRENT_USER\\Environment",
+                "/v",
+                "TEMP",
+                "/t",
+                "REG_EXPAND_SZ",
+                "/d",
+                &reg_temp,
+                "/f",
+            ])
+            .env("WINEPREFIX", prefix)
+            .env("WINEDEBUG", "-all")
+            .status()
+    } else {
+        Command::new("wine")
+            .args([
+                "reg",
+                "add",
+                "HKEY_CURRENT_USER\\Environment",
+                "/v",
+                "TEMP",
+                "/t",
+                "REG_EXPAND_SZ",
+                "/d",
+                &reg_temp,
+                "/f",
+            ])
+            .env("WINEPREFIX", prefix)
+            .env("WINEDEBUG", "-all")
+            .status()
+    };
+
+    let status2 = if is_nixos() && has_steam_run() {
+        Command::new("steam-run")
+            .args([
+                "wine",
+                "reg",
+                "add",
+                "HKEY_CURRENT_USER\\Environment",
+                "/v",
+                "TMP",
+                "/t",
+                "REG_EXPAND_SZ",
+                "/d",
+                &reg_temp,
+                "/f",
+            ])
+            .env("WINEPREFIX", prefix)
+            .env("WINEDEBUG", "-all")
+            .status()
+    } else {
+        Command::new("wine")
+            .args([
+                "reg",
+                "add",
+                "HKEY_CURRENT_USER\\Environment",
+                "/v",
+                "TMP",
+                "/t",
+                "REG_EXPAND_SZ",
+                "/d",
+                &reg_temp,
+                "/f",
+            ])
+            .env("WINEPREFIX", prefix)
+            .env("WINEDEBUG", "-all")
+            .status()
+    };
+
+    // Wait for wineserver to save registry
+    let _ = if is_nixos() && has_steam_run() {
+        Command::new("steam-run")
+            .args(["wineserver", "-w"])
+            .env("WINEPREFIX", prefix)
+            .status()
+    } else {
+        Command::new("wineserver")
+            .args(["-w"])
+            .env("WINEPREFIX", prefix)
+            .status()
+    };
+
+    match (status1, status2) {
+        (Ok(s1), Ok(s2)) if s1.success() && s2.success() => {
+            println!("✓ TEMP/TMP environment configured");
+            Ok(())
+        }
+        _ => {
+            println!("⚠ Failed to set TEMP/TMP - may need manual configuration");
+            Ok(()) // Don't fail the whole setup for this
+        }
+    }
 }
 
 fn test_msbuild(prefix: &PathBuf) -> Result<(), String> {

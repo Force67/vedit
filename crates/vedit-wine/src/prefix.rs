@@ -321,22 +321,21 @@ impl WinePrefix {
 
     /// Find MSBuild.exe in this prefix
     pub fn find_msbuild(&self) -> Option<PathBuf> {
-        let program_files = self.drive_c().join("Program Files (x86)");
+        let drive_c = self.drive_c();
 
-        // Common MSBuild locations
+        // Common MSBuild locations - amd64 paths first (required for msvc-wine)
         let candidates = [
-            // VS 2022 Build Tools
-            program_files
-                .join("Microsoft Visual Studio/2022/BuildTools/MSBuild/Current/Bin/MSBuild.exe"),
+            // VS 2022 Build Tools (msvc-wine installation) - amd64 preferred
+            drive_c.join("Program Files/Microsoft Visual Studio/2022/BuildTools/MSBuild/Current/Bin/amd64/MSBuild.exe"),
+            drive_c.join("Program Files/Microsoft Visual Studio/2022/BuildTools/MSBuild/Current/Bin/MSBuild.exe"),
+            // VS 2022 in Program Files (x86)
+            drive_c.join("Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/MSBuild/Current/Bin/amd64/MSBuild.exe"),
+            drive_c.join("Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/MSBuild/Current/Bin/MSBuild.exe"),
             // VS 2019 Build Tools
-            program_files
-                .join("Microsoft Visual Studio/2019/BuildTools/MSBuild/Current/Bin/MSBuild.exe"),
-            // VS 2017 Build Tools
-            program_files
-                .join("Microsoft Visual Studio/2017/BuildTools/MSBuild/15.0/Bin/MSBuild.exe"),
-            // Standalone MSBuild
-            program_files.join("MSBuild/Current/Bin/MSBuild.exe"),
-            program_files.join("MSBuild/14.0/Bin/MSBuild.exe"),
+            drive_c.join("Program Files (x86)/Microsoft Visual Studio/2019/BuildTools/MSBuild/Current/Bin/amd64/MSBuild.exe"),
+            drive_c.join("Program Files (x86)/Microsoft Visual Studio/2019/BuildTools/MSBuild/Current/Bin/MSBuild.exe"),
+            // .NET Framework MSBuild (for C# projects)
+            drive_c.join("windows/Microsoft.NET/Framework64/v4.0.30319/MSBuild.exe"),
         ];
 
         for candidate in candidates {
@@ -509,6 +508,292 @@ impl WinePrefix {
                     e
                 ))
             })
+    }
+
+    /// Get the path where msvc-wine toolchain should be downloaded
+    pub fn get_msvc_cache_dir() -> PathBuf {
+        dirs::data_local_dir()
+            .unwrap_or_else(|| PathBuf::from("/tmp"))
+            .join("vedit")
+            .join("msvc")
+    }
+
+    /// Check if msvc-wine toolchain is available
+    pub fn is_msvc_available() -> bool {
+        let msvc_dir = Self::get_msvc_cache_dir();
+        msvc_dir.join("VC").exists() && msvc_dir.join("MSBuild").exists()
+    }
+
+    /// Download MSVC toolchain using msvc-wine
+    /// This function clones msvc-wine, runs vsdownload.py, and install.sh
+    /// Returns the path to the installed MSVC directory
+    pub async fn download_msvc(
+        progress_sender: Option<mpsc::Sender<String>>,
+    ) -> WineResult<PathBuf> {
+        let msvc_dir = Self::get_msvc_cache_dir();
+        let temp_dir = std::env::temp_dir().join("msvc-wine");
+
+        let send_progress = |msg: String| {
+            if let Some(ref sender) = progress_sender {
+                let _ = sender.try_send(msg);
+            }
+        };
+
+        // Create msvc cache directory
+        std::fs::create_dir_all(&msvc_dir).map_err(|e| {
+            WineError::EnvironmentCreationFailed(format!("Failed to create MSVC directory: {}", e))
+        })?;
+
+        // Step 1: Clone msvc-wine if not already present
+        send_progress("Cloning msvc-wine repository...".to_string());
+
+        if !temp_dir.exists() {
+            let status = std::process::Command::new("git")
+                .args([
+                    "clone",
+                    "--depth=1",
+                    "https://github.com/mstorsjo/msvc-wine",
+                    temp_dir.to_str().unwrap(),
+                ])
+                .status()
+                .map_err(|e| {
+                    WineError::EnvironmentCreationFailed(format!(
+                        "Failed to clone msvc-wine: {}",
+                        e
+                    ))
+                })?;
+
+            if !status.success() {
+                return Err(WineError::EnvironmentCreationFailed(
+                    "Failed to clone msvc-wine repository".to_string(),
+                ));
+            }
+        }
+
+        // Step 2: Run vsdownload.py to download MSVC
+        send_progress("Downloading MSVC toolchain (this may take a while)...".to_string());
+
+        let vsdownload_status = if is_nixos() {
+            // On NixOS, use nix-shell to get msitools and python3
+            std::process::Command::new("nix-shell")
+                .args([
+                    "-p",
+                    "msitools",
+                    "python3",
+                    "--run",
+                    &format!(
+                        "python3 vsdownload.py --accept-license --dest {}",
+                        msvc_dir.display()
+                    ),
+                ])
+                .current_dir(&temp_dir)
+                .status()
+        } else {
+            // On other systems, assume python3 and msitools are available
+            std::process::Command::new("python3")
+                .args([
+                    "vsdownload.py",
+                    "--accept-license",
+                    "--dest",
+                    msvc_dir.to_str().unwrap(),
+                ])
+                .current_dir(&temp_dir)
+                .status()
+        };
+
+        let vsdownload_status = vsdownload_status.map_err(|e| {
+            WineError::EnvironmentCreationFailed(format!("Failed to run vsdownload.py: {}", e))
+        })?;
+
+        if !vsdownload_status.success() {
+            return Err(WineError::EnvironmentCreationFailed(
+                "vsdownload.py failed - check that python3 and msitools are available".to_string(),
+            ));
+        }
+
+        // Step 3: Run install.sh to organize files
+        send_progress("Organizing MSVC files...".to_string());
+
+        let install_script = temp_dir.join("install.sh");
+        let install_status = std::process::Command::new("bash")
+            .args([install_script.to_str().unwrap(), msvc_dir.to_str().unwrap()])
+            .current_dir(&temp_dir)
+            .status()
+            .map_err(|e| {
+                WineError::EnvironmentCreationFailed(format!("Failed to run install.sh: {}", e))
+            })?;
+
+        if !install_status.success() {
+            return Err(WineError::EnvironmentCreationFailed(
+                "install.sh failed".to_string(),
+            ));
+        }
+
+        send_progress("MSVC toolchain downloaded successfully!".to_string());
+
+        // Verify the installation
+        if Self::is_msvc_available() {
+            Ok(msvc_dir)
+        } else {
+            Err(WineError::EnvironmentCreationFailed(
+                "MSVC installation verification failed".to_string(),
+            ))
+        }
+    }
+
+    /// Install MSVC toolchain from msvc-wine cache directory
+    /// This is the recommended method - it copies pre-downloaded MSVC files
+    pub fn install_msvc_from_cache(&self) -> WineResult<PathBuf> {
+        let msvc_dir = Self::get_msvc_cache_dir();
+
+        if !Self::is_msvc_available() {
+            return Err(WineError::EnvironmentCreationFailed(format!(
+                "MSVC toolchain not found at {}.\n\n\
+                To download MSVC, run:\n\
+                  git clone https://github.com/mstorsjo/msvc-wine /tmp/msvc-wine\n\
+                  cd /tmp/msvc-wine\n\
+                  nix-shell -p msitools python3 --run \\\n\
+                    'python3 vsdownload.py --accept-license --dest {}'\n\
+                  ./install.sh {}",
+                msvc_dir.display(),
+                msvc_dir.display(),
+                msvc_dir.display()
+            )));
+        }
+
+        let vs_root = self
+            .drive_c()
+            .join("Program Files/Microsoft Visual Studio/2022/BuildTools");
+
+        // Create VS installation directory
+        std::fs::create_dir_all(&vs_root).map_err(|e| {
+            WineError::EnvironmentCreationFailed(format!("Failed to create VS dir: {}", e))
+        })?;
+
+        // Copy MSBuild
+        let src_msbuild = msvc_dir.join("MSBuild");
+        let dst_msbuild = vs_root.join("MSBuild");
+        if src_msbuild.exists() && !dst_msbuild.exists() {
+            Self::copy_dir_recursive(&src_msbuild, &dst_msbuild)?;
+        }
+
+        // Copy VC toolchain
+        let src_vc = msvc_dir.join("VC");
+        let dst_vc = vs_root.join("VC");
+        if src_vc.exists() && !dst_vc.exists() {
+            Self::copy_dir_recursive(&src_vc, &dst_vc)?;
+        }
+
+        // Copy Windows Kits
+        let src_kits = msvc_dir.join("Windows Kits");
+        let dst_kits = vs_root.join("Windows Kits");
+        if src_kits.exists() && !dst_kits.exists() {
+            Self::copy_dir_recursive(&src_kits, &dst_kits)?;
+        }
+
+        // Copy runtime DLLs to system32
+        let system32 = self.drive_c().join("windows/system32");
+        Self::copy_runtime_dlls(&msvc_dir, &system32)?;
+
+        // Return the MSBuild path
+        let msbuild_path = dst_msbuild.join("Current/Bin/amd64/MSBuild.exe");
+        if msbuild_path.exists() {
+            Ok(msbuild_path)
+        } else {
+            // Try non-amd64 path
+            let msbuild_path_alt = dst_msbuild.join("Current/Bin/MSBuild.exe");
+            if msbuild_path_alt.exists() {
+                Ok(msbuild_path_alt)
+            } else {
+                Err(WineError::EnvironmentCreationFailed(
+                    "MSBuild not found after installation".to_string(),
+                ))
+            }
+        }
+    }
+
+    /// Recursively copy a directory
+    fn copy_dir_recursive(src: &PathBuf, dst: &PathBuf) -> WineResult<()> {
+        std::fs::create_dir_all(dst).map_err(|e| {
+            WineError::EnvironmentCreationFailed(format!(
+                "Failed to create {}: {}",
+                dst.display(),
+                e
+            ))
+        })?;
+
+        for entry in std::fs::read_dir(src).map_err(|e| {
+            WineError::EnvironmentCreationFailed(format!("Failed to read {}: {}", src.display(), e))
+        })? {
+            let entry = entry.map_err(|e| {
+                WineError::EnvironmentCreationFailed(format!("Failed to read entry: {}", e))
+            })?;
+            let src_path = entry.path();
+            let dst_path = dst.join(entry.file_name());
+
+            if src_path.is_dir() {
+                Self::copy_dir_recursive(&src_path, &dst_path)?;
+            } else {
+                std::fs::copy(&src_path, &dst_path).map_err(|e| {
+                    WineError::EnvironmentCreationFailed(format!(
+                        "Failed to copy {:?}: {}",
+                        src_path, e
+                    ))
+                })?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Copy MSVC runtime DLLs to system32
+    fn copy_runtime_dlls(msvc_dir: &PathBuf, system32: &PathBuf) -> WineResult<()> {
+        // Find and copy CRT DLLs from redist
+        let redist_dir = msvc_dir.join("VC/Redist/MSVC");
+        if redist_dir.exists() {
+            Self::copy_dlls_from_dir(&redist_dir, system32, "x64")?;
+        }
+
+        // Copy UCRT debug DLLs
+        let ucrt_dir = msvc_dir.join("Windows Kits/10/bin");
+        if ucrt_dir.exists() {
+            Self::copy_dlls_from_dir(&ucrt_dir, system32, "x64")?;
+        }
+
+        Ok(())
+    }
+
+    /// Copy DLLs matching architecture from a directory tree
+    fn copy_dlls_from_dir(src_dir: &PathBuf, dst_dir: &PathBuf, arch: &str) -> WineResult<()> {
+        if !src_dir.exists() {
+            return Ok(());
+        }
+
+        fn visit_dir(dir: &PathBuf, dst_dir: &PathBuf, arch: &str) -> WineResult<()> {
+            for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    visit_dir(&path, dst_dir, arch)?;
+                } else if path.is_file() {
+                    let path_str = path.to_string_lossy();
+                    if path_str.contains(arch)
+                        && path
+                            .extension()
+                            .map(|e| e.eq_ignore_ascii_case("dll"))
+                            .unwrap_or(false)
+                    {
+                        if let Some(filename) = path.file_name() {
+                            let dst = dst_dir.join(filename);
+                            if !dst.exists() {
+                                let _ = std::fs::copy(&path, &dst);
+                            }
+                        }
+                    }
+                }
+            }
+            Ok(())
+        }
+
+        visit_dir(src_dir, dst_dir, arch)
     }
 }
 

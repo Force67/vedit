@@ -210,6 +210,8 @@ pub enum Message {
     },
     BuildCancelled,
     BuildCancelRequested,
+    /// Result from Wine MSBuild
+    WineBuildResult(Result<crate::commands::WineBuildResult, String>),
 
     // Wine/Proton environment messages
     WineEnvironmentDiscoveryRequested,
@@ -231,6 +233,10 @@ pub enum Message {
     VsBuildToolsInstallProgress(String),
     VsBuildToolsInstallComplete(usize), // prefix index
     VsBuildToolsInstallFailed(String),
+    // MSVC Download (using msvc-wine)
+    MsvcDownloadStart,
+    MsvcDownloadProgress(String),
+    MsvcDownloadComplete(Result<std::path::PathBuf, String>),
 }
 
 /// Target for solution context menu actions

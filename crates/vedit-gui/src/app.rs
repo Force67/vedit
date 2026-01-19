@@ -1389,14 +1389,48 @@ impl EditorApp {
                     return Task::none();
                 }
 
-                self.state.push_notification(
-                    NotificationRequest::title(format!("Building {}", filename))
-                        .body("Starting MSBuild via Wine...")
-                        .kind(NotificationKind::Info),
-                );
+                // Get the selected prefix
+                let prefix = match self.state.wine_prefix_manager().selected_prefix() {
+                    Some(p) => p.clone(),
+                    None => {
+                        self.state.push_notification(
+                            NotificationRequest::title("No Prefix Selected")
+                                .body("Select a Wine prefix in settings.")
+                                .kind(NotificationKind::Error),
+                        );
+                        return Task::none();
+                    }
+                };
 
-                // TODO: Actually start MSBuild via Wine with configured environment
-                println!("Build requested for: {}", path.display());
+                // Find MSBuild
+                let msbuild_path = match prefix.find_msbuild() {
+                    Some(p) => p,
+                    None => {
+                        self.state.push_notification(
+                            NotificationRequest::title("MSBuild Not Found")
+                                .body("Install MSVC Build Tools in the Wine prefix.")
+                                .kind(NotificationKind::Error),
+                        );
+                        return Task::none();
+                    }
+                };
+
+                // Start build - show console and set building state
+                self.state.start_build(filename);
+
+                let request = crate::commands::WineBuildRequest {
+                    target_path: path.clone(),
+                    prefix_path: prefix.path.clone(),
+                    msbuild_path,
+                    configuration: "Release".to_string(),
+                    platform: "x64".to_string(),
+                    action: crate::commands::BuildAction::Build,
+                };
+
+                return self.wrap_command(Task::perform(
+                    crate::commands::run_wine_build(request),
+                    Message::WineBuildResult,
+                ));
             }
             Message::SolutionContextMenuRebuild(path) => {
                 self.state.hide_solution_context_menu();
@@ -1414,13 +1448,46 @@ impl EditorApp {
                     return Task::none();
                 }
 
-                self.state.push_notification(
-                    NotificationRequest::title(format!("Rebuilding {}", filename))
-                        .body("Starting MSBuild rebuild via Wine...")
-                        .kind(NotificationKind::Info),
-                );
+                let prefix = match self.state.wine_prefix_manager().selected_prefix() {
+                    Some(p) => p.clone(),
+                    None => {
+                        self.state.push_notification(
+                            NotificationRequest::title("No Prefix Selected")
+                                .body("Select a Wine prefix in settings.")
+                                .kind(NotificationKind::Error),
+                        );
+                        return Task::none();
+                    }
+                };
 
-                println!("Rebuild requested for: {}", path.display());
+                let msbuild_path = match prefix.find_msbuild() {
+                    Some(p) => p,
+                    None => {
+                        self.state.push_notification(
+                            NotificationRequest::title("MSBuild Not Found")
+                                .body("Install MSVC Build Tools in the Wine prefix.")
+                                .kind(NotificationKind::Error),
+                        );
+                        return Task::none();
+                    }
+                };
+
+                // Start rebuild - show console and set building state
+                self.state.start_build(&format!("{} (Rebuild)", filename));
+
+                let request = crate::commands::WineBuildRequest {
+                    target_path: path.clone(),
+                    prefix_path: prefix.path.clone(),
+                    msbuild_path,
+                    configuration: "Release".to_string(),
+                    platform: "x64".to_string(),
+                    action: crate::commands::BuildAction::Rebuild,
+                };
+
+                return self.wrap_command(Task::perform(
+                    crate::commands::run_wine_build(request),
+                    Message::WineBuildResult,
+                ));
             }
             Message::SolutionContextMenuClean(path) => {
                 self.state.hide_solution_context_menu();
@@ -1438,13 +1505,46 @@ impl EditorApp {
                     return Task::none();
                 }
 
-                self.state.push_notification(
-                    NotificationRequest::title(format!("Cleaning {}", filename))
-                        .body("Starting MSBuild clean via Wine...")
-                        .kind(NotificationKind::Info),
-                );
+                let prefix = match self.state.wine_prefix_manager().selected_prefix() {
+                    Some(p) => p.clone(),
+                    None => {
+                        self.state.push_notification(
+                            NotificationRequest::title("No Prefix Selected")
+                                .body("Select a Wine prefix in settings.")
+                                .kind(NotificationKind::Error),
+                        );
+                        return Task::none();
+                    }
+                };
 
-                println!("Clean requested for: {}", path.display());
+                let msbuild_path = match prefix.find_msbuild() {
+                    Some(p) => p,
+                    None => {
+                        self.state.push_notification(
+                            NotificationRequest::title("MSBuild Not Found")
+                                .body("Install MSVC Build Tools in the Wine prefix.")
+                                .kind(NotificationKind::Error),
+                        );
+                        return Task::none();
+                    }
+                };
+
+                // Start clean - show console and set building state
+                self.state.start_build(&format!("{} (Clean)", filename));
+
+                let request = crate::commands::WineBuildRequest {
+                    target_path: path.clone(),
+                    prefix_path: prefix.path.clone(),
+                    msbuild_path,
+                    configuration: "Release".to_string(),
+                    platform: "x64".to_string(),
+                    action: crate::commands::BuildAction::Clean,
+                };
+
+                return self.wrap_command(Task::perform(
+                    crate::commands::run_wine_build(request),
+                    Message::WineBuildResult,
+                ));
             }
             Message::SolutionContextMenuDebug(path) => {
                 self.state.hide_solution_context_menu();
@@ -1535,6 +1635,65 @@ impl EditorApp {
             Message::BuildCancelRequested => {
                 println!("Build cancel requested");
                 // TODO: Cancel active build
+            }
+            Message::WineBuildResult(result) => {
+                match result {
+                    Ok(build_result) => {
+                        let target_name = std::path::Path::new(&build_result.target)
+                            .file_name()
+                            .and_then(|n| n.to_str())
+                            .unwrap_or("solution");
+
+                        // Push output to build console and finish build
+                        self.state
+                            .finish_build(build_result.success, &build_result.output);
+
+                        if build_result.success {
+                            self.state.push_notification(
+                                NotificationRequest::title(format!(
+                                    "Build Succeeded: {}",
+                                    target_name
+                                ))
+                                .body("Build completed successfully. See console for output.")
+                                .kind(NotificationKind::Success),
+                            );
+                        } else {
+                            // Show first few lines of error output
+                            let error_preview: String = build_result
+                                .output
+                                .lines()
+                                .filter(|line| line.contains("error") || line.contains("Error"))
+                                .take(3)
+                                .collect::<Vec<_>>()
+                                .join("\n");
+
+                            let body = if error_preview.is_empty() {
+                                "Build failed. Check console for details.".to_string()
+                            } else {
+                                format!("{}\n\nSee console for full output.", error_preview)
+                            };
+
+                            self.state.push_notification(
+                                NotificationRequest::title(format!(
+                                    "Build Failed: {}",
+                                    target_name
+                                ))
+                                .body(body)
+                                .kind(NotificationKind::Error),
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        // Finish build with error
+                        self.state.finish_build(false, &format!("Error: {}", e));
+
+                        self.state.push_notification(
+                            NotificationRequest::title("Build Error")
+                                .body(e)
+                                .kind(NotificationKind::Error),
+                        );
+                    }
+                }
             }
             // Wine/Proton environment messages
             Message::WineEnvironmentDiscoveryRequested => {
@@ -1731,162 +1890,53 @@ impl EditorApp {
                     );
                 }
             }
-            // VS Build Tools installation
+            // VS Build Tools installation (using msvc-wine)
             Message::VsBuildToolsInstallStart(prefix_index) => {
+                // First check if msvc-wine toolchain is available
+                if !vedit_wine::WinePrefix::is_msvc_available() {
+                    // Store the prefix index for after download completes
+                    self.state
+                        .set_pending_msvc_install_prefix(Some(prefix_index));
+
+                    self.state.push_notification(
+                        NotificationRequest::title("MSVC Toolchain Not Found")
+                            .body(
+                                "MSVC toolchain not downloaded yet.\n\
+                                Starting automatic download using msvc-wine...",
+                            )
+                            .kind(NotificationKind::Info),
+                    );
+
+                    // Start the download
+                    return Task::done(Message::MsvcDownloadStart);
+                }
+
                 if let Some(prefix) = self.state.wine_prefix_manager().prefixes.get(prefix_index) {
+                    let prefix_clone = prefix.clone();
                     let prefix_name = prefix.name.clone();
-                    let wine_binary = prefix.wine_binary.clone();
-                    let prefix_path = prefix.path.clone();
 
                     self.state.push_notification(
                         NotificationRequest::title(format!(
-                            "Installing Build Tools for '{}'",
+                            "Installing MSVC for '{}'",
                             prefix_name
                         ))
-                        .body("Installing .NET Framework and VS Build Tools... This may take a while.")
-                        .kind(NotificationKind::Info)
-                        .timeout(None), // Don't auto-dismiss
+                        .body("Copying MSVC toolchain to Wine prefix...")
+                        .kind(NotificationKind::Info),
                     );
 
-                    // Spawn async task to download and install
+                    // Spawn task to copy MSVC files
                     return Task::perform(
                         async move {
-                            // Check if on NixOS and need steam-run
-                            let is_nixos = vedit_wine::is_nixos();
-                            let has_steam_run = vedit_wine::has_steam_run();
-
-                            // Install wine-mono for .NET compatibility
-                            eprintln!(
-                                "DEBUG: Step 1 - Installing Wine Mono (.NET compatibility)..."
-                            );
-
-                            let mono_status = if is_nixos && has_steam_run {
-                                std::process::Command::new("steam-run")
-                                    .arg("winetricks")
-                                    .arg("-q")
-                                    .arg("mono") // Wine Mono - Wine's .NET implementation
-                                    .env("WINEPREFIX", &prefix_path)
-                                    .env("WINEDEBUG", "-all")
-                                    .env("TMPDIR", "/tmp")
-                                    .env("HOME", std::env::var("HOME").unwrap_or_default())
-                                    .status()
-                            } else {
-                                std::process::Command::new("winetricks")
-                                    .arg("-q")
-                                    .arg("mono")
-                                    .env("WINEPREFIX", &prefix_path)
-                                    .env("WINEDEBUG", "-all")
-                                    .status()
-                            };
-
-                            match mono_status {
-                                Ok(s) if s.success() => {
-                                    eprintln!("DEBUG: Wine Mono installed successfully");
-                                }
-                                Ok(s) => {
+                            // This is synchronous but we wrap it in async for Task::perform
+                            match prefix_clone.install_msvc_from_cache() {
+                                Ok(msbuild_path) => {
                                     eprintln!(
-                                        "DEBUG: Wine Mono exited with code {:?}, continuing...",
-                                        s.code()
+                                        "MSVC installed, MSBuild at: {}",
+                                        msbuild_path.display()
                                     );
-                                }
-                                Err(e) => {
-                                    eprintln!(
-                                        "DEBUG: Wine Mono installation error: {}, continuing...",
-                                        e
-                                    );
-                                }
-                            }
-
-                            eprintln!("DEBUG: Step 2 - Downloading VS Build Tools...");
-
-                            // Download VS Build Tools
-                            let installer_path =
-                                match vedit_wine::WinePrefix::download_vs_build_tools().await {
-                                    Ok(path) => path,
-                                    Err(e) => return Err(format!("Download failed: {}", e)),
-                                };
-
-                            eprintln!("DEBUG: Step 3 - Running VS Build Tools installer...");
-
-                            eprintln!(
-                                "DEBUG: NixOS={}, steam-run available={}",
-                                is_nixos, has_steam_run
-                            );
-
-                            // On NixOS, ALWAYS use "wine" from steam-run's FHS environment
-                            // Both NixOS system wine AND Proton wine have library path issues
-                            // outside their respective runtime environments
-                            let effective_wine = if is_nixos && has_steam_run {
-                                "wine".to_string()
-                            } else {
-                                wine_binary.display().to_string()
-                            };
-
-                            eprintln!(
-                                "DEBUG: Using wine binary: {} (original: {})",
-                                effective_wine,
-                                wine_binary.display()
-                            );
-
-                            // Build the command
-                            let status = if is_nixos {
-                                if has_steam_run {
-                                    // Use steam-run on NixOS for FHS compatibility
-                                    eprintln!("DEBUG: Using steam-run wrapper");
-                                    std::process::Command::new("steam-run")
-                                        .arg(&effective_wine)
-                                        .arg(&installer_path)
-                                        .arg("--passive")
-                                        .arg("--wait")
-                                        .arg("--norestart")
-                                        .arg("--add")
-                                        .arg("Microsoft.VisualStudio.Workload.MSBuildTools")
-                                        .arg("--add")
-                                        .arg("Microsoft.VisualStudio.Workload.VCTools")
-                                        .arg("--includeRecommended")
-                                        .env("WINEPREFIX", &prefix_path)
-                                        .env("WINEDEBUG", "-all")
-                                        .status()
-                                } else {
-                                    // Try nix-shell as fallback
-                                    eprintln!("DEBUG: Using nix-shell -p steam-run fallback");
-                                    let wine_cmd = format!(
-                                        "wine '{}' --passive --wait --norestart --add Microsoft.VisualStudio.Workload.MSBuildTools --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended",
-                                        installer_path.display()
-                                    );
-                                    std::process::Command::new("nix-shell")
-                                        .arg("-p")
-                                        .arg("steam-run")
-                                        .arg("--run")
-                                        .arg(format!("steam-run {}", wine_cmd))
-                                        .env("WINEPREFIX", &prefix_path)
-                                        .env("WINEDEBUG", "-all")
-                                        .status()
-                                }
-                            } else {
-                                std::process::Command::new(&wine_binary)
-                                    .arg(&installer_path)
-                                    .arg("--passive")
-                                    .arg("--wait")
-                                    .arg("--norestart")
-                                    .arg("--add")
-                                    .arg("Microsoft.VisualStudio.Workload.MSBuildTools")
-                                    .arg("--add")
-                                    .arg("Microsoft.VisualStudio.Workload.VCTools")
-                                    .arg("--includeRecommended")
-                                    .env("WINEPREFIX", &prefix_path)
-                                    .env("WINEDEBUG", "-all")
-                                    .status()
-                            };
-
-                            match status {
-                                Ok(s) if s.success() => Ok(prefix_index),
-                                Ok(_) => {
-                                    // Even if exit code is non-zero, check if MSBuild was installed
-                                    // The VS installer sometimes returns errors but still installs
                                     Ok(prefix_index)
                                 }
-                                Err(e) => Err(format!("Installation failed: {}", e)),
+                                Err(e) => Err(format!("{}", e)),
                             }
                         },
                         |result| match result {
@@ -1935,6 +1985,61 @@ impl EditorApp {
                         .body(error)
                         .kind(NotificationKind::Error),
                 );
+            }
+            // MSVC Download messages
+            Message::MsvcDownloadStart => {
+                self.state.push_notification(
+                    NotificationRequest::title("Downloading MSVC Toolchain")
+                        .body("This may take several minutes. Progress will be shown...")
+                        .kind(NotificationKind::Info)
+                        .timeout(None),
+                );
+
+                // Start the download task
+                return Task::perform(
+                    async { vedit_wine::WinePrefix::download_msvc(None).await },
+                    |result| match result {
+                        Ok(path) => Message::MsvcDownloadComplete(Ok(path)),
+                        Err(e) => Message::MsvcDownloadComplete(Err(format!("{}", e))),
+                    },
+                );
+            }
+            Message::MsvcDownloadProgress(status) => {
+                // Could update a progress notification
+                eprintln!("MSVC Download: {}", status);
+            }
+            Message::MsvcDownloadComplete(result) => {
+                match result {
+                    Ok(path) => {
+                        self.state.push_notification(
+                            NotificationRequest::title("MSVC Download Complete")
+                                .body(format!("MSVC toolchain installed at:\n{}", path.display()))
+                                .kind(NotificationKind::Success),
+                        );
+
+                        // If we have a pending install, continue with it
+                        if let Some(prefix_index) = self.state.take_pending_msvc_install_prefix() {
+                            return Task::done(Message::VsBuildToolsInstallStart(prefix_index));
+                        }
+                    }
+                    Err(error) => {
+                        self.state.push_notification(
+                            NotificationRequest::title("MSVC Download Failed")
+                                .body(format!(
+                                    "Failed to download MSVC:\n{}\n\n\
+                                    Manual download instructions:\n\
+                                    git clone https://github.com/mstorsjo/msvc-wine /tmp/msvc-wine\n\
+                                    cd /tmp/msvc-wine && nix-shell -p msitools python3 --run \\\n\
+                                    'python3 vsdownload.py --accept-license --dest ~/.local/share/vedit/msvc'\n\
+                                    ./install.sh ~/.local/share/vedit/msvc",
+                                    error
+                                ))
+                                .kind(NotificationKind::Error)
+                                .timeout(None),
+                        );
+                        self.state.set_pending_msvc_install_prefix(None);
+                    }
+                }
             }
             // Search dialog messages
             Message::SearchOpen => {

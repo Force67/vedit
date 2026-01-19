@@ -5,6 +5,7 @@
 
 use crate::environment::WineEnvironment;
 use crate::error::{WineError, WineResult};
+use crate::prefix::{has_steam_run, is_nixos};
 use crate::proton::ProtonInstallation;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -221,10 +222,17 @@ impl MSBuildSession {
         let windows_target_path = linux_to_wine_path(&target_path, prefix_path);
 
         // Build MSBuild arguments
+        // VSInstallRoot is critical for MSBuild to find MSVC tools
+        let vs_root = r"C:\Program Files\Microsoft Visual Studio\2022\BuildTools";
+        // SDK version from msvc-wine installation
+        let sdk_version = "10.0.26100.0";
+
         let mut msbuild_args = vec![
             windows_target_path,
             format!("/p:Configuration={}", request.configuration),
             format!("/p:Platform={}", request.platform),
+            format!("/p:VSInstallRoot={}", vs_root),
+            format!("/p:WindowsTargetPlatformVersion={}", sdk_version),
             format!("/t:{}", request.action.as_target()),
             format!("/v:{}", request.verbosity.as_arg()),
             "/nologo".to_string(),
@@ -237,14 +245,26 @@ impl MSBuildSession {
 
         msbuild_args.extend(request.additional_args.clone());
 
-        // Build the command
-        let mut cmd = Command::new(wine_executable);
-        cmd.arg(msbuild_path);
-        cmd.args(&msbuild_args);
+        // Build the command - use steam-run on NixOS for FHS compatibility
+        let mut cmd = if is_nixos() && has_steam_run() {
+            tracing::info!("Using steam-run for MSBuild on NixOS");
+            let mut c = Command::new("steam-run");
+            c.arg("wine");
+            c.arg(msbuild_path);
+            c.args(&msbuild_args);
+            c
+        } else {
+            let mut c = Command::new(wine_executable);
+            c.arg(msbuild_path);
+            c.args(&msbuild_args);
+            c
+        };
+
         cmd.current_dir(&working_dir);
 
         // Set environment
         cmd.env("WINEPREFIX", prefix_path);
+        cmd.env("WINEDEBUG", "-all");
         for (key, value) in env_vars {
             cmd.env(key, value);
         }
@@ -400,10 +420,11 @@ pub fn find_msbuild(prefix_path: &Path) -> WineResult<PathBuf> {
     let drive_c = prefix_path.join("drive_c");
 
     // Common MSBuild locations (newest first)
+    // IMPORTANT: amd64 paths must come first - they work correctly with VSInstallRoot
     let candidates = [
-        // VS 2022 Build Tools
-        "Program Files/Microsoft Visual Studio/2022/BuildTools/MSBuild/Current/Bin/MSBuild.exe",
+        // VS 2022 Build Tools - amd64 (preferred, works with msvc-wine)
         "Program Files/Microsoft Visual Studio/2022/BuildTools/MSBuild/Current/Bin/amd64/MSBuild.exe",
+        "Program Files/Microsoft Visual Studio/2022/BuildTools/MSBuild/Current/Bin/MSBuild.exe",
         // VS 2022 Community/Professional/Enterprise
         "Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe",
         "Program Files/Microsoft Visual Studio/2022/Professional/MSBuild/Current/Bin/MSBuild.exe",
