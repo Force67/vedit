@@ -186,6 +186,8 @@ pub enum Message {
     SolutionContextMenuClean(std::path::PathBuf),
     SolutionContextMenuDebug(std::path::PathBuf),
     SolutionContextMenuOpenFolder(std::path::PathBuf),
+    /// Select a build configuration (e.g., "Debug|x64")
+    BuildConfigurationSelected(String),
 
     // Build messages
     BuildStarted {
@@ -210,8 +212,10 @@ pub enum Message {
     },
     BuildCancelled,
     BuildCancelRequested,
-    /// Result from Wine MSBuild
+    /// Result from Wine MSBuild (non-streaming)
     WineBuildResult(Result<crate::commands::WineBuildResult, String>),
+    /// Streaming build event from Wine MSBuild
+    WineBuildEvent(crate::commands::WineBuildEvent),
 
     // Wine/Proton environment messages
     WineEnvironmentDiscoveryRequested,

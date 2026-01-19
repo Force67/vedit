@@ -1415,6 +1415,13 @@ impl EditorApp {
                     }
                 };
 
+                // Get the effective build configuration (convert to owned strings immediately)
+                let (configuration, platform) = self
+                    .state
+                    .effective_build_configuration()
+                    .map(|(c, p)| (c.to_string(), p.to_string()))
+                    .unwrap_or_else(|| ("Release".to_string(), "x64".to_string()));
+
                 // Start build - show console and set building state
                 self.state.start_build(filename);
 
@@ -1422,15 +1429,16 @@ impl EditorApp {
                     target_path: path.clone(),
                     prefix_path: prefix.path.clone(),
                     msbuild_path,
-                    configuration: "Release".to_string(),
-                    platform: "x64".to_string(),
+                    configuration,
+                    platform,
                     action: crate::commands::BuildAction::Build,
                 };
 
-                return self.wrap_command(Task::perform(
-                    crate::commands::run_wine_build(request),
-                    Message::WineBuildResult,
-                ));
+                // Run the build with streaming output using Task::run
+                return Task::run(
+                    crate::commands::wine_build_stream(request),
+                    Message::WineBuildEvent,
+                );
             }
             Message::SolutionContextMenuRebuild(path) => {
                 self.state.hide_solution_context_menu();
@@ -1472,6 +1480,13 @@ impl EditorApp {
                     }
                 };
 
+                // Get the effective build configuration (convert to owned strings immediately)
+                let (configuration, platform) = self
+                    .state
+                    .effective_build_configuration()
+                    .map(|(c, p)| (c.to_string(), p.to_string()))
+                    .unwrap_or_else(|| ("Release".to_string(), "x64".to_string()));
+
                 // Start rebuild - show console and set building state
                 self.state.start_build(&format!("{} (Rebuild)", filename));
 
@@ -1479,15 +1494,16 @@ impl EditorApp {
                     target_path: path.clone(),
                     prefix_path: prefix.path.clone(),
                     msbuild_path,
-                    configuration: "Release".to_string(),
-                    platform: "x64".to_string(),
+                    configuration,
+                    platform,
                     action: crate::commands::BuildAction::Rebuild,
                 };
 
-                return self.wrap_command(Task::perform(
-                    crate::commands::run_wine_build(request),
-                    Message::WineBuildResult,
-                ));
+                // Run the build with streaming output using Task::run
+                return Task::run(
+                    crate::commands::wine_build_stream(request),
+                    Message::WineBuildEvent,
+                );
             }
             Message::SolutionContextMenuClean(path) => {
                 self.state.hide_solution_context_menu();
@@ -1529,6 +1545,13 @@ impl EditorApp {
                     }
                 };
 
+                // Get the effective build configuration (convert to owned strings immediately)
+                let (configuration, platform) = self
+                    .state
+                    .effective_build_configuration()
+                    .map(|(c, p)| (c.to_string(), p.to_string()))
+                    .unwrap_or_else(|| ("Release".to_string(), "x64".to_string()));
+
                 // Start clean - show console and set building state
                 self.state.start_build(&format!("{} (Clean)", filename));
 
@@ -1536,15 +1559,16 @@ impl EditorApp {
                     target_path: path.clone(),
                     prefix_path: prefix.path.clone(),
                     msbuild_path,
-                    configuration: "Release".to_string(),
-                    platform: "x64".to_string(),
+                    configuration,
+                    platform,
                     action: crate::commands::BuildAction::Clean,
                 };
 
-                return self.wrap_command(Task::perform(
-                    crate::commands::run_wine_build(request),
-                    Message::WineBuildResult,
-                ));
+                // Run the build with streaming output using Task::run
+                return Task::run(
+                    crate::commands::wine_build_stream(request),
+                    Message::WineBuildEvent,
+                );
             }
             Message::SolutionContextMenuDebug(path) => {
                 self.state.hide_solution_context_menu();
@@ -1579,6 +1603,10 @@ impl EditorApp {
                 {
                     let _ = std::process::Command::new("xdg-open").arg(&path).spawn();
                 }
+            }
+            Message::BuildConfigurationSelected(config) => {
+                self.state.set_selected_build_configuration(Some(config));
+                self.state.hide_solution_context_menu();
             }
             // Build messages
             Message::BuildStarted {
@@ -1690,6 +1718,53 @@ impl EditorApp {
                         self.state.push_notification(
                             NotificationRequest::title("Build Error")
                                 .body(e)
+                                .kind(NotificationKind::Error),
+                        );
+                    }
+                }
+            }
+            Message::WineBuildEvent(event) => {
+                use crate::commands::WineBuildEvent;
+                match event {
+                    WineBuildEvent::Output(line) => {
+                        // Stream output to the build console in real-time
+                        self.state.console_mut().push_build_output(&line);
+                    }
+                    WineBuildEvent::Completed { success } => {
+                        // Finish the build state
+                        let target_name = self
+                            .state
+                            .build_target_name()
+                            .unwrap_or("solution")
+                            .to_string();
+                        self.state.finish_build(success, "");
+
+                        if success {
+                            self.state.push_notification(
+                                NotificationRequest::title(format!(
+                                    "Build Succeeded: {}",
+                                    target_name
+                                ))
+                                .body("Build completed successfully.")
+                                .kind(NotificationKind::Success),
+                            );
+                        } else {
+                            self.state.push_notification(
+                                NotificationRequest::title(format!(
+                                    "Build Failed: {}",
+                                    target_name
+                                ))
+                                .body("Build failed. Check console for details.")
+                                .kind(NotificationKind::Error),
+                            );
+                        }
+                    }
+                    WineBuildEvent::Failed(error) => {
+                        self.state.finish_build(false, &format!("Error: {}", error));
+
+                        self.state.push_notification(
+                            NotificationRequest::title("Build Error")
+                                .body(error)
                                 .kind(NotificationKind::Error),
                         );
                     }

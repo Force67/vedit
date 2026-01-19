@@ -323,7 +323,7 @@ pub async fn load_solution_from_path(path: String) -> Result<Option<WorkspaceDat
 }
 
 /// Build action type
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Hash)]
 pub enum BuildAction {
     Build,
     Rebuild,
@@ -331,7 +331,7 @@ pub enum BuildAction {
 }
 
 /// Request to build a solution/project via Wine
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash)]
 pub struct WineBuildRequest {
     /// Path to the solution or project file
     pub target_path: PathBuf,
@@ -355,9 +355,185 @@ pub struct WineBuildResult {
     pub target: String,
 }
 
-/// Run MSBuild via Wine
+/// Event emitted during a streaming build
+#[derive(Debug, Clone)]
+pub enum WineBuildEvent {
+    /// A line of output from the build process
+    Output(String),
+    /// Build completed with success/failure status
+    Completed { success: bool },
+    /// Build failed to start
+    Failed(String),
+}
+
+/// Run MSBuild via Wine with streaming output - returns a stream for use with Task::run
+pub fn wine_build_stream(
+    request: WineBuildRequest,
+) -> impl iced::futures::Stream<Item = WineBuildEvent> {
+    iced::stream::channel(100, move |mut output| {
+        let request = request.clone();
+        async move {
+            use iced::futures::SinkExt;
+
+            match run_wine_build_streaming(request, &mut output).await {
+                Ok(success) => {
+                    let _ = output.send(WineBuildEvent::Completed { success }).await;
+                }
+                Err(e) => {
+                    let _ = output.send(WineBuildEvent::Failed(e)).await;
+                }
+            }
+        }
+    })
+}
+
+/// Internal function to run the build with streaming output
+async fn run_wine_build_streaming(
+    request: WineBuildRequest,
+    output: &mut iced::futures::channel::mpsc::Sender<WineBuildEvent>,
+) -> Result<bool, String> {
+    use iced::futures::SinkExt;
+    use std::process::Stdio;
+    use tokio::io::{AsyncBufReadExt, BufReader};
+    use tokio::process::Command;
+
+    let WineBuildRequest {
+        target_path,
+        prefix_path,
+        msbuild_path,
+        configuration,
+        platform,
+        action,
+    } = request;
+
+    // Convert Linux path to Wine path (Z: drive)
+    let wine_target = format!("Z:{}", target_path.to_string_lossy().replace('/', "\\"));
+
+    // Convert msbuild_path (which is relative to drive_c) to Windows path
+    let msbuild_windows = if msbuild_path.starts_with(prefix_path.join("drive_c")) {
+        let relative = msbuild_path
+            .strip_prefix(prefix_path.join("drive_c"))
+            .map_err(|_| "Invalid MSBuild path".to_string())?;
+        format!("C:{}", relative.to_string_lossy().replace('/', "\\"))
+    } else {
+        format!("Z:{}", msbuild_path.to_string_lossy().replace('/', "\\"))
+    };
+
+    // Build action target
+    let action_target = match action {
+        BuildAction::Build => "Build",
+        BuildAction::Rebuild => "Rebuild",
+        BuildAction::Clean => "Clean",
+    };
+
+    // VS root for MSBuild to find tools
+    let vs_root = r"C:\Program Files\Microsoft Visual Studio\2022\BuildTools";
+    let sdk_version = "10.0.26100.0";
+
+    // Check if we're on NixOS and need steam-run
+    let is_nixos = std::path::Path::new("/etc/nixos").exists() || std::env::var("NIX_PATH").is_ok();
+    let has_steam_run = which::which("steam-run").is_ok();
+
+    // Ensure temp directory exists for MSVC compiler
+    let temp_dir = prefix_path.join("drive_c/Temp");
+    let _ = std::fs::create_dir_all(&temp_dir);
+    let windows_temp_path = r"C:\Temp";
+
+    // Get essential environment variables (uppercase only to avoid .NET case collisions)
+    let home = std::env::var("HOME").unwrap_or_default();
+    let path = std::env::var("PATH").unwrap_or_default();
+    let display = std::env::var("DISPLAY").unwrap_or_default();
+    let xdg_runtime_dir = std::env::var("XDG_RUNTIME_DIR").unwrap_or_default();
+
+    // Build the command
+    let mut cmd = if is_nixos && has_steam_run {
+        let mut c = Command::new("steam-run");
+        c.arg("wine");
+        c
+    } else {
+        Command::new("wine")
+    };
+
+    cmd.arg(&msbuild_windows)
+        .arg(&wine_target)
+        .arg(format!("/p:Configuration={}", configuration))
+        .arg(format!("/p:Platform={}", platform))
+        .arg(format!("/p:VSInstallRoot={}", vs_root))
+        .arg(format!("/p:WindowsTargetPlatformVersion={}", sdk_version))
+        .arg(format!("/t:{}", action_target))
+        .arg("/nologo")
+        .arg("/verbosity:minimal")
+        .env_clear()
+        .env("HOME", &home)
+        .env("PATH", &path)
+        .env("DISPLAY", &display)
+        .env("XDG_RUNTIME_DIR", &xdg_runtime_dir)
+        .env("WINEPREFIX", &prefix_path)
+        .env("WINEDEBUG", "-all")
+        .env("TMP", &windows_temp_path)
+        .env("TEMP", &windows_temp_path)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    // Spawn the process
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("Failed to start MSBuild: {}", e))?;
+
+    // Get stdout and stderr
+    let stdout = child.stdout.take().ok_or("Failed to capture stdout")?;
+    let stderr = child.stderr.take().ok_or("Failed to capture stderr")?;
+
+    let mut stdout_reader = BufReader::new(stdout).lines();
+    let mut stderr_reader = BufReader::new(stderr).lines();
+
+    // Read output lines concurrently
+    loop {
+        tokio::select! {
+            line = stdout_reader.next_line() => {
+                match line {
+                    Ok(Some(text)) => {
+                        let _ = output.send(WineBuildEvent::Output(text)).await;
+                    }
+                    Ok(None) => break, // stdout closed
+                    Err(e) => {
+                        let _ = output.send(WineBuildEvent::Output(format!("[read error: {}]", e))).await;
+                        break;
+                    }
+                }
+            }
+            line = stderr_reader.next_line() => {
+                match line {
+                    Ok(Some(text)) => {
+                        let _ = output.send(WineBuildEvent::Output(text)).await;
+                    }
+                    Ok(None) => {} // stderr closed, continue reading stdout
+                    Err(e) => {
+                        let _ = output.send(WineBuildEvent::Output(format!("[read error: {}]", e))).await;
+                    }
+                }
+            }
+        }
+    }
+
+    // Drain any remaining stderr
+    while let Ok(Some(text)) = stderr_reader.next_line().await {
+        let _ = output.send(WineBuildEvent::Output(text)).await;
+    }
+
+    // Wait for process to complete
+    let status = child
+        .wait()
+        .await
+        .map_err(|e| format!("Failed to wait for process: {}", e))?;
+
+    Ok(status.success())
+}
+
+/// Run MSBuild via Wine (non-streaming version for compatibility)
 pub async fn run_wine_build(request: WineBuildRequest) -> Result<WineBuildResult, String> {
-    use std::process::{Command, Stdio};
+    use std::process::Stdio;
+    use tokio::process::Command;
 
     let WineBuildRequest {
         target_path,
@@ -403,6 +579,12 @@ pub async fn run_wine_build(request: WineBuildRequest) -> Result<WineBuildResult
     // Use simple Windows temp path
     let windows_temp_path = r"C:\Temp";
 
+    // Get essential environment variables we need to preserve (uppercase only to avoid .NET case collisions)
+    let home = std::env::var("HOME").unwrap_or_default();
+    let path = std::env::var("PATH").unwrap_or_default();
+    let display = std::env::var("DISPLAY").unwrap_or_default();
+    let xdg_runtime_dir = std::env::var("XDG_RUNTIME_DIR").unwrap_or_default();
+
     let output = if is_nixos && has_steam_run {
         Command::new("steam-run")
             .arg("wine")
@@ -415,6 +597,11 @@ pub async fn run_wine_build(request: WineBuildRequest) -> Result<WineBuildResult
             .arg(format!("/t:{}", action_target))
             .arg("/nologo")
             .arg("/verbosity:minimal")
+            .env_clear() // Clear all inherited env vars to avoid case collisions in .NET
+            .env("HOME", &home)
+            .env("PATH", &path)
+            .env("DISPLAY", &display)
+            .env("XDG_RUNTIME_DIR", &xdg_runtime_dir)
             .env("WINEPREFIX", &prefix_path)
             .env("WINEDEBUG", "-all")
             .env("TMP", &windows_temp_path)
@@ -422,6 +609,7 @@ pub async fn run_wine_build(request: WineBuildRequest) -> Result<WineBuildResult
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()
+            .await
             .map_err(|e| format!("Failed to start MSBuild: {}", e))?
     } else {
         Command::new("wine")
@@ -434,6 +622,11 @@ pub async fn run_wine_build(request: WineBuildRequest) -> Result<WineBuildResult
             .arg(format!("/t:{}", action_target))
             .arg("/nologo")
             .arg("/verbosity:minimal")
+            .env_clear() // Clear all inherited env vars to avoid case collisions in .NET
+            .env("HOME", &home)
+            .env("PATH", &path)
+            .env("DISPLAY", &display)
+            .env("XDG_RUNTIME_DIR", &xdg_runtime_dir)
             .env("WINEPREFIX", &prefix_path)
             .env("WINEDEBUG", "-all")
             .env("TMP", &windows_temp_path)
@@ -441,6 +634,7 @@ pub async fn run_wine_build(request: WineBuildRequest) -> Result<WineBuildResult
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()
+            .await
             .map_err(|e| format!("Failed to start MSBuild: {}", e))?
     };
 

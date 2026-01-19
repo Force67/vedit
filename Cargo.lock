@@ -4113,6 +4113,7 @@ dependencies = [
  "serde",
  "slab",
  "tempfile",
+ "tokio",
  "toml",
  "tree-sitter",
  "tree-sitter-c",

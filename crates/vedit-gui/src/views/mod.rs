@@ -141,6 +141,8 @@ pub fn view(state: &EditorState) -> Element<'_, Message> {
         if let Some(target) = state.solution_context_menu_target() {
             let (x, y) = state.solution_context_menu_position();
             let has_wine_env = state.has_wine_environment();
+            let available_configs = state.available_build_configurations();
+            let selected_config = state.selected_build_configuration();
             let solution_menu = render_solution_context_menu_overlay(
                 target,
                 x,
@@ -148,6 +150,8 @@ pub fn view(state: &EditorState) -> Element<'_, Message> {
                 scale,
                 state.current_window_size,
                 has_wine_env,
+                &available_configs,
+                selected_config,
             );
             layers.push(solution_menu);
         }

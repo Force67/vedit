@@ -11,11 +11,13 @@ pub fn render_solution_context_menu(
     target: &SolutionContextTarget,
     scale: f32,
     has_wine_env: bool,
+    available_configs: &[&str],
+    selected_config: Option<&str>,
 ) -> Element<'static, Message> {
     let item_padding = (6.0 * scale) as u16;
     let icon_size = 12.0 * scale;
     let text_size = 13.0 * scale;
-    let menu_width = 180.0 * scale;
+    let menu_width = 200.0 * scale;
 
     let mut menu_items: Vec<Element<'static, Message>> = Vec::new();
 
@@ -33,6 +35,35 @@ pub fn render_solution_context_menu(
     // Header showing what we're operating on
     let header = text(target_name).size(text_size * 0.9).color(style::MUTED);
     menu_items.push(container(header).padding([4, 8]).width(Length::Fill).into());
+
+    // Configuration selector section
+    if !available_configs.is_empty() {
+        menu_items.push(separator(scale));
+
+        // Config header
+        let config_header = row![
+            fa_icon_solid("gear").size(icon_size).color(style::MUTED),
+            text("Configuration")
+                .size(text_size * 0.85)
+                .color(style::MUTED),
+        ]
+        .spacing(6)
+        .align_y(iced::Alignment::Center);
+        menu_items.push(
+            container(config_header)
+                .padding([4, 8])
+                .width(Length::Fill)
+                .into(),
+        );
+
+        // Configuration options (limit to prevent menu from being too long)
+        for config in available_configs.iter().take(6) {
+            let is_selected = selected_config == Some(*config);
+            let config_item =
+                config_menu_item(config, is_selected, icon_size, text_size, item_padding);
+            menu_items.push(config_item);
+        }
+    }
 
     // Separator
     menu_items.push(separator(scale));
@@ -147,6 +178,8 @@ pub fn render_solution_context_menu_overlay(
     scale: f32,
     window_size: iced::Size,
     has_wine_env: bool,
+    available_configs: &[&str],
+    selected_config: Option<&str>,
 ) -> Element<'static, Message> {
     use iced::widget::stack;
 
@@ -159,12 +192,21 @@ pub fn render_solution_context_menu_overlay(
     .on_press(Message::SolutionContextMenuHide);
 
     // The actual menu
-    let menu = render_solution_context_menu(target, scale, has_wine_env);
+    let menu = render_solution_context_menu(
+        target,
+        scale,
+        has_wine_env,
+        available_configs,
+        selected_config,
+    );
 
     // Position the menu using padding from top-left
     // Clamp position so menu stays on screen
-    let menu_width = 180.0 * scale;
-    let menu_height = 280.0 * scale; // Approximate height
+    let menu_width = 200.0 * scale;
+    // Height depends on number of config items
+    let base_height = 280.0 * scale;
+    let config_height = (available_configs.len().min(6) as f32) * 28.0 * scale;
+    let menu_height = base_height + config_height;
 
     let clamped_x = x.min(window_size.width - menu_width - 10.0).max(0.0);
     let clamped_y = y.min(window_size.height - menu_height - 10.0).max(0.0);
@@ -233,5 +275,52 @@ fn separator(scale: f32) -> Element<'static, Message> {
     container(Space::new().width(Length::Fill).height(Length::Fixed(1.0)))
         .style(style::separator_container())
         .padding([4.0 * scale, 0.0])
+        .into()
+}
+
+/// Create a configuration selection item
+fn config_menu_item(
+    config: &str,
+    is_selected: bool,
+    icon_size: f32,
+    text_size: f32,
+    padding: u16,
+) -> Element<'static, Message> {
+    let icon_color = if is_selected {
+        style::SUCCESS
+    } else {
+        style::SURFACE
+    };
+
+    let text_color = if is_selected {
+        style::TEXT
+    } else {
+        style::TEXT_SECONDARY
+    };
+
+    // Show checkmark for selected config
+    let icon_el = if is_selected {
+        fa_icon_solid("check").size(icon_size).color(icon_color)
+    } else {
+        fa_icon_solid("circle")
+            .size(icon_size * 0.5)
+            .color(icon_color)
+    };
+
+    let label_el = text(config.to_string())
+        .size(text_size * 0.95)
+        .color(text_color);
+
+    let content = row![icon_el, label_el]
+        .spacing(8)
+        .align_y(iced::Alignment::Center);
+
+    let msg = Message::BuildConfigurationSelected(config.to_string());
+
+    button(content)
+        .padding(padding)
+        .width(Length::Fill)
+        .style(style::tree_row_button(is_selected))
+        .on_press(msg)
         .into()
 }

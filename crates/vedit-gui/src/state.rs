@@ -423,6 +423,10 @@ pub struct EditorState {
     // Build state
     is_building: bool,
     build_target_name: Option<String>,
+    /// Selected build configuration (e.g., "Debug|x64")
+    selected_build_configuration: Option<String>,
+    /// Active streaming build request (for subscription)
+    active_build_request: Option<crate::commands::WineBuildRequest>,
 }
 
 impl Default for EditorState {
@@ -493,6 +497,8 @@ impl Default for EditorState {
             pending_msvc_install_prefix: None,
             is_building: false,
             build_target_name: None,
+            selected_build_configuration: None,
+            active_build_request: None,
         };
 
         // Set up console state for logging
@@ -1302,8 +1308,71 @@ impl EditorState {
     pub fn finish_build(&mut self, success: bool, output: &str) {
         self.is_building = false;
         self.build_target_name = None;
+        self.active_build_request = None;
         self.console.push_build_output(output);
         self.console.finish_build(success);
+    }
+
+    /// Set the active build request (enables streaming subscription)
+    pub fn set_active_build_request(&mut self, request: Option<crate::commands::WineBuildRequest>) {
+        self.active_build_request = request;
+    }
+
+    /// Get the active build request for subscription
+    pub fn active_build_request(&self) -> Option<&crate::commands::WineBuildRequest> {
+        self.active_build_request.as_ref()
+    }
+
+    /// Take the active build request (for starting subscription)
+    pub fn take_active_build_request(&mut self) -> Option<crate::commands::WineBuildRequest> {
+        self.active_build_request.take()
+    }
+
+    /// Get the selected build configuration (e.g., "Debug|x64")
+    pub fn selected_build_configuration(&self) -> Option<&str> {
+        self.selected_build_configuration.as_deref()
+    }
+
+    /// Set the selected build configuration
+    pub fn set_selected_build_configuration(&mut self, config: Option<String>) {
+        self.selected_build_configuration = config;
+    }
+
+    /// Get available build configurations from all loaded solutions
+    pub fn available_build_configurations(&self) -> Vec<&str> {
+        let mut configs = Vec::new();
+        for entry in &self.solution_browser {
+            if let SolutionBrowserEntry::VisualStudio(sol) = entry {
+                for cfg in &sol.configurations {
+                    if !configs.contains(&cfg.as_str()) {
+                        configs.push(cfg.as_str());
+                    }
+                }
+            }
+        }
+        configs
+    }
+
+    /// Get the effective build configuration (selected or default to first available)
+    pub fn effective_build_configuration(&self) -> Option<(&str, &str)> {
+        // Use selected if valid
+        if let Some(ref selected) = self.selected_build_configuration {
+            if let Some((config, platform)) = selected.split_once('|') {
+                return Some((config, platform));
+            }
+        }
+        // Default to first available configuration
+        for entry in &self.solution_browser {
+            if let SolutionBrowserEntry::VisualStudio(sol) = entry {
+                if let Some(first) = sol.configurations.first() {
+                    if let Some((config, platform)) = first.split_once('|') {
+                        return Some((config, platform));
+                    }
+                }
+            }
+        }
+        // Fallback to Release|x64
+        Some(("Release", "x64"))
     }
 
     // Hover-to-definition methods
